@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Der JDownloader-DLC-Dienst ist nur über HTTP (ohne TLS) erreichbar.
+      Cleartext daher gezielt nur für diese Domain erlauben; der restliche
+      Verkehr (Hoster-APIs) bleibt auf HTTPS beschränkt.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">jdownloader.org</domain>
+    </domain-config>
+</network-security-config>
