@@ -1,5 +1,7 @@
 package com.jdandroid.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -38,9 +41,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jdandroid.data.DownloadItem
@@ -84,6 +89,31 @@ fun DownloadsScreen(
     }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // DLC-Datei direkt aus der App waehlen (System-Dateidialog);
+    // DLC hat keinen registrierten MIME-Typ, daher alle Dateien anbieten
+    val dlcPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(Dispatchers.IO) {
+            val content = runCatching {
+                context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (content == null) {
+                launch(Dispatchers.Main) {
+                    snackbarHost.showSnackbar("DLC-Datei konnte nicht gelesen werden")
+                }
+            } else {
+                vm.importDlc(content) { result ->
+                    scope.launch { snackbarHost.showSnackbar(result) }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(dlcContent) {
         if (dlcContent != null) {
             snackbarHost.showSnackbar("DLC wird importiert …")
@@ -101,6 +131,9 @@ fun DownloadsScreen(
             TopAppBar(
                 title = { Text("Downloads") },
                 actions = {
+                    IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "DLC-Datei importieren")
+                    }
                     TextButton(onClick = { vm.resumeAll() }) { Text("Alle starten") }
                     TextButton(onClick = { vm.pauseAll() }) { Text("Pause") }
                 }
@@ -115,7 +148,8 @@ fun DownloadsScreen(
         if (downloads.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
-                    "Noch keine Downloads.\nMit + Links einfügen oder aus dem Browser teilen.",
+                    "Noch keine Downloads.\nMit + Links einfügen, aus dem Browser teilen\n" +
+                        "oder über das Ordner-Symbol eine DLC-Datei importieren.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
