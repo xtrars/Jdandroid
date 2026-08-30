@@ -25,6 +25,11 @@ class RapidgatorHoster : Hoster {
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
+    /** file_id (Hash) aus der Rapidgator-URL: .../file/<id>[/name.html] */
+    private fun fileId(url: String): String =
+        Regex("""/file/([A-Za-z0-9]+)""").find(url)?.groupValues?.get(1)
+            ?: throw HosterException("Ungültiger Rapidgator-Link", true)
+
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     private fun call(path: String, params: Map<String, String>): JSONObject {
@@ -55,8 +60,10 @@ class RapidgatorHoster : Hoster {
         val token = login(account)
         val resp = call("user/info", mapOf("token" to token))
         val user = resp.optJSONObject("user") ?: JSONObject()
-        val premium = user.optBoolean("is_premium", false)
         val premiumEnd = user.optLong("premium_end_time", 0) * 1000
+        val premium = user.optBoolean("is_premium", false) ||
+            premiumEnd > System.currentTimeMillis() ||
+            user.optString("state_label").contains("Premium", ignoreCase = true)
         val trafficLeft = user.optJSONObject("traffic")?.optLong("left", -1) ?: -1
         AccountInfo(
             valid = true,
@@ -74,8 +81,9 @@ class RapidgatorHoster : Hoster {
                     permanent = true
                 )
             }
+            val id = fileId(url)
             val attempt: (String) -> ResolvedLink = { token ->
-                val resp = call("file/download", mapOf("url" to url, "token" to token))
+                val resp = call("file/download", mapOf("file_id" to id, "token" to token))
                 val direct = resp.optString("download_url")
                 if (direct.isBlank()) throw HosterException("Rapidgator lieferte keine Download-URL", true)
                 ResolvedLink(direct)

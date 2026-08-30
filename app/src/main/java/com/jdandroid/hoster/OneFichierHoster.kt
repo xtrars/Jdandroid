@@ -40,12 +40,16 @@ class OneFichierHoster : Hoster {
         val json = JSONObject(text)
         if (json.optString("status") == "KO") {
             val msg = json.optString("message").ifBlank { "Unbekannter Fehler" }
-            throw HosterException(
-                "1fichier: $msg",
-                permanent = msg.contains("not found", true) ||
+            // Flood/Rate-Limit ist voruebergehend; fehlende/geloeschte Datei permanent
+            val transient = msg.contains("Flood", true) || msg.contains("try again", true)
+            val permanent = !transient && (
+                msg.contains("not found", true) ||
                     msg.contains("deleted", true) ||
-                    msg.contains("Flood", true).not() && msg.contains("must be", true)
+                    msg.contains("no such", true) ||
+                    msg.contains("not allowed", true) ||
+                    msg.contains("Resource not", true)
             )
+            throw HosterException("1fichier: $msg", permanent = permanent)
         }
         return json
     }
@@ -53,16 +57,23 @@ class OneFichierHoster : Hoster {
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         val key = account.apiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
         val json = post("user/info.cgi", key, JSONObject())
-        val offer = json.optInt("offer", 0)
+        // "offer" kann als Zahl (>0 = zahlend) oder als Text ("Premium"/"Access"/"Free") kommen
+        val offerRaw = json.opt("offer")?.toString()?.trim().orEmpty()
         val endText = json.optString("subscription_end")
         val end = runCatching {
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).parse(endText)?.time ?: 0L
         }.getOrDefault(0L)
+        val premium = when {
+            offerRaw.equals("Premium", true) || offerRaw.equals("Access", true) -> true
+            offerRaw.toIntOrNull()?.let { it > 0 } == true -> true
+            end > System.currentTimeMillis() -> true
+            else -> false
+        }
         AccountInfo(
             valid = true,
             premiumUntil = end,
             trafficLeft = -1,
-            statusText = if (offer > 0) "Premium/Access" else "Free (Downloads nicht möglich)"
+            statusText = if (premium) "Premium/Access" else "Free (Downloads nicht möglich)"
         )
     }
 
