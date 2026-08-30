@@ -14,12 +14,23 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            // Keystore fuer Eigenbedarf, liegt bewusst im Repo (kein Play-Store-Release).
+            storeFile = file("keystore/release.jks")
+            storePassword = "jdandroid"
+            keyAlias = "jdandroid"
+            keyPassword = "jdandroid"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -62,4 +73,5 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }

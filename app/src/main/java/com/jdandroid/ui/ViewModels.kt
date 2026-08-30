@@ -26,17 +26,20 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val downloads: StateFlow<List<DownloadItem>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Fuegt alle unterstuetzten Links aus dem Text hinzu; liefert Anzahl. */
-    fun addLinks(text: String, onResult: (Int) -> Unit) {
+    /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
+    fun addLinks(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val links = LinkParser.parse(text)
+            var added = 0
             links.forEach { (url, hoster) ->
-                dao.insert(DownloadItem(url = url, hosterId = hoster.id))
+                if (dao.countByUrl(url) == 0) {
+                    dao.insert(DownloadItem(url = url, hosterId = hoster.id))
+                    added++
+                }
             }
-            if (links.isNotEmpty()) {
+            if (added > 0) {
                 DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
             }
-            launch(Dispatchers.Main) { onResult(links.size) }
         }
     }
 

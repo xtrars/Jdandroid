@@ -23,10 +23,9 @@ import com.jdandroid.hoster.LinkParser
 fun AddLinksDialog(
     initialText: String,
     onDismiss: () -> Unit,
-    onAdd: (String, (Int) -> Unit) -> Unit
+    onAdd: (String) -> Unit
 ) {
     var text by remember { mutableStateOf(initialText) }
-    var feedback by remember { mutableStateOf<String?>(null) }
     val recognized = remember(text) { LinkParser.parse(text) }
 
     AlertDialog(
@@ -49,19 +48,13 @@ fun AddLinksDialog(
                             .entries.joinToString { "${it.value.size}× ${it.key}" },
                     style = MaterialTheme.typography.bodySmall
                 )
-                feedback?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(it, style = MaterialTheme.typography.bodySmall)
-                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = recognized.isNotEmpty(),
                 onClick = {
-                    onAdd(text) { count ->
-                        feedback = "$count Download(s) hinzugefügt"
-                    }
+                    onAdd(text)
                     onDismiss()
                 }
             ) { Text("Hinzufügen") }

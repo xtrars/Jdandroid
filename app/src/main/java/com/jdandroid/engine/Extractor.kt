@@ -26,9 +26,13 @@ object Extractor {
      */
     fun isSecondaryVolume(fileName: String): Boolean {
         val lower = fileName.lowercase()
-        return Regex("""\.part0*([2-9]|\d{2,})\.rar$""").containsMatchIn(lower) ||
-            Regex("""\.[rz]\d{2}$""").containsMatchIn(lower) ||
-            Regex("""\.7z\.\d+$""").containsMatchIn(lower) && !lower.endsWith(".7z.001")
+        Regex("""\.part(\d+)\.rar$""").find(lower)?.let {
+            return (it.groupValues[1].toIntOrNull() ?: 1) > 1
+        }
+        Regex("""\.7z\.(\d+)$""").find(lower)?.let {
+            return (it.groupValues[1].toIntOrNull() ?: 1) > 1
+        }
+        return Regex("""\.[rz]\d{2}$""").containsMatchIn(lower)
     }
 
     /**

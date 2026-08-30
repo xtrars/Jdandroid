@@ -59,6 +59,9 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
 
+    @Query("SELECT COUNT(*) FROM downloads WHERE url = :url")
+    suspend fun countByUrl(url: String): Int
+
     @Insert
     suspend fun insert(item: DownloadItem): Long
 

@@ -33,7 +33,8 @@ class RapidgatorHoster : Hoster {
         val status = json.optInt("status")
         if (status != 200) {
             val details = json.optString("details").ifBlank { "HTTP $status" }
-            throw HosterException("Rapidgator: $details", permanent = status in listOf(401, 402, 403, 404))
+            // 401 (Token abgelaufen) ist nach erneutem Login behebbar, daher nicht permanent
+            throw HosterException("Rapidgator: $details", permanent = status in listOf(402, 403, 404))
         }
         return json.optJSONObject("response") ?: JSONObject()
     }
@@ -82,7 +83,9 @@ class RapidgatorHoster : Hoster {
             try {
                 attempt(tokenFor(account))
             } catch (e: HosterException) {
-                // Token evtl. abgelaufen -> einmal neu einloggen
+                // Bei permanenten Fehlern (Datei offline, kein Premium) ist ein
+                // erneuter Login sinnlos
+                if (e.permanent) throw e
                 tokens.remove(account.id)
                 attempt(login(account))
             }

@@ -19,6 +19,7 @@ class SettingsRepository(private val context: Context) {
     private val keyAutoExtract = booleanPreferencesKey("auto_extract")
     private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
+    private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
 
     val maxConcurrent: Flow<Int> =
         context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
@@ -36,6 +37,10 @@ class SettingsRepository(private val context: Context) {
     val passwordList: Flow<String> =
         context.dataStore.data.map { it[keyPasswords] ?: "" }
 
+    /** Globales Download-Limit in KB/s, 0 = unbegrenzt. */
+    val speedLimitKbps: Flow<Int> =
+        context.dataStore.data.map { it[keySpeedLimit] ?: 0 }
+
     suspend fun currentMaxConcurrent(): Int = maxConcurrent.first()
 
     suspend fun currentExportToDownloads(): Boolean = exportToDownloads.first()
@@ -48,7 +53,11 @@ class SettingsRepository(private val context: Context) {
         passwordList.first().lines().map { it.trim() }.filter { it.isNotEmpty() }
 
     suspend fun setMaxConcurrent(value: Int) {
-        context.dataStore.edit { it[keyMaxConcurrent] = value.coerceIn(1, 6) }
+        context.dataStore.edit { it[keyMaxConcurrent] = value.coerceIn(1, 99) }
+    }
+
+    suspend fun setSpeedLimitKbps(value: Int) {
+        context.dataStore.edit { it[keySpeedLimit] = value.coerceIn(0, 1_000_000) }
     }
 
     suspend fun setExportToDownloads(value: Boolean) {

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
@@ -27,9 +28,15 @@ class DownloadService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var engine: DownloadEngine
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
+        // Haelt die CPU wach, damit Downloads im Doze-Modus nicht stocken;
+        // Timeout als Sicherheitsnetz, Service beendet sich bei leerer Queue selbst.
+        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
+            .apply { acquire(6 * 60 * 60 * 1000L) }
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification("Downloads werden vorbereitet …"))
         // Nach Prozess-Neustart haengen gebliebene RUNNING-Eintraege wieder einreihen
@@ -93,6 +100,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        wakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()
         super.onDestroy()
     }

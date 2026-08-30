@@ -38,12 +38,14 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    private val sharedText = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        val sharedText = sharedTextFrom(intent)
+        sharedText.value = sharedTextFrom(intent)
         setContent {
             val darkTheme = isSystemInDarkTheme()
             val context = LocalContext.current
@@ -56,9 +58,19 @@ class MainActivity : ComponentActivity() {
                 else -> lightColorScheme()
             }
             MaterialTheme(colorScheme = colorScheme) {
-                Surface { MainScreen(initialSharedText = sharedText) }
+                Surface {
+                    MainScreen(
+                        sharedText = sharedText.value,
+                        onSharedTextConsumed = { sharedText.value = null }
+                    )
+                }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        sharedTextFrom(intent)?.let { sharedText.value = it }
     }
 
     private fun sharedTextFrom(intent: Intent?): String? =
@@ -68,7 +80,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String) { Downloads("Downloads"), Accounts("Konten"), Settings("Einstellungen") }
 
 @Composable
-fun MainScreen(initialSharedText: String?) {
+fun MainScreen(sharedText: String?, onSharedTextConsumed: () -> Unit) {
     var tab by remember { mutableStateOf(Tab.Downloads) }
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
@@ -98,7 +110,7 @@ fun MainScreen(initialSharedText: String?) {
     ) { padding ->
         val modifier = Modifier.padding(padding)
         when (tab) {
-            Tab.Downloads -> DownloadsScreen(downloadVm, initialSharedText, modifier)
+            Tab.Downloads -> DownloadsScreen(downloadVm, sharedText, onSharedTextConsumed, modifier)
             Tab.Accounts -> AccountsScreen(accountVm, modifier)
             Tab.Settings -> SettingsScreen(modifier)
         }

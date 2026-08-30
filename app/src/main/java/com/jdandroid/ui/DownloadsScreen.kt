@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,11 +60,21 @@ fun formatBytes(bytes: Long): String {
 @Composable
 fun DownloadsScreen(
     vm: DownloadViewModel,
-    initialSharedText: String?,
+    sharedText: String?,
+    onSharedTextConsumed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val downloads by vm.downloads.collectAsState()
-    var showAddDialog by remember { mutableStateOf(initialSharedText != null) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var prefill by remember { mutableStateOf("") }
+
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            prefill = sharedText
+            showAddDialog = true
+            onSharedTextConsumed()
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -77,7 +88,7 @@ fun DownloadsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(onClick = { prefill = ""; showAddDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Links hinzufügen")
             }
         }
@@ -104,9 +115,9 @@ fun DownloadsScreen(
 
     if (showAddDialog) {
         AddLinksDialog(
-            initialText = initialSharedText.takeIf { showAddDialog } ?: "",
+            initialText = prefill,
             onDismiss = { showAddDialog = false },
-            onAdd = { text, done -> vm.addLinks(text) { done(it) } }
+            onAdd = { text -> vm.addLinks(text) }
         )
     }
 }

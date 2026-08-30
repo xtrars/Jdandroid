@@ -37,6 +37,22 @@ class DownloadEngine(
     private val jobs = HashMap<Long, Job>()
     private val mutex = Mutex()
 
+    /**
+     * Serialisiert den Download-Abschluss: verhindert, dass zwei gleichzeitig
+     * fertige Teile desselben Archivs sich gegenseitig als "noch ausstehend"
+     * sehen und das Entpacken dadurch ganz ausbleibt.
+     */
+    private val completionMutex = Mutex()
+
+    private val limiter = SpeedLimiter()
+
+    init {
+        // Geschwindigkeitslimit aus den Einstellungen live uebernehmen
+        scope.launch {
+            app.settings.speedLimitKbps.collect { limiter.limitBps = it.toLong() * 1024 }
+        }
+    }
+
     val activeCount: Int get() = jobs.size
 
     private fun downloadDir(): File =
@@ -100,7 +116,7 @@ class DownloadEngine(
 
             var current = dao.byId(id) ?: return
             if (current.fileName == null && resolved.fileName != null) {
-                current = current.copy(fileName = resolved.fileName)
+                current = current.copy(fileName = sanitizeFileName(resolved.fileName))
                 dao.update(current)
             }
             download(current, resolved.directUrl)
@@ -126,6 +142,11 @@ class DownloadEngine(
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
         Http.client.newCall(builder.build()).execute().use { resp ->
+            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig
+            if (resp.code == 416 && offset > 0) {
+                dao.updateProgress(item.id, offset, offset, 0)
+                return@use
+            }
             if (!resp.isSuccessful) {
                 throw HosterException("Server antwortete mit HTTP ${resp.code}")
             }
@@ -159,6 +180,7 @@ class DownloadEngine(
                         if (read < 0) break
                         out.write(buffer, 0, read)
                         written += read
+                        limiter.throttle(read)
                         val now = System.currentTimeMillis()
                         if (now - lastUpdate >= 750) {
                             val speed = (written - lastBytes) * 1000 / (now - lastUpdate).coerceAtLeast(1)
@@ -186,14 +208,14 @@ class DownloadEngine(
      * Abschluss eines Downloads: Archive werden (wenn aktiviert) automatisch
      * entpackt, sobald alle Teile vorliegen; alles andere wird direkt exportiert.
      */
-    private suspend fun completeDownload(id: Long, temp: File, fileName: String) {
+    private suspend fun completeDownload(id: Long, temp: File, fileName: String) = completionMutex.withLock {
         val base = Extractor.archiveBase(fileName)
         val autoExtract = app.settings.currentAutoExtract()
 
         if (!autoExtract || base == null) {
             val path = finish(temp, fileName)
             markCompleted(id, path, null)
-            return
+            return@withLock
         }
 
         // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
@@ -215,13 +237,13 @@ class DownloadEngine(
         }
         if (pending) {
             markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
-            return
+            return@withLock
         }
 
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
         if (primary == null) {
             markCompleted(id, archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
-            return
+            return@withLock
         }
 
         dao.setStatus(id, DownloadStatus.EXTRACTING)
@@ -303,11 +325,18 @@ class DownloadEngine(
         contentDisposition?.let {
             Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)"?""")
                 .find(it)?.groupValues?.get(1)?.let { name ->
-                    return java.net.URLDecoder.decode(name.trim(), "UTF-8")
+                    return sanitizeFileName(java.net.URLDecoder.decode(name.trim(), "UTF-8"))
                 }
         }
-        return url.substringBefore('?').substringAfterLast('/').ifBlank { "download.bin" }
+        return sanitizeFileName(url.substringBefore('?').substringAfterLast('/'))
     }
+
+    /** Server-gelieferte Namen bereinigen (Pfad-Traversal, verbotene Zeichen). */
+    private fun sanitizeFileName(name: String): String =
+        name.replace(Regex("""[/\\:*?"<>|]"""), "_")
+            .trim()
+            .trimStart('.')
+            .ifBlank { "download.bin" }
 
     /** Verschiebt die fertige Datei ins Ziel (oeffentlicher Download-Ordner oder App-Ordner). */
     private suspend fun finish(temp: File, fileName: String): String {

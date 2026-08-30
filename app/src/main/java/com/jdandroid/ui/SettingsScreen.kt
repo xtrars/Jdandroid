@@ -8,13 +8,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.jdandroid.JdApp
 import kotlinx.coroutines.flow.first
@@ -40,16 +41,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val settings = (context.applicationContext as JdApp).settings
     val scope = rememberCoroutineScope()
-    val maxConcurrent by settings.maxConcurrent.collectAsState(initial = 2)
     val export by settings.exportToDownloads.collectAsState(initial = true)
     val autoExtract by settings.autoExtract.collectAsState(initial = true)
     val deleteArchive by settings.deleteArchiveAfterExtract.collectAsState(initial = false)
 
     var passwords by remember { mutableStateOf("") }
-    var passwordsLoaded by remember { mutableStateOf(false) }
+    var maxConcurrentText by remember { mutableStateOf("") }
+    var speedLimitText by remember { mutableStateOf("") }
+    var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         passwords = settings.passwordList.first()
-        passwordsLoaded = true
+        maxConcurrentText = settings.maxConcurrent.first().toString()
+        speedLimitText = settings.speedLimitKbps.first().toString()
+        loaded = true
     }
 
     Scaffold(
@@ -64,13 +68,35 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         ) {
             Text("Downloads", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Text("Gleichzeitige Downloads: $maxConcurrent", style = MaterialTheme.typography.titleSmall)
-            Slider(
-                value = maxConcurrent.toFloat(),
-                onValueChange = { v -> scope.launch { settings.setMaxConcurrent(v.toInt()) } },
-                valueRange = 1f..6f,
-                steps = 4
+            OutlinedTextField(
+                value = maxConcurrentText,
+                onValueChange = { value ->
+                    maxConcurrentText = value.filter { it.isDigit() }.take(2)
+                    maxConcurrentText.toIntOrNull()?.let { n ->
+                        if (loaded && n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
+                    }
+                },
+                label = { Text("Gleichzeitige Downloads (1–99)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = speedLimitText,
+                onValueChange = { value ->
+                    speedLimitText = value.filter { it.isDigit() }.take(7)
+                    speedLimitText.toIntOrNull()?.let { n ->
+                        if (loaded) scope.launch { settings.setSpeedLimitKbps(n) }
+                    }
+                },
+                label = { Text("Geschwindigkeitslimit (KB/s, 0 = unbegrenzt)") },
+                supportingText = { Text("Gilt gemeinsam für alle laufenden Downloads") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
             SettingSwitch(
                 title = "In öffentlichen Download-Ordner",
                 subtitle = "Fertige Dateien nach Downloads/JDAndroid verschieben",
@@ -108,7 +134,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 value = passwords,
                 onValueChange = { value ->
                     passwords = value
-                    if (passwordsLoaded) scope.launch { settings.setPasswordList(value) }
+                    if (loaded) scope.launch { settings.setPasswordList(value) }
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 placeholder = { Text("passwort1\npasswort2\n…") }
