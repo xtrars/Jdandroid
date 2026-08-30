@@ -6,8 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -27,12 +29,17 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jdandroid.JdApp
+import com.jdandroid.engine.DownloadService
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -44,10 +51,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Ab targetSdk 35 erzwingt Android 15 Edge-to-Edge. Ohne diesen Aufruf
+        // werden die System-Insets nicht sauber eingerichtet und Leisten,
+        // FABs oder Buttons koennen hinter den Systemleisten liegen.
+        enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         handleIntent(intent)
+        // Click'n'Load ueberlebt keinen Prozessneustart: ist es aktiviert, muss
+        // der Dienst beim App-Start wieder hochgefahren werden, sonst lauscht
+        // niemand auf dem Port obwohl der Schalter an steht.
+        lifecycleScope.launch {
+            if ((application as JdApp).settings.currentClickNLoadEnabled()) {
+                DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
+            }
+        }
         setContent {
             val darkTheme = isSystemInDarkTheme()
             val context = LocalContext.current
@@ -116,7 +135,23 @@ fun MainScreen(
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
 
+    // Browser-Login ersetzt vorruebergehend den ganzen Bildschirm, damit die
+    // System-Insets greifen und die Schaltflaechen sichtbar bleiben.
+    val webLoginHoster by accountVm.webLogin.collectAsState()
+    val webLoginUrl = webLoginHoster?.webLoginUrl
+    if (webLoginUrl != null) {
+        WebLoginScreen(
+            loginUrl = webLoginUrl,
+            onCancel = { accountVm.cancelWebLogin() },
+            onAccept = { accountVm.completeWebLogin(it) }
+        )
+        return
+    }
+
     Scaffold(
+        // Die Insets behandeln die inneren Bildschirme (eigene TopAppBar) und
+        // die NavigationBar selbst - sonst kaeme der Abstand doppelt.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->

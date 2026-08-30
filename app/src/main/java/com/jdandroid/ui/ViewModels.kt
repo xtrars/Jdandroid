@@ -13,7 +13,7 @@ import com.jdandroid.engine.DownloadService
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -90,6 +90,20 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val hosters: List<Hoster> = HosterRegistry.hosters
+
+    /** Angeforderter Browser-Login (Hoster mit CAPTCHA), null = keiner offen. */
+    private val _webLogin = MutableStateFlow<Hoster?>(null)
+    val webLogin: StateFlow<Hoster?> = _webLogin
+
+    fun requestWebLogin(hoster: Hoster) { _webLogin.value = hoster }
+
+    fun cancelWebLogin() { _webLogin.value = null }
+
+    fun completeWebLogin(cookies: String) {
+        val hoster = _webLogin.value ?: return
+        _webLogin.value = null
+        addAccountWithCookies(hoster, cookies)
+    }
 
     fun addAccount(hoster: Hoster, username: String?, password: String?, apiKey: String?) {
         viewModelScope.launch(Dispatchers.IO) {

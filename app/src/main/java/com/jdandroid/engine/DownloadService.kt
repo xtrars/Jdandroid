@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
 import com.jdandroid.container.ClickNLoadServer
+import com.jdandroid.container.CnlStatus
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkSink
 import com.jdandroid.ui.MainActivity
@@ -80,6 +81,7 @@ class DownloadService : Service() {
                 cnlWanted = false
                 cnlServer?.stop()
                 cnlServer = null
+                CnlStatus.set(false)
                 scope.launch { refresh() }
             }
             else -> scope.launch { engine.pump() }
@@ -93,7 +95,9 @@ class DownloadService : Service() {
             cnlServer = ClickNLoadServer { links ->
                 scope.launch { LinkSink.addUrls(applicationContext, links) }
             }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
+            CnlStatus.set(true)
         } catch (e: Exception) {
+            CnlStatus.set(false)
             android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: ${e.message}")
         }
     }
@@ -160,6 +164,7 @@ class DownloadService : Service() {
 
     override fun onDestroy() {
         cnlServer?.stop()
+        CnlStatus.set(false)
         wakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()
         super.onDestroy()

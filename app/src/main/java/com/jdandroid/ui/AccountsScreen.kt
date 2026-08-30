@@ -192,23 +192,6 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
-    var webLoginFor by remember { mutableStateOf<Hoster?>(null) }
-
-    webLoginFor?.let { h ->
-        val url = h.webLoginUrl
-        if (url != null) {
-            WebLoginDialog(
-                loginUrl = url,
-                onDismiss = { webLoginFor = null },
-                onLoggedIn = { cookies ->
-                    vm.addAccountWithCookies(h, cookies)
-                    webLoginFor = null
-                    onDismiss()
-                }
-            )
-        }
-    }
-
     val hoster = selected
     val valid = hoster != null && if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
         username.isNotBlank() && password.isNotBlank()
@@ -295,7 +278,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                     if (h.webLoginUrl != null) {
                         Spacer(Modifier.height(12.dp))
                         OutlinedButton(
-                            onClick = { webLoginFor = h },
+                            onClick = { vm.requestWebLogin(h); onDismiss() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Person, null)

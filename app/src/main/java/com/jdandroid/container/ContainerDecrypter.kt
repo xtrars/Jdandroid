@@ -106,9 +106,10 @@ object ContainerDecrypter {
     }
 
     private fun base64(s: String): ByteArray {
-        val cleaned = onlyBase64(s)
-        val padded = cleaned.substringBefore('=') +
-            "=".repeat((4 - cleaned.substringBefore('=').length % 4) % 4)
-        return android.util.Base64.decode(padded, android.util.Base64.DEFAULT)
+        val cleaned = onlyBase64(s).substringBefore('=')
+        val padded = cleaned + "=".repeat((4 - cleaned.length % 4) % 4)
+        // java.util.Base64 (API 26+) statt android.util.Base64: identisches
+        // Verhalten, aber ohne Android-Framework testbar.
+        return java.util.Base64.getDecoder().decode(padded)
     }
 }

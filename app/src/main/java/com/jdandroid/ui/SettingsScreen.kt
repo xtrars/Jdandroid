@@ -162,6 +162,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
             )
+            val cnlRunning by com.jdandroid.container.CnlStatus.running.collectAsState()
+            Text(
+                if (cnlRunning) "Status: Server läuft und nimmt Links entgegen."
+                else "Status: Server läuft nicht.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (cnlRunning) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.height(8.dp))
             Text(
                 "DLC-Dateien lassen sich über \"Öffnen mit\" bzw. Teilen importieren. " +
                     "Die Entschlüsselung nutzt den JDownloader-DLC-Dienst.",
