@@ -32,8 +32,14 @@ class DdownloadHoster : Hoster {
     private val pattern =
         Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([A-Za-z0-9]{6,20})""")
 
+    /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
+    private val browserUa =
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/122.0.0.0 Mobile Safari/537.36"
+
     /** Ein Cookie-Speicher (Session) pro Account-Id. */
     private val cookieStores = HashMap<Long, MutableList<Cookie>>()
+    private val clients = HashMap<Long, OkHttpClient>()
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
@@ -41,16 +47,18 @@ class DdownloadHoster : Hoster {
         pattern.find(url)?.groupValues?.get(1)
             ?: throw HosterException("Ungültiger ddownload-Link", true)
 
-    private fun clientFor(accountId: Long): OkHttpClient {
+    private data class Resp(val code: Int, val body: String)
+
+    private fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
-        return OkHttpClient.Builder()
+        OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
                     for (c in cookies) {
-                        store.removeAll { it.name == c.name }
+                        store.removeAll { it.name == c.name && it.domain == c.domain }
                         store.add(c)
                     }
                 }
@@ -60,60 +68,129 @@ class DdownloadHoster : Hoster {
             .build()
     }
 
-    private fun OkHttpClient.getText(url: String): String = newCall(
-        Request.Builder().url(url).header("User-Agent", Http.USER_AGENT).build()
-    ).execute().use { it.body?.string() ?: "" }
-
-    private fun OkHttpClient.postText(url: String, form: Map<String, String>): String {
-        val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
-        return newCall(
-            Request.Builder().url(url).header("User-Agent", Http.USER_AGENT).post(body).build()
-        ).execute().use { it.body?.string() ?: "" }
+    private fun OkHttpClient.fetch(
+        url: String,
+        form: Map<String, String>? = null,
+        referer: String? = null
+    ): Resp {
+        val builder = Request.Builder()
+            .url(url)
+            .header("User-Agent", browserUa)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "de,en;q=0.8")
+        referer?.let { builder.header("Referer", it) }
+        if (form != null) {
+            val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
+            builder.post(body)
+        }
+        return newCall(builder.build()).execute().use { resp ->
+            Resp(resp.code, resp.body?.string() ?: "")
+        }
     }
 
-    /** Loggt ein und wirft bei falschen Zugangsdaten. Liefert den Client mit Session. */
-    private fun login(account: Account): OkHttpClient {
+    /** Erkennt Cloudflare-/WAF-Blockaden, damit die Meldung nicht "falsches Passwort" lautet. */
+    private fun checkBlocked(resp: Resp) {
+        val blocked = resp.code == 403 || resp.code == 503 ||
+            resp.body.contains("Just a moment", true) ||
+            resp.body.contains("cf-browser-verification", true) ||
+            resp.body.contains("Attention Required", true) ||
+            resp.body.contains("Enable JavaScript and cookies", true)
+        if (blocked) {
+            throw HosterException(
+                "ddownload: Zugriff von Cloudflare blockiert (HTTP ${resp.code}). " +
+                    "Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.",
+                permanent = false
+            )
+        }
+    }
+
+    /** Eingeloggt erkennt man zuverlässig am Logout-Link, nicht am Cookie-Namen. */
+    private fun isLoggedIn(html: String): Boolean =
+        html.contains("op=logout", true) ||
+            (html.contains("?op=my_account", true) && html.contains("Account type", true))
+
+    /**
+     * Loggt ein (falls nötig) und liefert Client plus HTML der Kontoseite.
+     * Verifiziert das Ergebnis, statt sich auf einen Cookie-Namen zu verlassen.
+     */
+    private fun loginAndFetchAccount(account: Account): Pair<OkHttpClient, String> {
         val user = account.username ?: throw HosterException("Kein Benutzername hinterlegt", true)
         val pass = account.password ?: throw HosterException("Kein Passwort hinterlegt", true)
         val client = clientFor(account.id)
-        // vorhandene Session evtl. noch gültig – aber Login ist idempotent
-        val html = client.postText(
-            "$siteBase/",
-            mapOf(
-                "op" to "login",
-                "login" to user,
-                "password" to pass,
-                "redirect" to "$siteBase/?op=my_account"
-            )
-        )
-        if (html.contains("Incorrect Login or Password", ignoreCase = true) ||
-            html.contains("Wrong password", ignoreCase = true)
+
+        // Bestehende Session weiterverwenden
+        val existing = runCatching { client.fetch("$siteBase/?op=my_account", referer = siteBase) }
+            .getOrNull()
+        if (existing != null && isLoggedIn(existing.body)) return client to existing.body
+
+        // 1) Login-Seite holen: setzt Basis-Cookies und liefert versteckte Felder
+        val loginPage = client.fetch("$siteBase/login.html", referer = siteBase)
+        checkBlocked(loginPage)
+
+        // 2) Versteckte Felder des Login-Formulars uebernehmen (op, token, rand ...)
+        val form = hiddenInputs(loginPage.body).toMutableMap()
+        form["op"] = "login"
+        form["login"] = user
+        form["password"] = pass
+        form.putIfAbsent("redirect", "")
+
+        val posted = client.fetch("$siteBase/", form = form, referer = "$siteBase/login.html")
+        checkBlocked(posted)
+
+        if (posted.body.contains("Incorrect Login or Password", true) ||
+            posted.body.contains("Wrong password", true) ||
+            posted.body.contains("Login or password incorrect", true)
         ) {
-            throw HosterException("Login fehlgeschlagen: falscher Benutzername oder Passwort", true)
+            throw HosterException(
+                "ddownload: Benutzername oder Passwort falsch", permanent = true
+            )
         }
-        val loggedIn = cookieStores[account.id]?.any { it.name == "xfss" || it.name == "login" } == true
-        if (!loggedIn) {
-            throw HosterException("Login fehlgeschlagen (keine Session vom Server erhalten)", true)
+
+        // 3) Ergebnis pruefen
+        val accountPage = client.fetch("$siteBase/?op=my_account", referer = siteBase)
+        checkBlocked(accountPage)
+        if (!isLoggedIn(accountPage.body)) {
+            val cookieNames = cookieStores[account.id]?.joinToString(",") { it.name }.orEmpty()
+            throw HosterException(
+                "ddownload: Login nicht bestätigt (HTTP ${posted.code}" +
+                    (if (cookieNames.isNotBlank()) ", Cookies: $cookieNames" else ", keine Cookies") +
+                    "). Zugangsdaten prüfen; bei aktiver Zwei-Faktor-Anmeldung wird der " +
+                    "Login nicht unterstützt.",
+                permanent = false
+            )
         }
-        return client
+        return client to accountPage.body
+    }
+
+    /** Alle hidden-Felder eines Formulars einsammeln (Reihenfolge der Attribute egal). */
+    private fun hiddenInputs(html: String): Map<String, String> {
+        val result = LinkedHashMap<String, String>()
+        Regex("""<input\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(html).forEach { tag ->
+            val t = tag.value
+            val name = Regex("""\bname=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .find(t)?.groupValues?.get(1) ?: return@forEach
+            val value = Regex("""\bvalue=["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+                .find(t)?.groupValues?.get(1) ?: ""
+            result[name] = value
+        }
+        return result
     }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val client = login(account)
-        val html = client.getText("$siteBase/?op=my_account")
+        val (_, html) = loginAndFetchAccount(account)
 
-        // "Premium account expire: 15 January 2026" o.ä.
         val expire = Regex(
-            """[Pp]remium[^<:]*expire[^:<]*:?\s*</?[^>]*>?\s*([0-9]{1,2}\s+\w+\s+[0-9]{4})"""
+            """[Pp]remium[^<:]*expire[^:<]*:?\s*(?:</?[^>]*>\s*)*([0-9]{1,2}\s+\w+\s+[0-9]{4})"""
         ).find(html)?.groupValues?.get(1)?.let { parseDate(it) } ?: 0L
 
-        val hasPremiumWord = Regex("""[Pp]remium[- ]?[Aa]ccount""").containsMatchIn(html) ||
-            html.contains("premium account expire", ignoreCase = true)
-        val premium = expire > System.currentTimeMillis() || (hasPremiumWord && expire == 0L)
+        val premiumWord = Regex("""[Pp]remium""").containsMatchIn(html) &&
+            !Regex("""Account type[^<]*(?:</?[^>]*>\s*)*Free""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(html)
+        val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
 
-        // Traffic, falls angezeigt ("Traffic available: 50 GB")
-        val trafficLeft = Regex("""[Tt]raffic\s+available[^:]*:?\s*</?[^>]*>?\s*([\d.]+)\s*(GB|MB|TB)""")
-            .find(html)?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
+        val trafficLeft = Regex(
+            """[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*([\d.]+)\s*(GB|MB|TB)"""
+        ).find(html)?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
 
         AccountInfo(
             valid = true,
@@ -128,22 +205,23 @@ class DdownloadHoster : Hoster {
             if (account == null) throw HosterException(
                 "ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).", true
             )
-            val client = login(account)
+            val (client, _) = loginAndFetchAccount(account)
             val code = fileCode(url)
             val pageUrl = "$siteBase/$code"
 
-            var html = client.getText(pageUrl)
-            checkOffline(html)
+            var page = client.fetch(pageUrl, referer = siteBase)
+            checkBlocked(page)
+            checkOffline(page.body)
 
-            // Premium liefert oft direkt einen Link; sonst zweistufige Form absenden.
-            var direct = extractDirectLink(html)
+            var direct = extractDirectLink(page.body)
             if (direct == null) {
-                val form = extractForm(html) ?: throw HosterException(
+                val form = downloadForm(page.body) ?: throw HosterException(
                     "ddownload: Download-Formular nicht gefunden (kein Premium?)", true
                 )
-                html = client.postText(pageUrl, form)
-                checkOffline(html)
-                direct = extractDirectLink(html)
+                page = client.fetch(pageUrl, form = form, referer = pageUrl)
+                checkBlocked(page)
+                checkOffline(page.body)
+                direct = extractDirectLink(page.body)
             }
             if (direct.isNullOrBlank()) {
                 throw HosterException(
@@ -151,44 +229,37 @@ class DdownloadHoster : Hoster {
                 )
             }
             val fileName = Regex("""<h[12][^>]*>\s*(?:Download\s+File\s*)?([^<]+?)\s*</h[12]>""")
-                .find(html)?.groupValues?.get(1)?.trim()?.ifBlank { null }
+                .find(page.body)?.groupValues?.get(1)?.trim()?.ifBlank { null }
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(direct, fileName)
         }
 
     private fun checkOffline(html: String) {
-        if (html.contains("File Not Found", ignoreCase = true) ||
-            html.contains("file was deleted", ignoreCase = true) ||
-            html.contains("No such file", ignoreCase = true)
+        if (html.contains("File Not Found", true) ||
+            html.contains("file was deleted", true) ||
+            html.contains("No such file", true)
         ) {
             throw HosterException("Datei ist offline", true)
         }
     }
 
-    /** Sammelt die versteckten Formularfelder der Download-Form (op=download2 etc.). */
-    private fun extractForm(html: String): Map<String, String>? {
-        val inputs = Regex(
-            """<input[^>]*\bname=["']([^"']+)["'][^>]*\bvalue=["']([^"']*)["']""",
-            RegexOption.IGNORE_CASE
-        ).findAll(html).associate { it.groupValues[1] to it.groupValues[2] }.toMutableMap()
-
-        if (inputs.isEmpty() || !inputs.containsKey("op")) return null
-        // Premium-Methode bevorzugen, sonst Standardablauf
+    /** Felder der Download-Form (op=download1 -> download2, Premium-Methode). */
+    private fun downloadForm(html: String): Map<String, String>? {
+        val inputs = hiddenInputs(html).toMutableMap()
+        if (!inputs.containsKey("op")) return null
         if (inputs["op"] == "download1") inputs["op"] = "download2"
         inputs["method_premium"] = "1"
+        inputs.remove("method_free")
         return inputs
     }
 
-    /** Findet den finalen Direktlink im HTML. */
     private fun extractDirectLink(html: String): String? {
-        // 1) expliziter Download-Button/Link
         Regex(
             """<a[^>]+href=["'](https?://[^"']+?/d/[^"']+|https?://[^"']*download[^"']*)["'][^>]*>""",
             RegexOption.IGNORE_CASE
         ).find(html)?.let { return it.groupValues[1] }
-        // 2) Link zu einer Datei-Endung auf einem Download-Host
         Regex(
-            """(https?://[^\s"'<>]+\.(?:rar|zip|7z|mkv|mp4|avi|iso|part\d+\.rar|bin|exe|pdf)[^\s"'<>]*)""",
+            """(https?://[^\s"'<>]+\.(?:rar|zip|7z|mkv|mp4|avi|iso|bin|exe|pdf)[^\s"'<>]*)""",
             RegexOption.IGNORE_CASE
         ).find(html)?.let { return it.groupValues[1] }
         return null
