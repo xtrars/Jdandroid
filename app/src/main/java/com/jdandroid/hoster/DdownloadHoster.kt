@@ -37,6 +37,9 @@ class DdownloadHoster : Hoster {
 
     private val apiBase = "https://api-v2.ddownload.com/api"
 
+    /** Obergrenze fuer als Text gelesene Antworten (HTML-Seiten sind klein). */
+    private val MAX_TEXT_BYTES = 2L * 1024 * 1024
+
     private val siteBase = "https://ddownload.com"
     private val pattern =
         Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([A-Za-z0-9]{6,20})""")
@@ -56,7 +59,12 @@ class DdownloadHoster : Hoster {
         pattern.find(url)?.groupValues?.get(1)
             ?: throw HosterException("Ungültiger ddownload-Link", true)
 
-    private data class Resp(val code: Int, val body: String)
+    private data class Resp(
+        val code: Int,
+        val body: String,
+        val location: String? = null,
+        val contentType: String? = null
+    )
 
     private fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
@@ -80,7 +88,8 @@ class DdownloadHoster : Hoster {
     private fun OkHttpClient.fetch(
         url: String,
         form: Map<String, String>? = null,
-        referer: String? = null
+        referer: String? = null,
+        followRedirects: Boolean = true
     ): Resp {
         val builder = Request.Builder()
             .url(url)
@@ -92,9 +101,32 @@ class DdownloadHoster : Hoster {
             val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
             builder.post(body)
         }
-        return newCall(builder.build()).execute().use { resp ->
-            Resp(resp.code, resp.body?.string() ?: "")
+        val client = if (followRedirects) this else {
+            newBuilder().followRedirects(false).followSslRedirects(false).build()
         }
+        return client.newCall(builder.build()).execute().use { resp ->
+            val contentType = resp.header("Content-Type")
+            // Antwortkoerper NIE unbegrenzt als Text lesen: folgt der Server der
+            // Download-Weiterleitung, ist der Koerper die komplette Datei und
+            // .string() sprengt den Heap (OutOfMemoryError).
+            val text = if (isTextual(contentType)) {
+                runCatching { resp.peekBody(MAX_TEXT_BYTES).string() }.getOrDefault("")
+            } else {
+                ""
+            }
+            Resp(resp.code, text, resp.header("Location"), contentType)
+        }
+    }
+
+    /** Nur textartige Antworten duerfen in den Speicher gelesen werden. */
+    internal fun isTextual(contentType: String?): Boolean {
+        if (contentType.isNullOrBlank()) return true
+        val type = contentType.lowercase()
+        return type.startsWith("text/") ||
+            type.contains("html") ||
+            type.contains("json") ||
+            type.contains("xml") ||
+            type.contains("javascript")
     }
 
     /** Erkennt Cloudflare-/WAF-Blockaden, damit die Meldung nicht "falsches Passwort" lautet. */
@@ -260,10 +292,15 @@ class DdownloadHoster : Hoster {
                 val form = downloadForm(page.body) ?: throw HosterException(
                     "ddownload: Download-Formular nicht gefunden (kein Premium?)", true
                 )
-                page = client.fetch(pageUrl, form = form, referer = pageUrl)
+                // Ohne Redirect-Folgen: XFileSharing antwortet auf das Formular
+                // mit einer Weiterleitung, deren Location bereits der
+                // Direktlink ist. Wuerde man folgen, laedt man die Datei selbst.
+                page = client.fetch(
+                    pageUrl, form = form, referer = pageUrl, followRedirects = false
+                )
                 checkBlocked(page)
-                checkOffline(page.body)
-                direct = extractDirectLink(page.body)
+                direct = page.location ?: extractDirectLink(page.body)
+                if (direct == null) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
                 throw HosterException(

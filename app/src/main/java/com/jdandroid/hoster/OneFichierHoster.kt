@@ -36,7 +36,9 @@ class OneFichierHoster : Hoster {
             .post(body.toString().toRequestBody(jsonType))
             .build()
         val text = Http.client.newCall(request).execute().use { resp ->
-            resp.body?.string() ?: throw HosterException("Leere Antwort von 1fichier")
+            if (resp.body == null) throw HosterException("Leere Antwort von 1fichier")
+            // begrenzt lesen, siehe Http.get
+            resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
         val json = JSONObject(text)
         if (json.optString("status") == "KO") {

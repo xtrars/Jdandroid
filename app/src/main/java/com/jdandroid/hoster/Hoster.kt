@@ -60,10 +60,19 @@ object Http {
     const val USER_AGENT =
         "Mozilla/5.0 (Android) JDAndroid/0.1"
 
+    /** Obergrenze fuer als Text gelesene Antworten (API-Antworten sind klein). */
+    const val MAX_TEXT_BYTES = 2L * 1024 * 1024
+
+    /**
+     * Liest eine Antwort als Text - aber nie unbegrenzt: antwortet ein Server
+     * unerwartet mit einer Datei statt JSON, wuerde ein ungebremstes string()
+     * den gesamten Inhalt in den Speicher laden (OutOfMemoryError).
+     */
     fun get(url: String): String = client.newCall(
         Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
     ).execute().use { resp ->
-        resp.body?.string() ?: throw HosterException("Leere Antwort vom Server")
+        if (resp.body == null) throw HosterException("Leere Antwort vom Server")
+        resp.peekBody(MAX_TEXT_BYTES).string()
     }
 }
 
