@@ -20,6 +20,7 @@ class SettingsRepository(private val context: Context) {
     private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
+    private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
 
     val maxConcurrent: Flow<Int> =
         context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
@@ -41,6 +42,10 @@ class SettingsRepository(private val context: Context) {
     val speedLimitKbps: Flow<Int> =
         context.dataStore.data.map { it[keySpeedLimit] ?: 0 }
 
+    /** Click'n'Load-Server (Port 9666) aktiv. */
+    val clickNLoadEnabled: Flow<Boolean> =
+        context.dataStore.data.map { it[keyClickNLoad] ?: false }
+
     suspend fun currentMaxConcurrent(): Int = maxConcurrent.first()
 
     suspend fun currentExportToDownloads(): Boolean = exportToDownloads.first()
@@ -58,6 +63,12 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setSpeedLimitKbps(value: Int) {
         context.dataStore.edit { it[keySpeedLimit] = value.coerceIn(0, 1_000_000) }
+    }
+
+    suspend fun currentClickNLoadEnabled(): Boolean = clickNLoadEnabled.first()
+
+    suspend fun setClickNLoadEnabled(value: Boolean) {
+        context.dataStore.edit { it[keyClickNLoad] = value }
     }
 
     suspend fun setExportToDownloads(value: Boolean) {

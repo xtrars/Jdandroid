@@ -2,6 +2,7 @@ package com.jdandroid.ui
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -39,13 +40,14 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     private val sharedText = mutableStateOf<String?>(null)
+    private val dlcContent = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        sharedText.value = sharedTextFrom(intent)
+        handleIntent(intent)
         setContent {
             val darkTheme = isSystemInDarkTheme()
             val context = LocalContext.current
@@ -61,7 +63,9 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     MainScreen(
                         sharedText = sharedText.value,
-                        onSharedTextConsumed = { sharedText.value = null }
+                        onSharedTextConsumed = { sharedText.value = null },
+                        dlcContent = dlcContent.value,
+                        onDlcConsumed = { dlcContent.value = null }
                     )
                 }
             }
@@ -70,17 +74,44 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        sharedTextFrom(intent)?.let { sharedText.value = it }
+        handleIntent(intent)
     }
 
-    private fun sharedTextFrom(intent: Intent?): String? =
-        if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT) else null
+    /** Verteilt eingehende Intents auf geteilten Text bzw. DLC-Dateien. */
+    private fun handleIntent(intent: Intent?) {
+        intent ?: return
+        val uri: Uri? = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!text.isNullOrBlank()) { sharedText.value = text; return }
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            else -> null
+        }
+        if (uri != null) {
+            val looksLikeDlc = (uri.toString().endsWith(".dlc", true)) ||
+                intent.type == "application/octet-stream"
+            val content = runCatching {
+                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (content != null && (looksLikeDlc || content.trim().endsWith("=="))) {
+                dlcContent.value = content
+            }
+        }
+    }
 }
 
 private enum class Tab(val label: String) { Downloads("Downloads"), Accounts("Konten"), Settings("Einstellungen") }
 
 @Composable
-fun MainScreen(sharedText: String?, onSharedTextConsumed: () -> Unit) {
+fun MainScreen(
+    sharedText: String?,
+    onSharedTextConsumed: () -> Unit,
+    dlcContent: String?,
+    onDlcConsumed: () -> Unit
+) {
     var tab by remember { mutableStateOf(Tab.Downloads) }
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
@@ -110,7 +141,9 @@ fun MainScreen(sharedText: String?, onSharedTextConsumed: () -> Unit) {
     ) { padding ->
         val modifier = Modifier.padding(padding)
         when (tab) {
-            Tab.Downloads -> DownloadsScreen(downloadVm, sharedText, onSharedTextConsumed, modifier)
+            Tab.Downloads -> DownloadsScreen(
+                downloadVm, sharedText, onSharedTextConsumed, dlcContent, onDlcConsumed, modifier
+            )
             Tab.Accounts -> AccountsScreen(accountVm, modifier)
             Tab.Settings -> SettingsScreen(modifier)
         }

@@ -12,8 +12,11 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
+import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.LinkSink
 import com.jdandroid.ui.MainActivity
+import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,9 +32,11 @@ class DownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var engine: DownloadEngine
     private var wakeLock: PowerManager.WakeLock? = null
+    private var cnlServer: ClickNLoadServer? = null
 
     override fun onCreate() {
         super.onCreate()
+        startClickNLoadIfEnabled()
         // Haelt die CPU wach, damit Downloads im Doze-Modus nicht stocken;
         // Timeout als Sicherheitsnetz, Service beendet sich bei leerer Queue selbst.
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
@@ -53,23 +58,50 @@ class DownloadService : Service() {
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
+            ACTION_START_CNL -> { startClickNLoadIfEnabled(); scope.launch { refresh() } }
+            ACTION_STOP_CNL -> {
+                cnlServer?.stop()
+                cnlServer = null
+                scope.launch { refresh() }
+            }
             else -> scope.launch { engine.pump() }
         }
         return START_STICKY
+    }
+
+    private fun startClickNLoadIfEnabled() {
+        scope.launch {
+            if ((application as JdApp).settings.currentClickNLoadEnabled() && cnlServer == null) {
+                try {
+                    cnlServer = ClickNLoadServer { links ->
+                        scope.launch { LinkSink.addUrls(applicationContext, links) }
+                    }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
+                } catch (e: Exception) {
+                    android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: ${e.message}")
+                }
+            }
+        }
     }
 
     private suspend fun refresh() {
         val dao = (application as JdApp).db.downloadDao()
         val queued = dao.queuedCount()
         val active = engine.activeCount
-        if (active == 0 && queued == 0) {
+        val cnlActive = cnlServer != null
+        // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht
+        if (active == 0 && queued == 0 && !cnlActive) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
         val text = buildString {
-            append("$active aktiv")
-            if (queued > 0) append(", $queued wartend")
+            if (active == 0 && queued == 0 && cnlActive) {
+                append("Click'n'Load aktiv (Port ${ClickNLoadServer.PORT})")
+            } else {
+                append("$active aktiv")
+                if (queued > 0) append(", $queued wartend")
+                if (cnlActive) append(" · CnL an")
+            }
         }
         val manager = getSystemService(android.app.NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
@@ -100,6 +132,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        cnlServer?.stop()
         wakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()
         super.onDestroy()
@@ -113,6 +146,8 @@ class DownloadService : Service() {
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
         const val ACTION_PAUSE_ALL = "com.jdandroid.action.PAUSE_ALL"
+        const val ACTION_START_CNL = "com.jdandroid.action.START_CNL"
+        const val ACTION_STOP_CNL = "com.jdandroid.action.STOP_CNL"
         const val EXTRA_ID = "id"
 
         fun send(context: Context, action: String, id: Long = -1) {

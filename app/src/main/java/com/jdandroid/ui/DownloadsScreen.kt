@@ -25,6 +25,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -34,7 +36,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,11 +66,14 @@ fun DownloadsScreen(
     vm: DownloadViewModel,
     sharedText: String?,
     onSharedTextConsumed: () -> Unit,
+    dlcContent: String?,
+    onDlcConsumed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val downloads by vm.downloads.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var prefill by remember { mutableStateOf("") }
+    val snackbarHost = remember { SnackbarHostState() }
 
     LaunchedEffect(sharedText) {
         if (sharedText != null) {
@@ -76,8 +83,20 @@ fun DownloadsScreen(
         }
     }
 
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(dlcContent) {
+        if (dlcContent != null) {
+            snackbarHost.showSnackbar("DLC wird importiert …")
+            vm.importDlc(dlcContent) { result ->
+                scope.launch { snackbarHost.showSnackbar(result) }
+            }
+            onDlcConsumed()
+        }
+    }
+
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = {
             TopAppBar(
                 title = { Text("Downloads") },

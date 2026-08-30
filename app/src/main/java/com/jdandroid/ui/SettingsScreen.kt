@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.jdandroid.JdApp
+import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -44,6 +45,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val export by settings.exportToDownloads.collectAsState(initial = true)
     val autoExtract by settings.autoExtract.collectAsState(initial = true)
     val deleteArchive by settings.deleteArchiveAfterExtract.collectAsState(initial = false)
+    val cnlEnabled by settings.clickNLoadEnabled.collectAsState(initial = false)
 
     var passwords by remember { mutableStateOf("") }
     var maxConcurrentText by remember { mutableStateOf("") }
@@ -138,6 +140,32 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 placeholder = { Text("passwort1\npasswort2\n…") }
+            )
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(16.dp))
+
+            Text("Container & Click'n'Load", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            SettingSwitch(
+                title = "Click'n'Load aktivieren",
+                subtitle = "Lokaler Server auf Port ${com.jdandroid.container.ClickNLoadServer.PORT}. " +
+                    "Browser auf diesem Gerät können Links direkt hierher senden.",
+                checked = cnlEnabled,
+                onChange = { v ->
+                    scope.launch {
+                        settings.setClickNLoadEnabled(v)
+                        val action = if (v) DownloadService.ACTION_START_CNL
+                        else DownloadService.ACTION_STOP_CNL
+                        DownloadService.send(context, action)
+                    }
+                }
+            )
+            Text(
+                "DLC-Dateien lassen sich über \"Öffnen mit\" bzw. Teilen importieren. " +
+                    "Die Entschlüsselung nutzt den JDownloader-DLC-Dienst.",
+                style = MaterialTheme.typography.bodySmall
             )
 
             Spacer(Modifier.height(24.dp))

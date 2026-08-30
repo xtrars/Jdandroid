@@ -28,8 +28,12 @@ nicht unterstützt.
   Benachrichtigung, WakeLock gegen Doze-Stillstand
 - **Konten-Verwaltung**: Accounts pro Hoster hinterlegen und prüfen
   (Premium-Status, Ablaufdatum, Rest-Traffic)
+- **Container-Import**: **DLC**-Dateien (über „Öffnen mit"/Teilen) und
+  **Click'n'Load 2** (lokaler Server auf Port 9666, Browser auf demselben
+  Gerät sendet Links direkt an die App)
 - **Automatisches Entpacken**: ZIP (inkl. AES-Verschlüsselung), 7z (inkl.
-  Passwort) und RAR; mehrteilige Archive (`.part1.rar`, `.r00`, `.z01`,
+  Passwort) und **RAR4 + RAR5** (inkl. Verschlüsselung, über natives
+  7-Zip-Binding); mehrteilige Archive (`.part1.rar`, `.r00`, `.z01`,
   `.7z.001`) werden entpackt, sobald alle Teile fertig sind
 - **Passwortliste** wie im JDownloader: ein Passwort pro Zeile, wird beim
   Entpacken der Reihe nach durchprobiert
@@ -74,19 +78,33 @@ app/src/main/java/com/jdandroid/
 │   ├── RapidgatorHoster.kt
 │   ├── OneFichierHoster.kt
 │   └── DdownloadHoster.kt
+├── container/                DLC-Decrypt + Click'n'Load-Server
 ├── engine/                   DownloadService (Foreground), DownloadEngine
-│   └── Extractor.kt          ZIP/7z/RAR-Entpacker mit Passwortliste
+│   ├── Extractor.kt          ZIP/7z/RAR4+RAR5-Entpacker mit Passwortliste
+│   └── SpeedLimiter.kt       Globale Geschwindigkeitsbegrenzung
 └── ui/                       Compose-UI (Downloads, Konten, Einstellungen)
 ```
 
 Neue Hoster lassen sich ergänzen, indem das `Hoster`-Interface implementiert
 und die Klasse in `HosterRegistry` registriert wird.
 
+## Container (DLC & Click'n'Load)
+
+- **DLC**: Eine `.dlc`-Datei über „Öffnen mit" oder Teilen an JDAndroid
+  senden – die Links werden importiert. Die Entschlüsselung läuft über den
+  JDownloader-DLC-Webdienst (der Schlüssel liegt serverseitig). Ist der
+  Dienst nicht erreichbar, meldet die App das klar; dann bleibt CNL als
+  zuverlässigerer, rein lokaler Weg.
+- **Click'n'Load 2**: In den Einstellungen aktivieren. Die App öffnet einen
+  lokalen Server auf `127.0.0.1:9666`. Ein Browser **auf demselben Gerät**
+  mit CNL-Button sendet die (AES-verschlüsselten) Links dorthin; die
+  Entschlüsselung passiert komplett offline in der App.
+
 ## Bekannte Grenzen
 
-- RAR5-Archive mit Verschlüsselung werden von der verwendeten Bibliothek
-  (junrar) nicht unterstützt; RAR4 (auch mehrteilig) funktioniert.
 - Kein Captcha-Handling, daher keine Free-Downloads.
+- Der JDownloader-DLC-Webdienst ist ein Fremddienst; seine Verfügbarkeit
+  liegt außerhalb der App. Click'n'Load ist davon unabhängig.
 - Accounts werden in der lokalen App-Datenbank gespeichert (kein Sync,
   keine zusätzliche Verschlüsselung über die Android-App-Sandbox hinaus).
 - Die Hoster-API-Antwortformate sind nach offizieller Dokumentation

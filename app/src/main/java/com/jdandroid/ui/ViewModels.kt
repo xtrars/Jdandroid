@@ -4,13 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
+import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.data.Account
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.LinkSink
 import com.jdandroid.engine.DownloadService
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
-import com.jdandroid.hoster.LinkParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,17 +30,26 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
     fun addLinks(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val links = LinkParser.parse(text)
-            var added = 0
-            links.forEach { (url, hoster) ->
-                if (dao.countByUrl(url) == 0) {
-                    dao.insert(DownloadItem(url = url, hosterId = hoster.id))
-                    added++
-                }
+            LinkSink.addFromText(getApplication(), text)
+        }
+    }
+
+    /**
+     * Importiert eine DLC-Container-Datei: entschluesselt sie und reiht die
+     * enthaltenen Links ein. Meldet Ergebnis/Fehler ueber [onResult].
+     */
+    fun importDlc(content: String, onResult: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val message = try {
+                val urls = ContainerDecrypter.decryptDlc(content)
+                val added = LinkSink.addUrls(getApplication(), urls)
+                if (added > 0) "$added Link(s) aus DLC hinzugefügt"
+                else "DLC gelesen, aber keine unterstützten Hoster enthalten " +
+                    "(${urls.size} Link(s) insgesamt)"
+            } catch (e: Exception) {
+                e.message ?: "DLC-Import fehlgeschlagen"
             }
-            if (added > 0) {
-                DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
-            }
+            launch(Dispatchers.Main) { onResult(message) }
         }
     }
 

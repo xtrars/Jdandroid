@@ -1,11 +1,19 @@
 package com.jdandroid.engine
 
-import com.github.junrar.Junrar
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
+import net.sf.sevenzipjbinding.ExtractOperationResult
+import net.sf.sevenzipjbinding.IArchiveOpenCallback
+import net.sf.sevenzipjbinding.IArchiveOpenVolumeCallback
+import net.sf.sevenzipjbinding.ICryptoGetTextPassword
+import net.sf.sevenzipjbinding.IInStream
+import net.sf.sevenzipjbinding.PropID
+import net.sf.sevenzipjbinding.SevenZip
+import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 
 /**
  * Entpackt Archive nach dem Download. Passwoerter werden wie im JDownloader
@@ -100,11 +108,72 @@ object Extractor {
         }
     }
 
+    /**
+     * RAR ueber das native 7-Zip-Binding: unterstuetzt RAR4 und RAR5,
+     * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
+     */
     private fun extractRar(archive: File, destDir: File, password: String?) {
-        if (password != null) {
-            Junrar.extract(archive, destDir, password)
-        } else {
-            Junrar.extract(archive, destDir)
+        val openCallback = RarOpenCallback(archive, password)
+        RandomAccessFile(archive, "r").use { raf ->
+            val inArchive = SevenZip.openInArchive(
+                null, RandomAccessFileInStream(raf), openCallback
+            )
+            try {
+                for (item in inArchive.simpleInterface.archiveItems) {
+                    val path = item.path ?: continue
+                    val out = safeChild(destDir, path)
+                    if (item.isFolder) {
+                        out.mkdirs()
+                        continue
+                    }
+                    out.parentFile?.mkdirs()
+                    val result = out.outputStream().use { stream ->
+                        val sink = net.sf.sevenzipjbinding.ISequentialOutStream { data ->
+                            stream.write(data)
+                            data.size
+                        }
+                        if (password != null) item.extractSlow(sink, password)
+                        else item.extractSlow(sink)
+                    }
+                    if (result != ExtractOperationResult.OK) {
+                        throw IOException("RAR-Extraktion: $result")
+                    }
+                }
+            } finally {
+                runCatching { inArchive.close() }
+                openCallback.close()
+            }
+        }
+    }
+
+    /** Liefert weitere Volumes eines Multipart-RAR und das Passwort beim Oeffnen. */
+    private class RarOpenCallback(
+        private val primary: File,
+        private val password: String?
+    ) : IArchiveOpenCallback, IArchiveOpenVolumeCallback, ICryptoGetTextPassword {
+
+        private val volumes = HashMap<String, RandomAccessFile>()
+        private var lastName: String = primary.absolutePath
+
+        override fun setTotal(files: Long?, bytes: Long?) {}
+        override fun setCompleted(files: Long?, bytes: Long?) {}
+
+        override fun getProperty(propID: PropID): Any? =
+            if (propID == PropID.NAME) lastName else null
+
+        override fun getStream(filename: String): IInStream? {
+            val file = File(primary.parentFile, File(filename).name)
+            if (!file.exists()) return null
+            lastName = file.absolutePath
+            val raf = volumes.getOrPut(file.name) { RandomAccessFile(file, "r") }
+            raf.seek(0)
+            return RandomAccessFileInStream(raf)
+        }
+
+        override fun cryptoGetTextPassword(): String = password ?: ""
+
+        fun close() {
+            volumes.values.forEach { runCatching { it.close() } }
         }
     }
 
