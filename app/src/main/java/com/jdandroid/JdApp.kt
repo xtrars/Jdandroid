@@ -16,6 +16,7 @@ class JdApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashReporter.install(this)
         db = Room.databaseBuilder(this, AppDatabase::class.java, "jdandroid.db")
             .fallbackToDestructiveMigration()
             .build()

@@ -81,7 +81,7 @@ class DownloadService : Service() {
                 cnlWanted = false
                 cnlServer?.stop()
                 cnlServer = null
-                CnlStatus.set(false)
+                CnlStatus.stopped()
                 scope.launch { refresh() }
             }
             else -> scope.launch { engine.pump() }
@@ -91,15 +91,26 @@ class DownloadService : Service() {
 
     private fun startClickNLoadServer() {
         if (cnlServer != null) return
-        try {
-            cnlServer = ClickNLoadServer { links ->
-                scope.launch { LinkSink.addUrls(applicationContext, links) }
-            }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
-            CnlStatus.set(true)
-        } catch (e: Exception) {
-            CnlStatus.set(false)
-            android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: ${e.message}")
+        val onLinks: (List<String>) -> Unit = { links ->
+            scope.launch { LinkSink.addUrls(applicationContext, links) }
         }
+        // Zuerst nur loopback (sicher). Schlaegt das fehl - auf manchen Geraeten
+        // laesst sich 127.0.0.1 nicht binden - auf alle Schnittstellen ausweichen.
+        var lastError: Exception? = null
+        for (host in listOf<String?>(ClickNLoadServer.LOOPBACK, null)) {
+            try {
+                val server = ClickNLoadServer(host, onLinks)
+                server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true)
+                cnlServer = server
+                CnlStatus.started(host ?: "alle Schnittstellen")
+                return
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        val reason = lastError?.message ?: lastError?.javaClass?.simpleName ?: "unbekannt"
+        CnlStatus.failed(reason)
+        android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
     }
 
     private suspend fun refresh() {
@@ -126,7 +137,7 @@ class DownloadService : Service() {
             }
         }
         val manager = getSystemService(android.app.NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(text))
+        runCatching { manager.notify(NOTIFICATION_ID, buildNotification(text)) }
     }
 
     private fun updateWakeLock(shouldHold: Boolean) {
@@ -155,16 +166,25 @@ class DownloadService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        // Ab Android 14 kann startForeground selbst werfen, wenn das System den
+        // Start als aus dem Hintergrund kommend wertet. Das darf die App nicht
+        // mitreissen: dann laeuft der Dienst eben ohne Vordergrund-Status.
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(
+                    NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("DownloadService", "startForeground abgelehnt: ${e.message}")
         }
     }
 
     override fun onDestroy() {
         cnlServer?.stop()
-        CnlStatus.set(false)
+        CnlStatus.stopped()
         wakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()
         super.onDestroy()
@@ -186,7 +206,17 @@ class DownloadService : Service() {
             val intent = Intent(context, DownloadService::class.java)
                 .setAction(action)
                 .putExtra(EXTRA_ID, id)
-            context.startForegroundService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                // Ab Android 12 verboten, wenn die App als "im Hintergrund" gilt
+                // (z.B. Link per Teilen oder Click'n'Load bei geschlossener App).
+                // Das darf die App nicht abstuerzen lassen - regulaerer Start als
+                // Rueckfallebene, sonst laeuft die Warteschlange beim naechsten
+                // Oeffnen der App weiter.
+                android.util.Log.w("DownloadService", "Start abgelehnt: ${e.message}")
+                runCatching { context.startService(intent) }
+            }
         }
     }
 }

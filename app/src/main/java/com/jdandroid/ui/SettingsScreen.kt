@@ -1,5 +1,8 @@
 package com.jdandroid.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,7 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
+import com.jdandroid.container.ClickNLoadServer
+import com.jdandroid.container.CnlStatus
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -150,7 +158,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
                 title = "Click'n'Load aktivieren",
-                subtitle = "Lokaler Server auf Port ${com.jdandroid.container.ClickNLoadServer.PORT}. " +
+                subtitle = "Lokaler Server auf Port ${ClickNLoadServer.PORT}. " +
                     "Browser auf diesem Gerät können Links direkt hierher senden.",
                 checked = cnlEnabled,
                 onChange = { v ->
@@ -162,13 +170,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
             )
-            val cnlRunning by com.jdandroid.container.CnlStatus.running.collectAsState()
+            val cnlRunning by CnlStatus.running.collectAsState()
+            val cnlError by CnlStatus.error.collectAsState()
+            val cnlBoundTo by CnlStatus.boundTo.collectAsState()
             Text(
-                if (cnlRunning) "Status: Server läuft und nimmt Links entgegen."
-                else "Status: Server läuft nicht.",
+                when {
+                    cnlRunning -> "Status: Server läuft auf Port " +
+                        "${ClickNLoadServer.PORT} (${cnlBoundTo.orEmpty()}) " +
+                        "und nimmt Links entgegen."
+                    cnlError != null -> "Status: Start fehlgeschlagen – $cnlError"
+                    cnlEnabled -> "Status: Server wird gestartet …"
+                    else -> "Status: ausgeschaltet."
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (cnlRunning) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
+                color = when {
+                    cnlRunning -> MaterialTheme.colorScheme.primary
+                    cnlError != null -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -176,6 +195,35 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     "Die Entschlüsselung nutzt den JDownloader-DLC-Dienst.",
                 style = MaterialTheme.typography.bodySmall
             )
+
+            // Diagnose: letzter Absturz, damit ein Fehler auf dem Geraet
+            // nachvollziehbar ist statt nur "die App stuerzt ab".
+            var crash by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
+            crash?.let { report ->
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(16.dp))
+                Text("Letzter Absturz", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                SelectionContainer {
+                    Text(
+                        report.take(4000),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("Absturz", report))
+                    }) { Text("Kopieren") }
+                    TextButton(onClick = {
+                        CrashReporter.clear(context)
+                        crash = null
+                    }) { Text("Löschen") }
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
             Text(

@@ -13,8 +13,9 @@ import fi.iki.elonen.NanoHTTPD.Method
  * JDownloader am Desktop.
  */
 class ClickNLoadServer(
+    private val hostname: String? = LOOPBACK,
     private val onLinks: (List<String>) -> Unit
-) : NanoHTTPD("127.0.0.1", PORT) {
+) : NanoHTTPD(hostname, PORT) {
 
     override fun serve(session: IHTTPSession): Response {
         return try {
@@ -69,5 +70,6 @@ class ClickNLoadServer(
 
     companion object {
         const val PORT = 9666
+        const val LOOPBACK = "127.0.0.1"
     }
 }
