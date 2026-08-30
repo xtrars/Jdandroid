@@ -131,7 +131,10 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
 private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY) }
-    val isPremium = account.valid && account.premiumUntil > System.currentTimeMillis()
+    val isPremium = account.valid && (
+        account.premiumUntil > System.currentTimeMillis() ||
+            (account.premiumUntil == 0L && account.statusText?.startsWith("Premium") == true)
+    )
 
     Card(Modifier.fillMaxWidth()) {
         Row(

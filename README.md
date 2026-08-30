@@ -12,11 +12,11 @@ Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Desi
 |---|---|---|
 | Rapidgator (rapidgator.net, rg.to) | Benutzername + Passwort | offizielle API v2 |
 | 1fichier (1fichier.com) | API-Key (Kontoeinstellungen → API) | offizielle REST-API |
-| ddownload (ddownload.com, ddl.to) | API-Key (my.ddownload.com → API) | offizielle API |
+| ddownload (ddownload.com, ddl.to) | Benutzername + Passwort | XFileSharing-Weblogin |
 
-Die Downloads laufen über die offiziellen APIs der Hoster und benötigen einen
-**Premium-Account** bzw. API-Key. Free-Downloads (Captcha + Wartezeit) werden
-nicht unterstützt.
+Die Downloads laufen über die offiziellen APIs bzw. den Weblogin der Hoster
+und benötigen einen **Premium-Account** (bzw. API-Key bei 1fichier).
+Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
 
 ## Funktionen
 
@@ -64,9 +64,10 @@ Play Store müsste er durch einen geheimen Keystore ersetzt werden.
   (`/api/v2/user/login`, `user/info`, `file/download`)
 - **1fichier**: REST-API, dokumentiert unter <https://1fichier.com/api.html>
   (`/v1/user/info.cgi`, `file/info.cgi`, `download/get_token.cgi`, Bearer-API-Key)
-- **ddownload**: API im XFileSharing-Format, dokumentiert unter
-  <https://ddownload.com/api> (`api-v2.ddownload.com/api/account/info`,
-  `file/info`, `file/direct_link`, API-Key aus den Kontoeinstellungen)
+- **ddownload**: XFileSharing-Weblogin (Benutzername/Passwort) mit
+  Session-Cookie; Premium-Direktlink über die zweistufige Download-Form
+  auf <https://ddownload.com/>. Ein API-Key wird nicht verwendet, da der
+  ddownload-Login in der Praxis über Benutzername/Passwort läuft.
 
 ## Architektur
 
