@@ -199,7 +199,7 @@ class DdownloadHoster : Hoster {
     }
 
     /** Alle hidden-Felder eines Formulars einsammeln (Reihenfolge der Attribute egal). */
-    private fun hiddenInputs(html: String): Map<String, String> {
+    internal fun hiddenInputs(html: String): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         Regex("""<input\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(html).forEach { tag ->
             val t = tag.value
@@ -289,9 +289,7 @@ class DdownloadHoster : Hoster {
 
             var direct = extractDirectLink(page.body)
             if (direct == null) {
-                val form = downloadForm(page.body) ?: throw HosterException(
-                    "ddownload: Download-Formular nicht gefunden (kein Premium?)", true
-                )
+                val form = downloadForm(page.body, code)
                 // Ohne Redirect-Folgen: XFileSharing antwortet auf das Formular
                 // mit einer Weiterleitung, deren Location bereits der
                 // Direktlink ist. Wuerde man folgen, laedt man die Datei selbst.
@@ -303,8 +301,18 @@ class DdownloadHoster : Hoster {
                 if (direct == null) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
+                // Diagnosefaehige Meldung statt pauschalem "kein Premium"
+                val hint = when {
+                    page.body.contains("premium", true) &&
+                        page.body.contains("only", true) -> "Datei ist nur für Premium verfügbar"
+                    page.body.contains("countdown", true) ||
+                        page.body.contains("wait", true) -> "Server verlangt Wartezeit (Free-Modus)"
+                    else -> "unerwartete Antwort"
+                }
                 throw HosterException(
-                    "ddownload lieferte keine Download-URL (Premium-Konto nötig?)", true
+                    "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint). " +
+                        "Bei einem Free-Konto sind Downloads nicht möglich.",
+                    permanent = true
                 )
             }
             val fileName = Regex("""<h[12][^>]*>\s*(?:Download\s+File\s*)?([^<]+?)\s*</h[12]>""")
@@ -341,26 +349,49 @@ class DdownloadHoster : Hoster {
         }
     }
 
-    /** Felder der Download-Form (op=download1 -> download2, Premium-Methode). */
-    private fun downloadForm(html: String): Map<String, String>? {
-        val inputs = hiddenInputs(html).toMutableMap()
-        if (!inputs.containsKey("op")) return null
-        if (inputs["op"] == "download1") inputs["op"] = "download2"
+    /**
+     * Felder der Download-Form. Die Feldnamen von XFileSharing sind bekannt,
+     * daher wird das Formular notfalls selbst aufgebaut: fuer angemeldete
+     * Nutzer liefert die Seite teils kein vollstaendiges Formular, und daran
+     * darf die Aufloesung nicht scheitern.
+     */
+    internal fun downloadForm(html: String, code: String): Map<String, String> {
+        val block = formBlock(html) ?: html
+        val inputs = hiddenInputs(block).toMutableMap()
+        inputs["op"] = "download2"
+        inputs["id"] = inputs["id"]?.ifBlank { code } ?: code
+        inputs.putIfAbsent("rand", "")
+        inputs.putIfAbsent("referer", "")
+        inputs["method_free"] = ""
         inputs["method_premium"] = "1"
-        inputs.remove("method_free")
         return inputs
     }
 
-    private fun extractDirectLink(html: String): String? {
-        Regex(
-            """<a[^>]+href=["'](https?://[^"']+?/d/[^"']+|https?://[^"']*download[^"']*)["'][^>]*>""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.let { return it.groupValues[1] }
-        Regex(
-            """(https?://[^\s"'<>]+\.(?:rar|zip|7z|mkv|mp4|avi|iso|bin|exe|pdf)[^\s"'<>]*)""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.let { return it.groupValues[1] }
-        return null
+    /** Das Formular mit der Download-Operation, damit keine Fremdfelder mitgehen. */
+    internal fun formBlock(html: String): String? =
+        Regex("""<form\b[^>]*>.*?</form>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .findAll(html)
+            .firstOrNull { it.value.contains("op\"", true) && it.value.contains("download", true) }
+            ?.value
+
+    /**
+     * Direktlink aus dem HTML. Das frühere Muster "URL enthält download" traf
+     * jede Adresse der Website selbst ("ddownload.com" enthält "download") und
+     * lieferte dadurch Seitenlinks statt der Datei.
+     */
+    internal fun extractDirectLink(html: String): String? {
+        val assets = setOf(
+            "html", "htm", "php", "css", "js", "png", "jpg", "jpeg", "gif",
+            "svg", "ico", "woff", "woff2", "ttf", "webp", "json", "xml"
+        )
+        return Regex("""https?://[^\s"'<>]+""").findAll(html)
+            .map { it.value.trimEnd('\\', '"', '\'', ')') }
+            .firstOrNull { url ->
+                val path = url.substringAfter("://").substringAfter('/', "")
+                val last = path.substringBefore('?').substringAfterLast('/')
+                val ext = last.substringAfterLast('.', "").lowercase()
+                last.contains('.') && ext.isNotEmpty() && ext !in assets
+            }
     }
 
     private fun parseDate(s: String): Long = runCatching {
