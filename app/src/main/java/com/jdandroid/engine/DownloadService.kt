@@ -34,18 +34,32 @@ class DownloadService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var cnlServer: ClickNLoadServer? = null
 
+    /**
+     * Gewuenschter Click'n'Load-Zustand. Wird synchron gesetzt, waehrend der
+     * Server selbst asynchron startet: sonst koennte refresh() den Service
+     * beenden, bevor cnlServer gesetzt ist, und CnL liefe nie.
+     */
+    @Volatile
+    private var cnlWanted = false
+
+    /** Vor Abschluss des Starts darf sich der Service nicht selbst beenden. */
+    @Volatile
+    private var startupDone = false
+
     override fun onCreate() {
         super.onCreate()
-        startClickNLoadIfEnabled()
-        // Haelt die CPU wach, damit Downloads im Doze-Modus nicht stocken;
-        // Timeout als Sicherheitsnetz, Service beendet sich bei leerer Queue selbst.
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
-            .apply { acquire(6 * 60 * 60 * 1000L) }
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification("Downloads werden vorbereitet …"))
-        // Nach Prozess-Neustart haengen gebliebene RUNNING-Eintraege wieder einreihen
         scope.launch {
+            // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
+            if ((application as JdApp).settings.currentClickNLoadEnabled()) {
+                cnlWanted = true
+                startClickNLoadServer()
+            }
+            startupDone = true
+            // Nach Prozess-Neustart haengen gebliebene RUNNING-Eintraege wieder einreihen
             (application as JdApp).db.downloadDao().requeueRunning()
             engine.pump()
         }
@@ -58,8 +72,12 @@ class DownloadService : Service() {
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
-            ACTION_START_CNL -> { startClickNLoadIfEnabled(); scope.launch { refresh() } }
+            ACTION_START_CNL -> {
+                cnlWanted = true
+                scope.launch { startClickNLoadServer(); refresh() }
+            }
             ACTION_STOP_CNL -> {
+                cnlWanted = false
                 cnlServer?.stop()
                 cnlServer = null
                 scope.launch { refresh() }
@@ -69,17 +87,14 @@ class DownloadService : Service() {
         return START_STICKY
     }
 
-    private fun startClickNLoadIfEnabled() {
-        scope.launch {
-            if ((application as JdApp).settings.currentClickNLoadEnabled() && cnlServer == null) {
-                try {
-                    cnlServer = ClickNLoadServer { links ->
-                        scope.launch { LinkSink.addUrls(applicationContext, links) }
-                    }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
-                } catch (e: Exception) {
-                    android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: ${e.message}")
-                }
-            }
+    private fun startClickNLoadServer() {
+        if (cnlServer != null) return
+        try {
+            cnlServer = ClickNLoadServer { links ->
+                scope.launch { LinkSink.addUrls(applicationContext, links) }
+            }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true) }
+        } catch (e: Exception) {
+            android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: ${e.message}")
         }
     }
 
@@ -87,9 +102,12 @@ class DownloadService : Service() {
         val dao = (application as JdApp).db.downloadDao()
         val queued = dao.queuedCount()
         val active = engine.activeCount
-        val cnlActive = cnlServer != null
+        val cnlActive = cnlWanted
+        // WakeLock nur halten, solange wirklich geladen wird - sonst bliebe die
+        // CPU bei aktivem CnL dauerhaft wach.
+        updateWakeLock(active > 0)
         // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht
-        if (active == 0 && queued == 0 && !cnlActive) {
+        if (startupDone && active == 0 && queued == 0 && !cnlActive) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
@@ -105,6 +123,15 @@ class DownloadService : Service() {
         }
         val manager = getSystemService(android.app.NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    private fun updateWakeLock(shouldHold: Boolean) {
+        val lock = wakeLock ?: return
+        if (shouldHold && !lock.isHeld) {
+            lock.acquire(6 * 60 * 60 * 1000L)
+        } else if (!shouldHold && lock.isHeld) {
+            lock.release()
+        }
     }
 
     private fun buildNotification(text: String): Notification {

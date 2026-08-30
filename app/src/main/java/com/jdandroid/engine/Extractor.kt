@@ -23,6 +23,31 @@ object Extractor {
 
     private val archiveExtensions = listOf(".zip", ".7z", ".rar")
 
+    @Volatile
+    private var sevenZipReady = false
+
+    /**
+     * Laedt die native 7-Zip-Bibliothek. Auf Android greift die
+     * Auto-Initialisierung von 7-Zip-JBinding nicht: sie sucht eine
+     * Platform-JAR, die es im APK nicht gibt. Die .so liegt stattdessen im
+     * lib-Verzeichnis des APK und muss selbst geladen werden, bevor
+     * initLoadedLibraries() die Bindung herstellt.
+     */
+    @Synchronized
+    private fun ensureSevenZip() {
+        if (sevenZipReady) return
+        try {
+            System.loadLibrary("7-Zip-JBinding")
+            SevenZip.initLoadedLibraries()
+            sevenZipReady = true
+        } catch (e: Throwable) {
+            throw IOException(
+                "Native 7-Zip-Bibliothek konnte nicht geladen werden " +
+                    "(RAR-Entpacken nicht moeglich): ${e.message}"
+            )
+        }
+    }
+
     fun isArchive(fileName: String): Boolean {
         val lower = fileName.lowercase()
         return archiveExtensions.any { lower.endsWith(it) }
@@ -113,6 +138,7 @@ object Extractor {
      * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
      */
     private fun extractRar(archive: File, destDir: File, password: String?) {
+        ensureSevenZip()
         val openCallback = RarOpenCallback(archive, password)
         RandomAccessFile(archive, "r").use { raf ->
             val inArchive = SevenZip.openInArchive(
