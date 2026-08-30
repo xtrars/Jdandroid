@@ -15,11 +15,22 @@ import kotlinx.coroutines.flow.Flow
 
 enum class DownloadStatus { QUEUED, RUNNING, PAUSED, EXTRACTING, COMPLETED, FAILED, OFFLINE }
 
+/** Paket wie im JDownloader: buendelt zusammen hinzugefuegte Links. */
+@Entity(tableName = "packages")
+data class DownloadPackage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** Automatisch benannt: darf spaeter aus den Dateinamen verfeinert werden. */
+    val autoNamed: Boolean = true,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "downloads")
 data class DownloadItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
     val hosterId: String,
+    val packageId: Long? = null,
     val fileName: String? = null,
     val fileSize: Long = -1,
     val downloadedBytes: Long = 0,
@@ -107,6 +118,37 @@ interface DownloadDao {
 
     @Query("DELETE FROM downloads WHERE status = 'COMPLETED'")
     suspend fun clearCompleted()
+
+    @Query("SELECT * FROM downloads WHERE packageId = :packageId")
+    suspend fun byPackage(packageId: Long): List<DownloadItem>
+
+    @Query("DELETE FROM downloads WHERE packageId = :packageId")
+    suspend fun deletePackageItems(packageId: Long)
+}
+
+@Dao
+interface PackageDao {
+    @Query("SELECT * FROM packages ORDER BY addedAt DESC")
+    fun observeAll(): Flow<List<DownloadPackage>>
+
+    @Query("SELECT * FROM packages WHERE id = :id")
+    suspend fun byId(id: Long): DownloadPackage?
+
+    @Insert
+    suspend fun insert(pkg: DownloadPackage): Long
+
+    @Query("UPDATE packages SET name = :name, autoNamed = 0 WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    @Query("UPDATE packages SET name = :name WHERE id = :id AND autoNamed = 1")
+    suspend fun refineAutoName(id: Long, name: String)
+
+    @Query("DELETE FROM packages WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    /** Leere Pakete aufraeumen. */
+    @Query("DELETE FROM packages WHERE id NOT IN (SELECT DISTINCT packageId FROM downloads WHERE packageId IS NOT NULL)")
+    suspend fun deleteEmpty()
 }
 
 @Dao
@@ -130,10 +172,15 @@ interface AccountDao {
     suspend fun delete(account: Account)
 }
 
-@Database(entities = [DownloadItem::class, Account::class], version = 3, exportSchema = false)
+@Database(
+    entities = [DownloadItem::class, Account::class, DownloadPackage::class],
+    version = 4,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun accountDao(): AccountDao
+    abstract fun packageDao(): PackageDao
 
     companion object {
         /**
@@ -153,6 +200,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS packages (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+                        "name TEXT NOT NULL, " +
+                        "autoNamed INTEGER NOT NULL DEFAULT 1, " +
+                        "addedAt INTEGER NOT NULL)"
+                )
+                db.execSQL("ALTER TABLE downloads ADD COLUMN packageId INTEGER")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
     }
 }

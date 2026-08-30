@@ -12,22 +12,31 @@ import com.jdandroid.hoster.LinkParser
  */
 object LinkSink {
 
-    /** Liefert die Anzahl tatsächlich neu hinzugefügter Downloads. */
-    suspend fun addFromText(context: Context, text: String): Int {
-        val dao = (context.applicationContext as JdApp).db.downloadDao()
-        var added = 0
-        LinkParser.parse(text).forEach { (url, hoster) ->
-            if (dao.countByUrl(url) == 0) {
-                dao.insert(DownloadItem(url = url, hosterId = hoster.id))
-                added++
-            }
+    /**
+     * Liefert die Anzahl tatsächlich neu hinzugefügter Downloads. Alle Links
+     * eines Aufrufs landen wie im JDownloader in einem gemeinsamen Paket.
+     */
+    suspend fun addFromText(context: Context, text: String, packageName: String? = null): Int {
+        val app = context.applicationContext as JdApp
+        val dao = app.db.downloadDao()
+        val packageDao = app.db.packageDao()
+
+        val links = LinkParser.parse(text).filter { dao.countByUrl(it.first) == 0 }
+        if (links.isEmpty()) return 0
+
+        val name = packageName?.takeIf { it.isNotBlank() }
+            ?: PackageNaming.suggestFromUrls(links.map { it.first })
+        val packageId = packageDao.insert(
+            DownloadPackage(name = name, autoNamed = packageName.isNullOrBlank())
+        )
+
+        links.forEach { (url, hoster) ->
+            dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId))
         }
-        if (added > 0) {
-            DownloadService.send(context, DownloadService.ACTION_PUMP)
-        }
-        return added
+        DownloadService.send(context, DownloadService.ACTION_PUMP)
+        return links.size
     }
 
-    suspend fun addUrls(context: Context, urls: List<String>): Int =
-        addFromText(context, urls.joinToString("\n"))
+    suspend fun addUrls(context: Context, urls: List<String>, packageName: String? = null): Int =
+        addFromText(context, urls.joinToString("\n"), packageName)
 }

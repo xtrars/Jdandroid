@@ -17,16 +17,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jdandroid.data.PackageNaming
 import com.jdandroid.hoster.LinkParser
 
 @Composable
 fun AddLinksDialog(
     initialText: String,
     onDismiss: () -> Unit,
-    onAdd: (String) -> Unit
+    onAdd: (String, String?) -> Unit
 ) {
     var text by remember { mutableStateOf(initialText) }
+    var packageName by remember { mutableStateOf("") }
     val recognized = remember(text) { LinkParser.parse(text) }
+    // Vorschlag aus den erkannten Links, wie im JDownloader
+    val suggestion = remember(recognized) {
+        if (recognized.isEmpty()) "" else PackageNaming.suggestFromUrls(recognized.map { it.first })
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -38,6 +44,15 @@ fun AddLinksDialog(
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                     placeholder = { Text("Links hier einfügen (einer pro Zeile oder beliebiger Text)") }
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = packageName,
+                    onValueChange = { packageName = it },
+                    label = { Text("Paketname (optional)") },
+                    placeholder = { Text(suggestion) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -54,7 +69,7 @@ fun AddLinksDialog(
             TextButton(
                 enabled = recognized.isNotEmpty(),
                 onClick = {
-                    onAdd(text)
+                    onAdd(text, packageName.ifBlank { null })
                     onDismiss()
                 }
             ) { Text("Hinzufügen") }

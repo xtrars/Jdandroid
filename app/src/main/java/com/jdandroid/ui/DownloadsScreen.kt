@@ -16,11 +16,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -38,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -46,6 +53,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jdandroid.data.DownloadItem
@@ -75,7 +83,8 @@ fun DownloadsScreen(
     onDlcConsumed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val downloads by vm.downloads.collectAsState()
+    val groups by vm.groups.collectAsState()
+    val collapsed = remember { mutableStateMapOf<Long, Boolean>() }
     var showAddDialog by remember { mutableStateOf(false) }
     var prefill by remember { mutableStateOf("") }
     val snackbarHost = remember { SnackbarHostState() }
@@ -145,7 +154,7 @@ fun DownloadsScreen(
             }
         }
     ) { padding ->
-        if (downloads.isEmpty()) {
+        if (groups.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     "Noch keine Downloads.\nMit + Links einfügen, aus dem Browser teilen\n" +
@@ -159,8 +168,21 @@ fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)
             ) {
-                items(downloads, key = { it.id }) { item ->
-                    DownloadRow(item, vm)
+                groups.forEach { group ->
+                    val isCollapsed = collapsed[group.pkg.id] ?: false
+                    item(key = "pkg-${group.pkg.id}") {
+                        PackageHeader(
+                            group = group,
+                            collapsed = isCollapsed,
+                            onToggle = { collapsed[group.pkg.id] = !isCollapsed },
+                            vm = vm
+                        )
+                    }
+                    if (!isCollapsed) {
+                        items(group.items, key = { it.id }) { item ->
+                            DownloadRow(item, vm, Modifier.padding(start = 12.dp))
+                        }
+                    }
                 }
             }
         }
@@ -170,15 +192,116 @@ fun DownloadsScreen(
         AddLinksDialog(
             initialText = prefill,
             onDismiss = { showAddDialog = false },
-            onAdd = { text -> vm.addLinks(text) }
+            onAdd = { text, pkg -> vm.addLinks(text, pkg) }
+        )
+    }
+}
+
+/** Kopfzeile eines Pakets: Name, Gesamtfortschritt und Paketaktionen. */
+@Composable
+private fun PackageHeader(
+    group: DownloadGroup,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    vm: DownloadViewModel
+) {
+    var renaming by remember { mutableStateOf(false) }
+
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggle) {
+                    Icon(
+                        if (collapsed) Icons.Default.KeyboardArrowRight
+                        else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (collapsed) "Aufklappen" else "Zuklappen"
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        group.pkg.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val summary = buildString {
+                        append("${group.items.size} Datei(en)")
+                        append(" · ${group.finished} fertig")
+                        if (group.failed > 0) append(" · ${group.failed} fehlerhaft")
+                        if (group.total > 0) {
+                            append(" · ${formatBytes(group.done)} / ${formatBytes(group.total)}")
+                        }
+                        if (group.speed > 0) append(" · ${formatBytes(group.speed)}/s")
+                    }
+                    Text(summary, style = MaterialTheme.typography.bodySmall)
+                }
+                if (group.pkg.id != 0L) {
+                    IconButton(onClick = { renaming = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Paket umbenennen")
+                    }
+                    IconButton(onClick = {
+                        if (group.active) vm.pausePackage(group.pkg.id)
+                        else vm.startPackage(group.pkg.id)
+                    }) {
+                        Icon(
+                            if (group.active) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (group.active) "Paket pausieren"
+                            else "Paket starten"
+                        )
+                    }
+                    IconButton(onClick = { vm.deletePackage(group.pkg.id) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Paket löschen")
+                    }
+                }
+            }
+            if (group.total > 0) {
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { (group.done.toFloat() / group.total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+
+    if (renaming) {
+        var name by remember { mutableStateOf(group.pkg.name) }
+        AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("Paket umbenennen") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = { vm.renamePackage(group.pkg.id, name.trim()); renaming = false }
+                ) { Text("Speichern") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = false }) { Text("Abbrechen") } }
         )
     }
 }
 
 @Composable
-private fun DownloadRow(item: DownloadItem, vm: DownloadViewModel) {
+private fun DownloadRow(
+    item: DownloadItem,
+    vm: DownloadViewModel,
+    modifier: Modifier = Modifier
+) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
-    Card(Modifier.fillMaxWidth()) {
+    Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(
                 item.fileName ?: item.url,

@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import com.jdandroid.JdApp
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.PackageNaming
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
@@ -135,6 +136,7 @@ class DownloadEngine(
             if (current.fileName == null && resolved.fileName != null) {
                 current = current.copy(fileName = sanitizeFileName(resolved.fileName))
                 dao.update(current)
+                refinePackageName(current.packageId)
             }
             download(current, resolved.directUrl)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -185,6 +187,17 @@ class DownloadEngine(
     private fun backoffMillis(attempt: Int): Long {
         val base = 10_000L shl (attempt - 1).coerceAtMost(5)
         return base.coerceAtMost(5 * 60_000L)
+    }
+
+    /**
+     * Sobald Dateinamen bekannt sind, wird ein automatisch benanntes Paket
+     * nach dem gemeinsamen Namensteil benannt - wie im JDownloader.
+     */
+    private suspend fun refinePackageName(packageId: Long?) {
+        val id = packageId ?: return
+        val names = dao.byPackage(id).mapNotNull { it.fileName }
+        val name = PackageNaming.commonName(names) ?: return
+        app.db.packageDao().refineAutoName(id, name)
     }
 
     private suspend fun download(item: DownloadItem, directUrl: String) {

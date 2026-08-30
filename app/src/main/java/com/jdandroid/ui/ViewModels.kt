@@ -7,6 +7,7 @@ import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.data.Account
 import com.jdandroid.data.DownloadItem
+import com.jdandroid.data.DownloadPackage
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
@@ -15,23 +16,89 @@ import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Ein Paket mit seinen Downloads. */
+data class DownloadGroup(
+    val pkg: DownloadPackage,
+    val items: List<DownloadItem>
+) {
+    val total: Long get() = items.sumOf { it.fileSize.coerceAtLeast(0) }
+    val done: Long get() = items.sumOf { it.downloadedBytes }
+    val speed: Long get() = items.sumOf { it.speedBps }
+    val finished: Int get() = items.count { it.status == DownloadStatus.COMPLETED }
+    val failed: Int get() = items.count { it.status == DownloadStatus.FAILED }
+    val active: Boolean get() = items.any {
+        it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING
+    }
+}
 
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val jdApp = app as JdApp
     private val dao = jdApp.db.downloadDao()
 
+    private val packageDao = jdApp.db.packageDao()
+
     val downloads: StateFlow<List<DownloadItem>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
-    fun addLinks(text: String) {
+    /** Downloads nach Paketen gruppiert - wie im JDownloader. */
+    val groups: StateFlow<List<DownloadGroup>> =
+        combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
+            val byPackage = items.groupBy { it.packageId }
+            val known = packages.mapNotNull { pkg ->
+                byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
+            }
+            // Eintraege ohne Paket (aus aelteren Versionen) sammeln
+            val loose = byPackage[null].orEmpty()
+            if (loose.isEmpty()) known
+            else known + DownloadGroup(
+                DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
+                loose
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun renamePackage(packageId: Long, name: String) {
+        viewModelScope.launch(Dispatchers.IO) { packageDao.rename(packageId, name) }
+    }
+
+    fun deletePackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            LinkSink.addFromText(getApplication(), text)
+            dao.byPackage(packageId).forEach { item ->
+                DownloadService.send(
+                    getApplication(), DownloadService.ACTION_DELETE, item.id
+                )
+            }
+            packageDao.delete(packageId)
+        }
+    }
+
+    fun startPackage(packageId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.byPackage(packageId)
+                .filter { it.status != DownloadStatus.COMPLETED }
+                .forEach { dao.requeue(it.id) }
+            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
+        }
+    }
+
+    fun pausePackage(packageId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.byPackage(packageId).forEach { item ->
+                DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE, item.id)
+            }
+        }
+    }
+
+    /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
+    fun addLinks(text: String, packageName: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            LinkSink.addFromText(getApplication(), text, packageName)
         }
     }
 
