@@ -1,6 +1,7 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.data.Account
+import com.jdandroid.data.plainApiKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,7 +56,7 @@ class OneFichierHoster : Hoster {
     }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val key = account.apiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
+        val key = account.plainApiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
         val json = post("user/info.cgi", key, JSONObject())
         // "offer" kann als Zahl (>0 = zahlend) oder als Text ("Premium"/"Access"/"Free") kommen
         val offerRaw = json.opt("offer")?.toString()?.trim().orEmpty()
@@ -79,7 +80,7 @@ class OneFichierHoster : Hoster {
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
-            val key = account?.apiKey ?: throw HosterException(
+            val key = account?.plainApiKey ?: throw HosterException(
                 "1fichier benötigt einen API-Key (unter Konten hinzufügen).",
                 permanent = true
             )

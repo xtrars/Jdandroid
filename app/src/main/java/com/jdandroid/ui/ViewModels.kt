@@ -9,6 +9,7 @@ import com.jdandroid.data.Account
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkSink
+import com.jdandroid.data.Secrets
 import com.jdandroid.engine.DownloadService
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
@@ -57,7 +58,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resume(item: DownloadItem) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.setStatus(item.id, DownloadStatus.QUEUED)
+            dao.requeue(item.id)
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }
@@ -72,7 +73,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             downloads.value
                 .filter { it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.FAILED }
-                .forEach { dao.setStatus(it.id, DownloadStatus.QUEUED) }
+                .forEach { dao.requeue(it.id) }
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }
@@ -111,8 +112,8 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
                 Account(
                     hosterId = hoster.id,
                     username = username?.ifBlank { null },
-                    password = password?.ifBlank { null },
-                    apiKey = apiKey?.ifBlank { null }
+                    password = Secrets.encrypt(password?.ifBlank { null }),
+                    apiKey = Secrets.encrypt(apiKey?.ifBlank { null })
                 )
             )
             check(id)
@@ -123,7 +124,11 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     fun addAccountWithCookies(hoster: Hoster, cookies: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val id = dao.insert(
-                Account(hosterId = hoster.id, username = "Browser-Login", cookies = cookies)
+                Account(
+                    hosterId = hoster.id,
+                    username = "Browser-Login",
+                    cookies = Secrets.encrypt(cookies)
+                )
             )
             check(id)
         }

@@ -21,6 +21,7 @@ class SettingsRepository(private val context: Context) {
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
+    private val keyWifiOnly = booleanPreferencesKey("wifi_only")
 
     val maxConcurrent: Flow<Int> =
         context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
@@ -41,6 +42,10 @@ class SettingsRepository(private val context: Context) {
     /** Globales Download-Limit in KB/s, 0 = unbegrenzt. */
     val speedLimitKbps: Flow<Int> =
         context.dataStore.data.map { it[keySpeedLimit] ?: 0 }
+
+    /** Downloads nur über nicht-getaktete Verbindungen (WLAN). */
+    val wifiOnly: Flow<Boolean> =
+        context.dataStore.data.map { it[keyWifiOnly] ?: false }
 
     /** Click'n'Load-Server (Port 9666) aktiv. */
     val clickNLoadEnabled: Flow<Boolean> =
@@ -66,6 +71,12 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun currentClickNLoadEnabled(): Boolean = clickNLoadEnabled.first()
+
+    suspend fun currentWifiOnly(): Boolean = wifiOnly.first()
+
+    suspend fun setWifiOnly(value: Boolean) {
+        context.dataStore.edit { it[keyWifiOnly] = value }
+    }
 
     suspend fun setClickNLoadEnabled(value: Boolean) {
         context.dataStore.edit { it[keyClickNLoad] = value }

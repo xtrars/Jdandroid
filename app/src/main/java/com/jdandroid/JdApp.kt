@@ -18,7 +18,10 @@ class JdApp : Application() {
         super.onCreate()
         CrashReporter.install(this)
         db = Room.databaseBuilder(this, AppDatabase::class.java, "jdandroid.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS)
+            // Nur bei einer aelteren App-Version als der Datenbank neu aufbauen;
+            // regulaere Updates migrieren verlustfrei.
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsRepository(this)
         createNotificationChannel()

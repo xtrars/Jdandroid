@@ -1,6 +1,7 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.data.Account
+import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -21,7 +22,7 @@ class RapidgatorHoster : Hoster {
     private val pattern = Regex("""https?://(?:www\.)?(?:rapidgator\.net|rg\.to)/file/\S+""")
 
     /** Session-Token pro Account-Id zwischenspeichern. */
-    private val tokens = HashMap<Long, String>()
+    private val tokens = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
@@ -46,7 +47,7 @@ class RapidgatorHoster : Hoster {
 
     private fun login(account: Account): String {
         val user = account.username ?: throw HosterException("Kein Benutzername hinterlegt", true)
-        val pass = account.password ?: throw HosterException("Kein Passwort hinterlegt", true)
+        val pass = account.plainPassword ?: throw HosterException("Kein Passwort hinterlegt", true)
         val resp = call("user/login", mapOf("login" to user, "password" to pass))
         val token = resp.optString("token")
         if (token.isBlank()) throw HosterException("Rapidgator-Login fehlgeschlagen", true)

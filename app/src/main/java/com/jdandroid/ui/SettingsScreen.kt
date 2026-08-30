@@ -54,6 +54,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val autoExtract by settings.autoExtract.collectAsState(initial = true)
     val deleteArchive by settings.deleteArchiveAfterExtract.collectAsState(initial = false)
     val cnlEnabled by settings.clickNLoadEnabled.collectAsState(initial = false)
+    val wifiOnly by settings.wifiOnly.collectAsState(initial = false)
 
     var passwords by remember { mutableStateOf("") }
     var maxConcurrentText by remember { mutableStateOf("") }
@@ -107,6 +108,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
+            SettingSwitch(
+                title = "Nur über WLAN laden",
+                subtitle = "Downloads pausieren bei mobiler Verbindung und starten " +
+                    "automatisch, sobald WLAN verfügbar ist",
+                checked = wifiOnly,
+                onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
+            )
             SettingSwitch(
                 title = "In öffentlichen Download-Ordner",
                 subtitle = "Fertige Dateien nach Downloads/JDAndroid verschieben",

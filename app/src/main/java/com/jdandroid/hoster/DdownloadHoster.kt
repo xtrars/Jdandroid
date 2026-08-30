@@ -1,6 +1,8 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.data.Account
+import com.jdandroid.data.plainApiKey
+import com.jdandroid.data.plainCookies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
@@ -45,8 +47,8 @@ class DdownloadHoster : Hoster {
             "Chrome/122.0.0.0 Mobile Safari/537.36"
 
     /** Ein Cookie-Speicher (Session) pro Account-Id. */
-    private val cookieStores = HashMap<Long, MutableList<Cookie>>()
-    private val clients = HashMap<Long, OkHttpClient>()
+    private val cookieStores = java.util.concurrent.ConcurrentHashMap<Long, MutableList<Cookie>>()
+    private val clients = java.util.concurrent.ConcurrentHashMap<Long, OkHttpClient>()
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
@@ -122,7 +124,7 @@ class DdownloadHoster : Hoster {
      * des Turnstile-CAPTCHAs nicht moeglich.
      */
     private fun sessionAndAccountPage(account: Account): Pair<OkHttpClient, String> {
-        val raw = account.cookies
+        val raw = account.plainCookies
         if (raw.isNullOrBlank()) {
             throw HosterException(
                 "ddownload: keine Anmeldung hinterlegt. Entweder API-Key eintragen " +
@@ -179,7 +181,7 @@ class DdownloadHoster : Hoster {
     }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val key = account.apiKey?.takeIf { it.isNotBlank() }
+        val key = account.plainApiKey?.takeIf { it.isNotBlank() }
         if (key != null) return@withContext checkViaApi(key)
 
         val (_, html) = sessionAndAccountPage(account)
@@ -243,7 +245,7 @@ class DdownloadHoster : Hoster {
                 "ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).", true
             )
             val code = fileCode(url)
-            account.apiKey?.takeIf { it.isNotBlank() }?.let { key ->
+            account.plainApiKey?.takeIf { it.isNotBlank() }?.let { key ->
                 return@withContext resolveViaApi(key, code)
             }
             val (client, _) = sessionAndAccountPage(account)

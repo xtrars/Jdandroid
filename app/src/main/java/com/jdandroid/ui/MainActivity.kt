@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.launch
@@ -132,6 +133,11 @@ fun MainScreen(
     onDlcConsumed: () -> Unit
 ) {
     var tab by remember { mutableStateOf(Tab.Downloads) }
+    val context = LocalContext.current
+    var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
+    crashReport?.let { report ->
+        CrashDialog(report = report, onDismiss = { crashReport = null })
+    }
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
 

@@ -8,6 +8,8 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -25,6 +27,10 @@ data class DownloadItem(
     val status: DownloadStatus = DownloadStatus.QUEUED,
     val errorMessage: String? = null,
     val localPath: String? = null,
+    /** Bisherige automatische Wiederholversuche. */
+    val attempts: Int = 0,
+    /** Fruehester Zeitpunkt fuer den naechsten Versuch (Backoff). */
+    val retryAt: Long = 0,
     val addedAt: Long = System.currentTimeMillis()
 )
 
@@ -55,8 +61,11 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads")
     suspend fun all(): List<DownloadItem>
 
-    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY addedAt ASC LIMIT 1")
-    suspend fun nextQueued(): DownloadItem?
+    @Query(
+        "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
+            "ORDER BY addedAt ASC LIMIT 1"
+    )
+    suspend fun nextQueued(now: Long = System.currentTimeMillis()): DownloadItem?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
@@ -78,6 +87,20 @@ interface DownloadDao {
 
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'RUNNING'")
     suspend fun requeueRunning()
+
+    /** Automatischer Wiederholversuch mit Backoff. */
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', attempts = :attempts, retryAt = :retryAt, " +
+            "errorMessage = :error, speedBps = 0 WHERE id = :id"
+    )
+    suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
+
+    /** Manueller Neustart: Zaehler und Wartezeit zuruecksetzen. */
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
+            "retryAt = 0 WHERE id = :id"
+    )
+    suspend fun requeue(id: Long)
 
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: Long)
@@ -107,8 +130,29 @@ interface AccountDao {
     suspend fun delete(account: Account)
 }
 
-@Database(entities = [DownloadItem::class, Account::class], version = 2, exportSchema = false)
+@Database(entities = [DownloadItem::class, Account::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun accountDao(): AccountDao
+
+    companion object {
+        /**
+         * Echte Migrationen statt destruktivem Neuaufbau: bei einem Update
+         * bleiben Konten und Downloadliste erhalten.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN cookies TEXT")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN retryAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    }
 }

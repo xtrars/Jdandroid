@@ -2,6 +2,8 @@ package com.jdandroid.engine
 
 import android.content.ContentValues
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -59,8 +61,23 @@ class DownloadEngine(
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
             .apply { mkdirs() }
 
+    /**
+     * Getaktete Verbindung bei aktiver WLAN-Beschraenkung? Dann wird nicht
+     * gestartet; die Eintraege bleiben in der Warteschlange.
+     */
+    private fun blockedByMeteredNetwork(wifiOnly: Boolean): Boolean {
+        if (!wifiOnly) return false
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return true
+        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
     /** Startet weitere Downloads, solange Slots frei sind. */
     suspend fun pump() {
+        if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
+            onStateChanged()
+            return
+        }
         val max = app.settings.currentMaxConcurrent()
         mutex.withLock {
             while (jobs.size < max) {
@@ -123,13 +140,51 @@ class DownloadEngine(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: HosterException) {
-            dao.setStatus(id, DownloadStatus.FAILED, e.message)
+            if (e.permanent) {
+                dao.setStatus(id, DownloadStatus.FAILED, e.message)
+            } else {
+                handleTransientFailure(id, e.message ?: "Fehler")
+            }
         } catch (e: Exception) {
-            dao.setStatus(id, DownloadStatus.FAILED, e.message ?: e.javaClass.simpleName)
+            // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
+            handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
         } finally {
             mutex.withLock { jobs.remove(id) }
             scope.launch { pump() }
         }
+    }
+
+    /**
+     * Vorübergehende Fehler (Netzwerkabbruch, Serverhänger) werden automatisch
+     * wiederholt - mit exponentiell wachsender Wartezeit, damit ein dauerhaft
+     * gestörter Hoster nicht dauerfeuert. Erst danach gilt der Download als
+     * gescheitert.
+     */
+    private suspend fun handleTransientFailure(id: Long, message: String) {
+        val item = dao.byId(id) ?: return
+        val attempts = item.attempts + 1
+        if (attempts > MAX_ATTEMPTS) {
+            dao.setStatus(
+                id, DownloadStatus.FAILED,
+                "$message (nach $MAX_ATTEMPTS Versuchen aufgegeben)"
+            )
+            return
+        }
+        val backoff = backoffMillis(attempts)
+        dao.scheduleRetry(
+            id, attempts, System.currentTimeMillis() + backoff,
+            "$message – Versuch $attempts/$MAX_ATTEMPTS in ${backoff / 1000}s"
+        )
+        // Nach Ablauf der Wartezeit erneut anstossen
+        scope.launch {
+            kotlinx.coroutines.delay(backoff)
+            pump()
+        }
+    }
+
+    private fun backoffMillis(attempt: Int): Long {
+        val base = 10_000L shl (attempt - 1).coerceAtMost(5)
+        return base.coerceAtMost(5 * 60_000L)
     }
 
     private suspend fun download(item: DownloadItem, directUrl: String) {
@@ -157,6 +212,18 @@ class DownloadEngine(
             }
             val body = resp.body ?: throw HosterException("Leere Antwort beim Download")
             val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
+
+            // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
+            // Minuten mit einem nichtssagenden IO-Fehler ab.
+            val needed = if (total > 0) total - offset else 0
+            val free = downloadDir().usableSpace
+            if (needed > 0 && free in 0 until needed) {
+                throw HosterException(
+                    "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MB benötigt, " +
+                        "${free / (1 shl 20)} MB frei",
+                    permanent = true
+                )
+            }
 
             // Dateiname ggf. aus Content-Disposition oder URL ableiten
             var current = dao.byId(item.id) ?: return
@@ -270,7 +337,9 @@ class DownloadEngine(
                     status = DownloadStatus.COMPLETED,
                     localPath = path,
                     speedBps = 0,
-                    errorMessage = note
+                    errorMessage = note,
+                    attempts = 0,
+                    retryAt = 0
                 )
             )
         }
@@ -364,11 +433,34 @@ class DownloadEngine(
                 // Export fehlgeschlagen -> Datei bleibt im App-Ordner
             }
         }
-        val dest = File(downloadDir(), fileName)
+        val dest = uniqueFile(downloadDir(), fileName)
         if (temp.path != dest.path) {
-            dest.delete()
             temp.renameTo(dest)
         }
         return dest.absolutePath
+    }
+
+    /**
+     * Liefert einen freien Dateinamen: "film.mkv" -> "film (2).mkv".
+     * Vorher wurde eine bereits vorhandene Datei kommentarlos überschrieben.
+     */
+    private fun uniqueFile(dir: File, fileName: String): File {
+        val candidate = File(dir, fileName)
+        if (!candidate.exists()) return candidate
+        val base = fileName.substringBeforeLast('.', fileName)
+        val ext = fileName.substringAfterLast('.', "")
+        val suffix = if (ext.isEmpty()) "" else ".$ext"
+        var index = 2
+        while (index < 1000) {
+            val next = File(dir, "$base ($index)$suffix")
+            if (!next.exists()) return next
+            index++
+        }
+        return File(dir, "$base (${System.currentTimeMillis()})$suffix")
+    }
+
+    private companion object {
+        /** Maximale automatische Wiederholversuche je Download. */
+        const val MAX_ATTEMPTS = 5
     }
 }

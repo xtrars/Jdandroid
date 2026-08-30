@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -47,6 +48,26 @@ class DownloadService : Service() {
     @Volatile
     private var startupDone = false
 
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** Bei Netzwechsel erneut anstossen (z.B. WLAN wieder verfuegbar). */
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                scope.launch { engine.pump() }
+            }
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                caps: android.net.NetworkCapabilities
+            ) {
+                scope.launch { engine.pump() }
+            }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(callback) }
+            .onSuccess { networkCallback = callback }
+    }
+
     override fun onCreate() {
         super.onCreate()
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
@@ -64,6 +85,7 @@ class DownloadService : Service() {
             (application as JdApp).db.downloadDao().requeueRunning()
             engine.pump()
         }
+        registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -178,11 +200,19 @@ class DownloadService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
+            // Wurde der Dienst per startForegroundService angefordert und kommt
+            // kein startForeground zustande, beendet das System den Prozess mit
+            // ForegroundServiceDidNotStartInTimeException. Deshalb hier sauber
+            // selbst beenden statt abgeschossen zu werden.
             android.util.Log.w("DownloadService", "startForeground abgelehnt: ${e.message}")
+            runCatching { stopSelf() }
         }
     }
 
     override fun onDestroy() {
+        networkCallback?.let { cb ->
+            runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
+        }
         cnlServer?.stop()
         CnlStatus.stopped()
         wakeLock?.takeIf { it.isHeld }?.release()
