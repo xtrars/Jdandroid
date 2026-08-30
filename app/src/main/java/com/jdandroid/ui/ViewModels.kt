@@ -105,6 +105,16 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Konto aus einer im Browser uebernommenen Session anlegen. */
+    fun addAccountWithCookies(hoster: Hoster, cookies: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = dao.insert(
+                Account(hosterId = hoster.id, username = "Browser-Login", cookies = cookies)
+            )
+            check(id)
+        }
+    }
+
     fun check(accountId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             val account = dao.byId(accountId) ?: return@launch

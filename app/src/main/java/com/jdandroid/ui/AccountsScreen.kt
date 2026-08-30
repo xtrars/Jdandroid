@@ -11,10 +11,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -22,12 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,8 +39,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -50,12 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.jdandroid.data.Account
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.Hoster
@@ -192,138 +192,133 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
+    var webLoginFor by remember { mutableStateOf<Hoster?>(null) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        Surface(
-            Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            // systemBarsPadding: nicht unter Status-/Navigationsleiste;
-            // imePadding: Aktionsleiste bleibt ueber der Tastatur sichtbar
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding()
-                    .imePadding()
-            ) {
-                // Kopfzeile
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Konto hinzufügen",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Schließen")
-                    }
+    webLoginFor?.let { h ->
+        val url = h.webLoginUrl
+        if (url != null) {
+            WebLoginDialog(
+                loginUrl = url,
+                onDismiss = { webLoginFor = null },
+                onLoggedIn = { cookies ->
+                    vm.addAccountWithCookies(h, cookies)
+                    webLoginFor = null
+                    onDismiss()
                 }
-
-                LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Text(
-                            "Hoster wählen",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    items(vm.hosters, key = { it.id }) { hoster ->
-                        HosterSelectCard(
-                            hoster = hoster,
-                            selected = selected?.id == hoster.id,
-                            onClick = { selected = hoster }
-                        )
-                    }
-
-                    selected?.let { hoster ->
-                        item {
-                            Spacer(Modifier.height(4.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                                )
-                            ) {
-                                Text(
-                                    hoster.accountHint,
-                                    Modifier.padding(14.dp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-                        item {
-                            if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
-                                OutlinedTextField(
-                                    value = username,
-                                    onValueChange = { username = it },
-                                    label = { Text("Benutzername / E-Mail") },
-                                    leadingIcon = { Icon(Icons.Default.Person, null) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                OutlinedTextField(
-                                    value = password,
-                                    onValueChange = { password = it },
-                                    label = { Text("Passwort") },
-                                    leadingIcon = { Icon(Icons.Default.Key, null) },
-                                    visualTransformation = PasswordVisualTransformation(),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                OutlinedTextField(
-                                    value = apiKey,
-                                    onValueChange = { apiKey = it },
-                                    label = { Text("API-Key") },
-                                    leadingIcon = { Icon(Icons.Default.Key, null) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Aktionsleiste
-                val hoster = selected
-                val valid = hoster != null && if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
-                    username.isNotBlank() && password.isNotBlank()
-                } else {
-                    apiKey.isNotBlank()
-                }
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-                        Text("Abbrechen")
-                    }
-                    androidx.compose.material3.Button(
-                        enabled = valid,
-                        onClick = {
-                            hoster?.let { vm.addAccount(it, username, password, apiKey) }
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Speichern & prüfen") }
-                }
-            }
+            )
         }
     }
+
+    val hoster = selected
+    val valid = hoster != null && if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
+        username.isNotBlank() && password.isNotBlank()
+    } else {
+        apiKey.isNotBlank()
+    }
+
+    // Inhaltshoehe an die Bildschirmhoehe koppeln, damit Titel und Buttons
+    // auch auf kleinen Displays mit offener Tastatur Platz behalten.
+    val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+
+    // Standard-AlertDialog: Groesse und Button-Platzierung uebernimmt das
+    // Framework. Dadurch bleiben die Buttons immer im sichtbaren Bereich -
+    // auch bei offener Tastatur und auf kleinen Displays. Der Inhalt scrollt.
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Konto hinzufügen", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxContentHeight)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "Hoster wählen",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                vm.hosters.forEach { h ->
+                    HosterSelectCard(
+                        hoster = h,
+                        selected = selected?.id == h.id,
+                        onClick = { selected = h }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                hoster?.let { h ->
+                    Spacer(Modifier.height(4.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Text(
+                            h.accountHint,
+                            Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (h.accountType == AccountType.USERNAME_PASSWORD) {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            label = { Text("Benutzername / E-Mail") },
+                            leadingIcon = { Icon(Icons.Default.Person, null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Passwort") },
+                            leadingIcon = { Icon(Icons.Default.Key, null) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = apiKey,
+                            onValueChange = { apiKey = it },
+                            label = { Text("API-Key") },
+                            leadingIcon = { Icon(Icons.Default.Key, null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    // Hoster mit CAPTCHA: Anmeldung im eingebetteten Browser
+                    if (h.webLoginUrl != null) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { webLoginFor = h },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Person, null)
+                            Spacer(Modifier.height(0.dp))
+                            Text("  Im Browser anmelden (Benutzer/Passwort)")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    hoster?.let { vm.addAccount(it, username, password, apiKey) }
+                    onDismiss()
+                }
+            ) { Text("Speichern & prüfen") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Abbrechen") }
+        }
+    )
 }
 
 @Composable

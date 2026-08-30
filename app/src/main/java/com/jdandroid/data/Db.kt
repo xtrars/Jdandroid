@@ -35,6 +35,8 @@ data class Account(
     val username: String? = null,
     val password: String? = null,
     val apiKey: String? = null,
+    /** Session-Cookies aus dem Browser-Login (Name=Wert; ...), falls genutzt. */
+    val cookies: String? = null,
     val premiumUntil: Long = 0,
     val trafficLeft: Long = -1,
     val valid: Boolean = false,
@@ -105,7 +107,7 @@ interface AccountDao {
     suspend fun delete(account: Account)
 }
 
-@Database(entities = [DownloadItem::class, Account::class], version = 1, exportSchema = false)
+@Database(entities = [DownloadItem::class, Account::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun accountDao(): AccountDao

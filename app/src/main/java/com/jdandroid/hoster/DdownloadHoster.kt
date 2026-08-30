@@ -23,10 +23,17 @@ class DdownloadHoster : Hoster {
 
     override val id = "ddownload"
     override val displayName = "ddownload"
-    override val accountType = AccountType.USERNAME_PASSWORD
+    // Der Weblogin von ddownload ist durch Cloudflare Turnstile geschützt und
+    // headless nicht lösbar. Deshalb zwei Wege: API-Key (empfohlen, läuft ohne
+    // CAPTCHA) oder Anmeldung im eingebetteten Browser mit Session-Übernahme.
+    override val accountType = AccountType.API_KEY
     override val accountHint =
-        "Benutzername (oder E-Mail) und Passwort des ddownload.com-Kontos. " +
-            "Für Downloads ist ein Premium-Konto erforderlich."
+        "Empfohlen: API-Key aus dem ddownload-Konto (my.ddownload.com → API). " +
+            "Alternativ unten \"Im Browser anmelden\" für Benutzername/Passwort – " +
+            "der Login verlangt ein CAPTCHA und geht nur im Browser."
+    override val webLoginUrl = "https://ddownload.com/login.html"
+
+    private val apiBase = "https://api-v2.ddownload.com/api"
 
     private val siteBase = "https://ddownload.com"
     private val pattern =
@@ -110,56 +117,51 @@ class DdownloadHoster : Hoster {
             (html.contains("?op=my_account", true) && html.contains("Account type", true))
 
     /**
-     * Loggt ein (falls nötig) und liefert Client plus HTML der Kontoseite.
-     * Verifiziert das Ergebnis, statt sich auf einen Cookie-Namen zu verlassen.
+     * Liefert Client plus HTML der Kontoseite auf Basis der im Browser
+     * uebernommenen Session-Cookies. Ein headless Formular-Login ist wegen
+     * des Turnstile-CAPTCHAs nicht moeglich.
      */
-    private fun loginAndFetchAccount(account: Account): Pair<OkHttpClient, String> {
-        val user = account.username ?: throw HosterException("Kein Benutzername hinterlegt", true)
-        val pass = account.password ?: throw HosterException("Kein Passwort hinterlegt", true)
+    private fun sessionAndAccountPage(account: Account): Pair<OkHttpClient, String> {
+        val raw = account.cookies
+        if (raw.isNullOrBlank()) {
+            throw HosterException(
+                "ddownload: keine Anmeldung hinterlegt. Entweder API-Key eintragen " +
+                    "oder \"Im Browser anmelden\" verwenden (Login verlangt ein CAPTCHA).",
+                permanent = true
+            )
+        }
         val client = clientFor(account.id)
+        seedCookies(account.id, raw)
 
-        // Bestehende Session weiterverwenden
-        val existing = runCatching { client.fetch("$siteBase/?op=my_account", referer = siteBase) }
-            .getOrNull()
-        if (existing != null && isLoggedIn(existing.body)) return client to existing.body
-
-        // 1) Login-Seite holen: setzt Basis-Cookies und liefert versteckte Felder
-        val loginPage = client.fetch("$siteBase/login.html", referer = siteBase)
-        checkBlocked(loginPage)
-
-        // 2) Versteckte Felder des Login-Formulars uebernehmen (op, token, rand ...)
-        val form = hiddenInputs(loginPage.body).toMutableMap()
-        form["op"] = "login"
-        form["login"] = user
-        form["password"] = pass
-        form.putIfAbsent("redirect", "")
-
-        val posted = client.fetch("$siteBase/", form = form, referer = "$siteBase/login.html")
-        checkBlocked(posted)
-
-        if (posted.body.contains("Incorrect Login or Password", true) ||
-            posted.body.contains("Wrong password", true) ||
-            posted.body.contains("Login or password incorrect", true)
-        ) {
+        val page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
+        checkBlocked(page)
+        if (!isLoggedIn(page.body)) {
             throw HosterException(
-                "ddownload: Benutzername oder Passwort falsch", permanent = true
+                "ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut " +
+                    "\"Im Browser anmelden\".",
+                permanent = true
             )
         }
+        return client to page.body
+    }
 
-        // 3) Ergebnis pruefen
-        val accountPage = client.fetch("$siteBase/?op=my_account", referer = siteBase)
-        checkBlocked(accountPage)
-        if (!isLoggedIn(accountPage.body)) {
-            val cookieNames = cookieStores[account.id]?.joinToString(",") { it.name }.orEmpty()
-            throw HosterException(
-                "ddownload: Login nicht bestätigt (HTTP ${posted.code}" +
-                    (if (cookieNames.isNotBlank()) ", Cookies: $cookieNames" else ", keine Cookies") +
-                    "). Zugangsdaten prüfen; bei aktiver Zwei-Faktor-Anmeldung wird der " +
-                    "Login nicht unterstützt.",
-                permanent = false
-            )
+    /** Cookie-String aus dem Browser in den OkHttp-Cookie-Speicher uebernehmen. */
+    private fun seedCookies(accountId: Long, raw: String) {
+        val store = cookieStores.getOrPut(accountId) { mutableListOf() }
+        if (store.isNotEmpty()) return
+        val url = siteBase.toHttpUrl()
+        raw.split(';').forEach { part ->
+            val name = part.substringBefore('=').trim()
+            val value = part.substringAfter('=', "").trim()
+            if (name.isNotEmpty()) {
+                Cookie.Builder()
+                    .name(name).value(value)
+                    .domain("ddownload.com").path("/")
+                    .build()
+                    .let { store.add(it) }
+            }
         }
-        return client to accountPage.body
+        require(url.host.isNotEmpty())
     }
 
     /** Alle hidden-Felder eines Formulars einsammeln (Reihenfolge der Attribute egal). */
@@ -177,17 +179,17 @@ class DdownloadHoster : Hoster {
     }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val (_, html) = loginAndFetchAccount(account)
+        val key = account.apiKey?.takeIf { it.isNotBlank() }
+        if (key != null) return@withContext checkViaApi(key)
 
+        val (_, html) = sessionAndAccountPage(account)
         val expire = Regex(
             """[Pp]remium[^<:]*expire[^:<]*:?\s*(?:</?[^>]*>\s*)*([0-9]{1,2}\s+\w+\s+[0-9]{4})"""
         ).find(html)?.groupValues?.get(1)?.let { parseDate(it) } ?: 0L
-
         val premiumWord = Regex("""[Pp]remium""").containsMatchIn(html) &&
             !Regex("""Account type[^<]*(?:</?[^>]*>\s*)*Free""", RegexOption.IGNORE_CASE)
                 .containsMatchIn(html)
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
-
         val trafficLeft = Regex(
             """[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*([\d.]+)\s*(GB|MB|TB)"""
         ).find(html)?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
@@ -200,13 +202,51 @@ class DdownloadHoster : Hoster {
         )
     }
 
+    /** Kontopruefung ueber die offizielle API (ohne CAPTCHA). */
+    private fun checkViaApi(key: String): AccountInfo {
+        val json = apiCall("account/info", mapOf("key" to key))
+        val result = json.optJSONObject("result")
+            ?: throw HosterException("ddownload: unerwartete API-Antwort", true)
+        val expire = runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                .parse(result.optString("premium_expire"))?.time ?: 0L
+        }.getOrDefault(0L)
+        val premium = expire > System.currentTimeMillis()
+        return AccountInfo(
+            valid = true,
+            premiumUntil = expire,
+            trafficLeft = result.optLong("traffic_left", -1),
+            statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
+        )
+    }
+
+    private fun apiCall(path: String, params: Map<String, String>): org.json.JSONObject {
+        val query = params.entries.joinToString("&") {
+            "${it.key}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
+        }
+        val resp = Http.client.newCall(
+            okhttp3.Request.Builder().url("$apiBase/$path?$query")
+                .header("User-Agent", browserUa).build()
+        ).execute().use { it.body?.string() ?: "" }
+        val json = org.json.JSONObject(resp)
+        val status = json.optInt("status")
+        if (status != 200) {
+            val msg = json.optString("msg").ifBlank { "HTTP $status" }
+            throw HosterException("ddownload: $msg", permanent = status in listOf(400, 403, 404))
+        }
+        return json
+    }
+
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
             if (account == null) throw HosterException(
                 "ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).", true
             )
-            val (client, _) = loginAndFetchAccount(account)
             val code = fileCode(url)
+            account.apiKey?.takeIf { it.isNotBlank() }?.let { key ->
+                return@withContext resolveViaApi(key, code)
+            }
+            val (client, _) = sessionAndAccountPage(account)
             val pageUrl = "$siteBase/$code"
 
             var page = client.fetch(pageUrl, referer = siteBase)
@@ -233,6 +273,25 @@ class DdownloadHoster : Hoster {
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(direct, fileName)
         }
+
+    /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
+    private fun resolveViaApi(key: String, code: String): ResolvedLink {
+        var fileName: String? = null
+        runCatching {
+            val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
+                .optJSONArray("result")?.optJSONObject(0)
+            fileName = info?.optString("name")?.ifBlank { null }
+            if (info?.optInt("status") == 404) throw HosterException("Datei ist offline", true)
+        }.onFailure { if (it is HosterException && it.permanent) throw it }
+        val result = apiCall("file/direct_link", mapOf("key" to key, "file_code" to code))
+            .optJSONObject("result")
+            ?: throw HosterException("ddownload lieferte keine Download-URL", true)
+        val direct = result.optString("url")
+        if (direct.isBlank()) {
+            throw HosterException("ddownload lieferte keine Download-URL (Premium nötig?)", true)
+        }
+        return ResolvedLink(direct, fileName, result.optLong("size", -1))
+    }
 
     private fun checkOffline(html: String) {
         if (html.contains("File Not Found", true) ||

@@ -34,6 +34,13 @@ interface Hoster {
     /** Hinweis fuer den Account-Dialog, z.B. wo der API-Key zu finden ist. */
     val accountHint: String
 
+    /**
+     * Login-Seite fuer die Anmeldung im eingebetteten Browser. Nicht null,
+     * wenn der Hoster ein CAPTCHA verlangt und headless nicht anmeldbar ist;
+     * die Session-Cookies werden dann aus dem Browser uebernommen.
+     */
+    val webLoginUrl: String? get() = null
+
     fun matches(url: String): Boolean
 
     /** Prueft Zugangsdaten und liefert Premium-Status. */

@@ -12,7 +12,7 @@ Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Desi
 |---|---|---|
 | Rapidgator (rapidgator.net, rg.to) | Benutzername + Passwort | offizielle API v2 |
 | 1fichier (1fichier.com) | API-Key (Kontoeinstellungen → API) | offizielle REST-API |
-| ddownload (ddownload.com, ddl.to) | Benutzername + Passwort | XFileSharing-Weblogin |
+| ddownload (ddownload.com, ddl.to) | API-Key **oder** Browser-Login | offizielle API / Session-Cookies |
 
 Die Downloads laufen über die offiziellen APIs bzw. den Weblogin der Hoster
 und benötigen einen **Premium-Account** (bzw. API-Key bei 1fichier).
@@ -64,10 +64,15 @@ Play Store müsste er durch einen geheimen Keystore ersetzt werden.
   (`/api/v2/user/login`, `user/info`, `file/download`)
 - **1fichier**: REST-API, dokumentiert unter <https://1fichier.com/api.html>
   (`/v1/user/info.cgi`, `file/info.cgi`, `download/get_token.cgi`, Bearer-API-Key)
-- **ddownload**: XFileSharing-Weblogin (Benutzername/Passwort) mit
-  Session-Cookie; Premium-Direktlink über die zweistufige Download-Form
-  auf <https://ddownload.com/>. Ein API-Key wird nicht verwendet, da der
-  ddownload-Login in der Praxis über Benutzername/Passwort läuft.
+- **ddownload**: Zwei Wege, weil das Login-Formular von
+  <https://ddownload.com/login.html> ein **Cloudflare-Turnstile-CAPTCHA**
+  enthält und headless deshalb nicht anmeldbar ist:
+  1. **API-Key** (empfohlen, ohne CAPTCHA) über
+     `api-v2.ddownload.com/api/account/info`, `file/info`, `file/direct_link`
+     – Schlüssel aus dem Konto unter my.ddownload.com → API.
+  2. **Im Browser anmelden**: Anmeldung mit Benutzername/Passwort in einem
+     eingebetteten WebView, in dem das CAPTCHA gelöst wird; die
+     Session-Cookies werden übernommen und für die Downloads verwendet.
 
 ## Architektur
 
