@@ -23,6 +23,8 @@ class SettingsRepository(private val context: Context) {
     private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
     private val keyWifiOnly = booleanPreferencesKey("wifi_only")
+    private val keyAutoStart = booleanPreferencesKey("auto_start_links")
+    private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
 
     val maxConcurrent: Flow<Int> =
         context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
@@ -51,6 +53,40 @@ class SettingsRepository(private val context: Context) {
     /** Downloads nur über nicht-getaktete Verbindungen (WLAN). */
     val wifiOnly: Flow<Boolean> =
         context.dataStore.data.map { it[keyWifiOnly] ?: false }
+
+    /**
+     * Neue Links sofort starten statt sie im Linksammler zu sammeln.
+     * Standard aus - wie im JDownloader landen Links erst im Linksammler.
+     */
+    val autoStartLinks: Flow<Boolean> =
+        context.dataStore.data.map { it[keyAutoStart] ?: false }
+
+    /** Per Storage Access Framework gewaehlter Zielordner (Tree-URI), null = Downloads/JDAndroid. */
+    val downloadTreeUri: Flow<String?> =
+        context.dataStore.data.map { it[keyDownloadTree]?.ifBlank { null } }
+
+    suspend fun currentAutoStartLinks(): Boolean = autoStartLinks.first()
+
+    suspend fun setAutoStartLinks(value: Boolean) {
+        context.dataStore.edit { it[keyAutoStart] = value }
+    }
+
+    suspend fun currentDownloadTreeUri(): String? = downloadTreeUri.first()
+
+    suspend fun setDownloadTreeUri(value: String?) {
+        context.dataStore.edit { prefs ->
+            if (value.isNullOrBlank()) prefs.remove(keyDownloadTree) else prefs[keyDownloadTree] = value
+        }
+    }
+
+    /** Ein Passwort aus der Liste entfernen. */
+    suspend fun removePassword(password: String) {
+        context.dataStore.edit { prefs ->
+            val remaining = (prefs[keyPasswords] ?: "").lines()
+                .map { it.trim() }.filter { it.isNotEmpty() && it != password }
+            prefs[keyPasswords] = remaining.joinToString("\n")
+        }
+    }
 
     /** Click'n'Load-Server (Port 9666) aktiv. */
     val clickNLoadEnabled: Flow<Boolean> =

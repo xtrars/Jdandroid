@@ -23,6 +23,12 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,6 +108,15 @@ fun formatBytes(bytes: Long): String {
     return String.format(Locale.GERMANY, "%.1f %s", value, units[unit])
 }
 
+/** Filter der Download-Liste (V5). */
+private enum class ListFilter(val label: String, val matches: (DownloadItem) -> Boolean) {
+    ALL("Alle", { true }),
+    ACTIVE("Läuft", { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING }),
+    WAITING("Wartend", { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.PAUSED }),
+    DONE("Fertig", { it.status == DownloadStatus.COMPLETED }),
+    FAILED("Fehler", { it.status == DownloadStatus.FAILED || it.status == DownloadStatus.OFFLINE })
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
@@ -110,13 +125,31 @@ fun DownloadsScreen(
     onSharedTextConsumed: () -> Unit,
     dlcContent: String?,
     onDlcConsumed: () -> Unit,
+    onLinksCollected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val groups by vm.groups.collectAsState()
+    val allGroups by vm.groups.collectAsState()
     val collapsed = remember { mutableStateMapOf<Long, Boolean>() }
     var showAddDialog by remember { mutableStateOf(false) }
     var prefill by remember { mutableStateOf("") }
     val snackbarHost = remember { SnackbarHostState() }
+    var searchOpen by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(ListFilter.ALL) }
+
+    // Suche und Filter wirken auf Eintraege; Pakete ohne Treffer verschwinden
+    val groups = remember(allGroups, query, filter) {
+        val q = query.trim().lowercase()
+        allGroups.mapNotNull { g ->
+            val items = g.items.filter { item ->
+                filter.matches(item) && (
+                    q.isEmpty() || g.pkg.name.lowercase().contains(q) ||
+                        (item.fileName ?: item.url).lowercase().contains(q)
+                    )
+            }
+            if (items.isEmpty()) null else g.copy(items = items)
+        }
+    }
 
     LaunchedEffect(sharedText) {
         if (sharedText != null) {
@@ -173,6 +206,12 @@ fun DownloadsScreen(
             TopAppBar(
                 title = { Text("Downloads") },
                 actions = {
+                    IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
+                        Icon(
+                            if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = if (searchOpen) "Suche schließen" else "Suchen"
+                        )
+                    }
                     IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
                         Icon(Icons.Default.FolderOpen, contentDescription = "DLC-Datei importieren")
                     }
@@ -187,19 +226,46 @@ fun DownloadsScreen(
             }
         }
     ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+        if (searchOpen) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Dateiname oder Paket suchen") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ListFilter.entries.forEach { f ->
+                FilterChip(
+                    selected = filter == f,
+                    onClick = { filter = f },
+                    label = { Text(f.label) }
+                )
+            }
+        }
         if (groups.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Noch keine Downloads.\nMit + Links einfügen, aus dem Browser teilen\n" +
-                        "oder über das Ordner-Symbol eine DLC-Datei importieren.",
-                    style = MaterialTheme.typography.bodyMedium
+                    if (allGroups.isEmpty()) {
+                        "Noch keine Downloads.\nMit + Links einfügen, aus dem Browser teilen\n" +
+                            "oder über das Ordner-Symbol eine DLC-Datei importieren.\n\n" +
+                            "Neue Links erscheinen zuerst im Linksammler."
+                    } else "Keine Einträge für diesen Filter.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(24.dp)
                 )
             }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(padding),
+                Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)
+                contentPadding = PaddingValues(12.dp)
             ) {
                 groups.forEach { group ->
                     val isCollapsed = collapsed[group.pkg.id] ?: false
@@ -219,13 +285,19 @@ fun DownloadsScreen(
                 }
             }
         }
+        }
     }
 
     if (showAddDialog) {
         AddLinksDialog(
             initialText = prefill,
             onDismiss = { showAddDialog = false },
-            onAdd = { text, pkg -> vm.addLinks(text, pkg) }
+            onAdd = { text, pkg ->
+                vm.addLinks(text, pkg) { added ->
+                    if (added > 0) onLinksCollected()
+                    else scope.launch { snackbarHost.showSnackbar("Keine neuen Links (bereits vorhanden?)") }
+                }
+            }
         )
     }
 }
@@ -374,6 +446,7 @@ private fun DownloadRow(
                     "${formatBytes(item.downloadedBytes)} / ${formatBytes(item.fileSize)}" +
                         if (item.speedBps > 0) " – ${formatBytes(item.speedBps)}/s" else ""
                 DownloadStatus.QUEUED -> "Wartend"
+                DownloadStatus.COLLECTED -> "Im Linksammler"
                 DownloadStatus.PAUSED -> "Pausiert (${formatBytes(item.downloadedBytes)})"
                 DownloadStatus.EXTRACTING -> "Wird entpackt …"
                 DownloadStatus.COMPLETED ->
@@ -419,7 +492,7 @@ private fun DownloadRow(
                         IconButton(onClick = { vm.retry(item) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Erneut versuchen")
                         }
-                    DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING -> {}
+                    DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
                 }
                 IconButton(onClick = { confirmDelete = true }) {
                     Icon(Icons.Default.Delete, contentDescription = "Löschen")

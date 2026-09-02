@@ -6,8 +6,14 @@ import android.app.NotificationManager
 import androidx.room.Room
 import com.jdandroid.data.AppDatabase
 import com.jdandroid.data.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class JdApp : Application() {
+
+    /** Hintergrundarbeit, die keinen Bildschirm braucht (z.B. Link-Pruefung). */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     lateinit var db: AppDatabase
         private set

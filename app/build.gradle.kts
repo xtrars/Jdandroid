@@ -15,8 +15,8 @@ android {
         targetSdk = 35
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
@@ -78,6 +78,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.documentfile)
     implementation(libs.okhttp)
     implementation(libs.nanohttpd)
     implementation(libs.kotlinx.coroutines.android)

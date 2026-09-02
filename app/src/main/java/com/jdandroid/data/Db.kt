@@ -13,7 +13,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
-enum class DownloadStatus { QUEUED, RUNNING, PAUSED, EXTRACTING, COMPLETED, FAILED, OFFLINE }
+/** COLLECTED = liegt im Linksammler und wurde noch nicht gestartet (wie im JDownloader). */
+enum class DownloadStatus { COLLECTED, QUEUED, RUNNING, PAUSED, EXTRACTING, COMPLETED, FAILED, OFFLINE }
+
+/** Ergebnis der Online-Pruefung im Linksammler. */
+object OnlineState {
+    const val UNKNOWN = 0
+    const val ONLINE = 1
+    const val OFFLINE = 2
+    const val CHECKING = 3
+}
 
 /** Paket wie im JDownloader: buendelt zusammen hinzugefuegte Links. */
 @Entity(tableName = "packages")
@@ -44,6 +53,8 @@ data class DownloadItem(
     val attempts: Int = 0,
     /** Fruehester Zeitpunkt fuer den naechsten Versuch (Backoff). */
     val retryAt: Long = 0,
+    /** Online-Pruefung (siehe [OnlineState]); Hinweis dazu in [errorMessage]. */
+    val online: Int = OnlineState.UNKNOWN,
     val addedAt: Long = System.currentTimeMillis()
 )
 
@@ -101,6 +112,33 @@ interface DownloadDao {
 
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'PAUSED'")
     suspend fun requeuePaused()
+
+    /** Linksammler: Paket starten bzw. alles starten. */
+    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'COLLECTED' AND packageId = :packageId")
+    suspend fun startCollected(packageId: Long)
+
+    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'COLLECTED'")
+    suspend fun startAllCollected()
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE status = 'COLLECTED'")
+    suspend fun collectedCount(): Int
+
+    @Query("SELECT * FROM downloads WHERE status = 'COLLECTED' AND online IN (:states)")
+    suspend fun collectedWithOnline(states: List<Int>): List<DownloadItem>
+
+    @Query("UPDATE downloads SET online = :online WHERE id = :id")
+    suspend fun setOnline(id: Long, online: Int)
+
+    /** Ergebnis der Online-Pruefung eintragen (Name/Groesse nur, wenn bekannt). */
+    @Query(
+        "UPDATE downloads SET online = :online, errorMessage = :note, " +
+            "fileName = COALESCE(:fileName, fileName), " +
+            "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END WHERE id = :id"
+    )
+    suspend fun applyCheck(id: Long, online: Int, note: String?, fileName: String?, fileSize: Long)
+
+    @Query("DELETE FROM downloads WHERE status = 'COLLECTED' AND online = 2")
+    suspend fun deleteOfflineCollected()
 
     @Query("SELECT COUNT(*) FROM downloads WHERE url = :url")
     suspend fun countByUrl(url: String): Int
@@ -195,7 +233,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -240,6 +278,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN online INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+        )
     }
 }

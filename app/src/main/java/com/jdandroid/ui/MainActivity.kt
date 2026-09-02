@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -128,7 +129,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String) { Downloads("Downloads"), Accounts("Konten"), Settings("Einstellungen") }
+private enum class Tab(val label: String) {
+    Downloads("Downloads"), Collector("Linksammler"), Accounts("Konten"), Settings("Einstellungen")
+}
 
 @Composable
 fun MainScreen(
@@ -173,6 +176,7 @@ fun MainScreen(
                             Icon(
                                 when (t) {
                                     Tab.Downloads -> Icons.Default.Download
+                                    Tab.Collector -> Icons.Default.Link
                                     Tab.Accounts -> Icons.Default.Person
                                     Tab.Settings -> Icons.Default.Settings
                                 },
@@ -188,8 +192,10 @@ fun MainScreen(
         val modifier = Modifier.padding(padding)
         when (tab) {
             Tab.Downloads -> DownloadsScreen(
-                downloadVm, sharedText, onSharedTextConsumed, dlcContent, onDlcConsumed, modifier
+                downloadVm, sharedText, onSharedTextConsumed, dlcContent, onDlcConsumed,
+                onLinksCollected = { tab = Tab.Collector }, modifier = modifier
             )
+            Tab.Collector -> LinkGrabberScreen(downloadVm, modifier)
             Tab.Accounts -> AccountsScreen(accountVm, modifier)
             Tab.Settings -> SettingsScreen(modifier)
         }

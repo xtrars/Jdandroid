@@ -46,10 +46,15 @@ object LinkSink {
             )
         )
 
-        links.forEach { (url, hoster) ->
-            dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId))
+        // Wie im JDownloader: Links landen zuerst im Linksammler und werden
+        // dort online geprueft; erst "Starten" reiht sie ein. Optional sofort.
+        val autoStart = app.settings.currentAutoStartLinks()
+        val status = if (autoStart) DownloadStatus.QUEUED else DownloadStatus.COLLECTED
+        val ids = links.map { (url, hoster) ->
+            dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId, status = status))
         }
-        DownloadService.send(context, DownloadService.ACTION_PUMP)
+        if (autoStart) DownloadService.send(context, DownloadService.ACTION_PUMP)
+        else LinkChecker.schedule(app, ids)
         return links.size
     }
 

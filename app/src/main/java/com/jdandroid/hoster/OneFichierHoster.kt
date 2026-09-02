@@ -57,6 +57,38 @@ class OneFichierHoster : Hoster {
         return json
     }
 
+    /**
+     * Oeffentlicher Link-Check ohne API-Key: check_links.pl liefert je Zeile
+     * "url;dateiname;groesse;STATUS" (STATUS leer/OK = online, sonst z.B. NOT FOUND).
+     */
+    internal fun parseCheckLine(line: String): LinkInfo {
+        val parts = line.trim().split(';')
+        if (parts.size < 4) return LinkInfo(online = null, note = "Unerwartete Antwort")
+        val name = parts[1].ifBlank { null }
+        val size = parts[2].toLongOrNull() ?: -1
+        val status = parts[3].trim()
+        val offline = status.contains("NOT FOUND", true) || status.contains("BAD LINK", true) ||
+            status.contains("DELETED", true)
+        return if (offline) LinkInfo(online = false, note = status.lowercase().replaceFirstChar { it.uppercase() })
+        else LinkInfo(online = true, fileName = name, fileSize = size)
+    }
+
+    override suspend fun checkLink(url: String, account: Account?): LinkInfo =
+        withContext(Dispatchers.IO) {
+            val form = okhttp3.FormBody.Builder().add("links[]", url).build()
+            val request = Request.Builder()
+                .url("https://1fichier.com/check_links.pl")
+                .header("User-Agent", Http.USER_AGENT)
+                .post(form)
+                .build()
+            val text = Http.client.newCall(request).execute().use { resp ->
+                resp.peekBody(Http.MAX_TEXT_BYTES).string()
+            }
+            val line = text.lines().firstOrNull { it.contains("1fichier.com") }
+                ?: return@withContext LinkInfo(online = null, note = "Keine Antwort vom Link-Check")
+            parseCheckLine(line)
+        }
+
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         val key = account.plainApiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
         val json = post("user/info.cgi", key, JSONObject())

@@ -3,8 +3,8 @@
 Ein Download-Manager für Android im Stil des JDownloaders – mit Hoster-Plugins,
 Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Design.
 
-**Fertige APK:** [`release/JDAndroid-1.1.0.apk`](release/JDAndroid-1.1.0.apk)
-(signiert, direkt installierbar ab Android 8.0; Update über 1.0.0 möglich)
+**Fertige APK:** [`release/JDAndroid-1.2.0.apk`](release/JDAndroid-1.2.0.apk)
+(signiert, direkt installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Unterstützte Hoster
 
@@ -20,8 +20,13 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
 
 ## Funktionen
 
-- **Linkgrabber**: beliebigen Text einfügen (oder aus dem Browser "Teilen"),
-  unterstützte Links werden automatisch erkannt
+- **Linksammler** wie im JDownloader: beliebigen Text einfügen (oder aus dem
+  Browser "Teilen"), unterstützte Links werden erkannt, landen im Linksammler,
+  werden dort **online geprüft** (verfügbar? Name? Größe?) und starten erst auf
+  „Starten“ bzw. „Alle starten“ (abschaltbar: „Neue Links sofort starten“)
+- **Suche und Filter** in der Download-Liste (Läuft, Wartend, Fertig, Fehler)
+- **Zielordner wählbar** über das Storage Access Framework (auch SD-Karte);
+  Standard bleibt Downloads/JDAndroid
 - **Download-Engine**: Foreground-Service, mehrere gleichzeitige Downloads
   (einstellbar 1–99), globale Geschwindigkeitsbegrenzung (KiB/s),
   Pause/Fortsetzen mit HTTP-Range-Resume, geglättete Geschwindigkeitsanzeige
@@ -41,8 +46,9 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
   Passwort) und **RAR4 + RAR5** (inkl. Verschlüsselung, über natives
   7-Zip-Binding); mehrteilige Archive (`.part1.rar`, `.r00`, `.z01`,
   `.7z.001`) werden entpackt, sobald alle Teile fertig sind
-- **Passwortliste** wie im JDownloader: ein Passwort pro Zeile, wird beim
-  Entpacken der Reihe nach durchprobiert
+- **Passwortliste** wie im JDownloader: als Liste gepflegt (einzeln oder
+  mehrere Zeilen einfügen), wird beim Entpacken der Reihe nach durchprobiert;
+  Passwörter aus Click'n'Load werden automatisch ergänzt
 - **Export**: fertige Dateien landen in `Downloads/JDAndroid/` (abschaltbar)
 - **Design**: Material 3, dynamische Farben (Material You, ab Android 12),
   automatischer Hell-/Dunkel-Modus je nach Systemeinstellung
@@ -69,6 +75,14 @@ Mindest-Android-Version: 8.0 (API 26), Ziel: Android 15 (API 35).
 (Passwort `jdandroid`, siehe `app/build.gradle.kts`). Der Keystore liegt bewusst
 im Repo, damit Updates dieselbe Signatur tragen – für eine Veröffentlichung im
 Play Store müsste er durch einen geheimen Keystore ersetzt werden.
+
+## Online-Prüfung im Linksammler
+
+| Hoster | Prüfung | Konto nötig |
+|---|---|---|
+| Rapidgator | API `file/info` (Name, Größe, MD5) | ja (Session-Token) |
+| 1fichier | öffentliches `check_links.pl` (Name, Größe) | nein |
+| ddownload | API `file/info` mit Key, sonst die öffentliche Dateiseite | nein |
 
 ## API-Quellen der Hoster
 

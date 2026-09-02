@@ -9,6 +9,7 @@ import com.jdandroid.data.Account
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadPackage
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
 import com.jdandroid.engine.DownloadService
@@ -47,21 +48,54 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val downloads: StateFlow<List<DownloadItem>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Downloads nach Paketen gruppiert - wie im JDownloader. */
+    private fun grouped(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
+        val byPackage = items.groupBy { it.packageId }
+        val known = packages.mapNotNull { pkg ->
+            byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
+        }
+        // Eintraege ohne Paket (aus aelteren Versionen) sammeln
+        val loose = byPackage[null].orEmpty()
+        return if (loose.isEmpty()) known
+        else known + DownloadGroup(
+            DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
+            loose
+        )
+    }
+
+    /** Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im JDownloader. */
     val groups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
-            val byPackage = items.groupBy { it.packageId }
-            val known = packages.mapNotNull { pkg ->
-                byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
-            }
-            // Eintraege ohne Paket (aus aelteren Versionen) sammeln
-            val loose = byPackage[null].orEmpty()
-            if (loose.isEmpty()) known
-            else known + DownloadGroup(
-                DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
-                loose
-            )
+            grouped(items.filter { it.status != DownloadStatus.COLLECTED }, packages)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Linksammler: noch nicht gestartete Links nach Paketen. */
+    val collectorGroups: StateFlow<List<DownloadGroup>> =
+        combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
+            grouped(items.filter { it.status == DownloadStatus.COLLECTED }, packages)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun startCollectedPackage(packageId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.startCollected(packageId)
+            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
+        }
+    }
+
+    fun startAllCollected() {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.startAllCollected()
+            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
+        }
+    }
+
+    fun recheckCollected() = LinkChecker.recheckAll(jdApp)
+
+    fun removeOfflineCollected() {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteOfflineCollected()
+            packageDao.deleteEmpty()
+        }
+    }
 
     fun renamePackage(packageId: Long, name: String) {
         viewModelScope.launch(Dispatchers.IO) { packageDao.rename(packageId, name) }
@@ -70,9 +104,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.byPackage(packageId).forEach { item ->
-                DownloadService.send(
-                    getApplication(), DownloadService.ACTION_DELETE, item.id
-                )
+                if (item.status == DownloadStatus.COLLECTED) dao.delete(item.id)
+                else DownloadService.send(getApplication(), DownloadService.ACTION_DELETE, item.id)
             }
             packageDao.delete(packageId)
         }
@@ -96,9 +129,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
-    fun addLinks(text: String, packageName: String? = null) {
+    fun addLinks(text: String, packageName: String? = null, onDone: (Int) -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
-            LinkSink.addFromText(getApplication(), text, packageName)
+            val added = LinkSink.addFromText(getApplication(), text, packageName)
+            launch(Dispatchers.Main) { onDone(added) }
         }
     }
 
@@ -116,7 +150,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                     added += LinkSink.addUrls(getApplication(), pkg.urls, pkg.name)
                 }
                 val total = packages.sumOf { it.urls.size }
-                if (added > 0) "$added Link(s) in ${packages.size} Paket(en) aus DLC hinzugefügt"
+                if (added > 0) "$added Link(s) in ${packages.size} Paket(en) in den Linksammler übernommen"
                 else "DLC gelesen, aber keine unterstützten Hoster enthalten " +
                     "($total Link(s) insgesamt)"
             } catch (e: ContainerDecrypter.ContainerException) {
@@ -139,7 +173,19 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retry(item: DownloadItem) = resume(item)
 
-    fun delete(id: Long) = DownloadService.send(getApplication(), DownloadService.ACTION_DELETE, id)
+    fun delete(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val item = dao.byId(id) ?: return@launch
+            // Linksammler-Eintraege haben nichts auf der Platte: direkt loeschen,
+            // ohne den Download-Dienst zu starten
+            if (item.status == DownloadStatus.COLLECTED) {
+                dao.delete(id)
+                packageDao.deleteEmpty()
+            } else {
+                DownloadService.send(getApplication(), DownloadService.ACTION_DELETE, id)
+            }
+        }
+    }
 
     fun pauseAll() = DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE_ALL)
 

@@ -74,6 +74,32 @@ class RapidgatorHoster : Hoster {
         )
     }
 
+    override suspend fun checkLink(url: String, account: Account?): LinkInfo =
+        withContext(Dispatchers.IO) {
+            // Die API verlangt auch fuer file/info eine Session
+            if (account == null) {
+                return@withContext LinkInfo(online = null, note = "Prüfung erst mit Rapidgator-Konto")
+            }
+            val id = fileId(url)
+            try {
+                val file = call("file/info", mapOf("file_id" to id, "token" to tokenFor(account)))
+                    .optJSONObject("file")
+                    ?: return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
+                LinkInfo(
+                    online = true,
+                    fileName = file.optString("name").ifBlank { null },
+                    fileSize = file.optLong("size", -1)
+                )
+            } catch (e: HosterException) {
+                if (e.permanent) LinkInfo(online = false, note = e.message)
+                else {
+                    // Token abgelaufen: einmal neu anmelden
+                    tokens.remove(account.id)
+                    LinkInfo(online = null, note = e.message)
+                }
+            }
+        }
+
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
             if (account == null) {

@@ -2,6 +2,10 @@ package com.jdandroid.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,8 +18,14 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -56,16 +66,34 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val removeLinks by settings.removeLinksAfterExtract.collectAsState(initial = true)
     val cnlEnabled by settings.clickNLoadEnabled.collectAsState(initial = false)
     val wifiOnly by settings.wifiOnly.collectAsState(initial = false)
+    val autoStart by settings.autoStartLinks.collectAsState(initial = false)
+    val treeUri by settings.downloadTreeUri.collectAsState(initial = null)
+    val passwordText by settings.passwordList.collectAsState(initial = "")
+    val passwords = remember(passwordText) {
+        passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    }
 
-    var passwords by remember { mutableStateOf("") }
     var maxConcurrentText by remember { mutableStateOf("") }
     var speedLimitText by remember { mutableStateOf("") }
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        passwords = settings.passwordList.first()
         maxConcurrentText = settings.maxConcurrent.first().toString()
         speedLimitText = settings.speedLimitKbps.first().toString()
         loaded = true
+    }
+
+    // Zielordner per Storage Access Framework (auch SD-Karte); die Berechtigung
+    // wird dauerhaft uebernommen, damit der Download-Dienst dort schreiben darf.
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        scope.launch { settings.setDownloadTreeUri(uri.toString()) }
     }
 
     Scaffold(
@@ -110,18 +138,43 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
+                title = "Neue Links sofort starten",
+                subtitle = "Aus: Links landen zuerst im Linksammler, werden online geprüft " +
+                    "und starten erst auf \"Starten\" (wie im JDownloader)",
+                checked = autoStart,
+                onChange = { v -> scope.launch { settings.setAutoStartLinks(v) } }
+            )
+            SettingSwitch(
                 title = "Nur über WLAN laden",
                 subtitle = "Downloads pausieren bei mobiler Verbindung und starten " +
                     "automatisch, sobald WLAN verfügbar ist",
                 checked = wifiOnly,
                 onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
             )
-            SettingSwitch(
-                title = "In öffentlichen Download-Ordner",
-                subtitle = "Fertige Dateien nach Downloads/JDAndroid verschieben",
-                checked = export,
-                onChange = { v -> scope.launch { settings.setExportToDownloads(v) } }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Zielordner", style = MaterialTheme.typography.titleSmall)
+            Text(
+                treeUri?.let { "Gewählt: ${displayTree(it)}" }
+                    ?: if (export) "Standard: Downloads/JDAndroid" else "Standard: App-Ordner (nicht öffentlich)",
+                style = MaterialTheme.typography.bodySmall
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { folderPicker.launch(null) }) { Text("Ordner wählen …") }
+                if (treeUri != null) {
+                    TextButton(onClick = { scope.launch { settings.setDownloadTreeUri(null) } }) {
+                        Text("Zurücksetzen")
+                    }
+                }
+            }
+            if (treeUri == null) {
+                SettingSwitch(
+                    title = "In öffentlichen Download-Ordner",
+                    subtitle = "Fertige Dateien nach Downloads/JDAndroid verschieben",
+                    checked = export,
+                    onChange = { v -> scope.launch { settings.setExportToDownloads(v) } }
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
@@ -149,28 +202,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
             )
             Spacer(Modifier.height(12.dp))
-            Text("Passwortliste", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "Ein Passwort pro Zeile. Beim Entpacken werden alle Passwörter " +
-                    "der Reihe nach ausprobiert.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = passwords,
-                onValueChange = { value ->
-                    passwords = value
-                    if (loaded) scope.launch { settings.setPasswordList(value) }
-                },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
-                // Wie die Browser-Adresszeile: keine Autokorrektur und kein
-                // automatisches Leerzeichen nach einem Punkt - Passwoerter
-                // duerfen nicht "korrigiert" werden.
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    autoCorrectEnabled = false
-                ),
-                placeholder = { Text("passwort1\npasswort2\n…") }
+            PasswordListEditor(
+                passwords = passwords,
+                onAdd = { list -> scope.launch { settings.addPasswords(list) } },
+                onRemove = { pw -> scope.launch { settings.removePassword(pw) } }
             )
 
             Spacer(Modifier.height(16.dp))
@@ -257,6 +292,114 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** Lesbarer Name eines SAF-Ordners: "primary:Download/JD" -> "Download/JD". */
+private fun displayTree(uri: String): String {
+    val decoded = runCatching { Uri.decode(uri) }.getOrDefault(uri)
+    val tree = decoded.substringAfter("/tree/", decoded)
+    return tree.substringAfter(':', tree).ifBlank { "Hauptspeicher" }
+}
+
+/**
+ * Passwortliste als echte Liste (V4): ein Eintrag pro Zeile mit Loeschen,
+ * neues Passwort per Feld, Sammel-Import fuer mehrere Zeilen.
+ */
+@Composable
+private fun PasswordListEditor(
+    passwords: List<String>,
+    onAdd: (List<String>) -> Unit,
+    onRemove: (String) -> Unit
+) {
+    var newPassword by remember { mutableStateOf("") }
+    var importOpen by remember { mutableStateOf(false) }
+
+    Text("Passwortliste", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Beim Entpacken werden alle Passwörter der Reihe nach ausprobiert. " +
+            "Passwörter aus Click'n'Load werden automatisch ergänzt.",
+        style = MaterialTheme.typography.bodySmall
+    )
+    Spacer(Modifier.height(8.dp))
+    if (passwords.isEmpty()) {
+        Text(
+            "Noch keine Passwörter.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                passwords.forEachIndexed { index, pw ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            pw,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { onRemove(pw) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Passwort entfernen")
+                        }
+                    }
+                    if (index < passwords.lastIndex) HorizontalDivider()
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = newPassword,
+            onValueChange = { newPassword = it },
+            label = { Text("Neues Passwort") },
+            singleLine = true,
+            // Wie die Browser-Adresszeile: keine Autokorrektur, kein
+            // automatisches Leerzeichen nach einem Punkt.
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                autoCorrectEnabled = false
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(
+            enabled = newPassword.isNotBlank(),
+            onClick = { onAdd(listOf(newPassword.trim())); newPassword = "" }
+        ) { Text("Hinzufügen") }
+    }
+    TextButton(onClick = { importOpen = true }) { Text("Mehrere einfügen …") }
+
+    if (importOpen) {
+        var text by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { importOpen = false },
+            title = { Text("Passwörter einfügen") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false
+                    ),
+                    placeholder = { Text("Ein Passwort pro Zeile") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = text.isNotBlank(),
+                    onClick = {
+                        onAdd(text.lines().map { it.trim() }.filter { it.isNotEmpty() })
+                        importOpen = false
+                    }
+                ) { Text("Übernehmen") }
+            },
+            dismissButton = { TextButton(onClick = { importOpen = false }) { Text("Abbrechen") } }
+        )
     }
 }
 

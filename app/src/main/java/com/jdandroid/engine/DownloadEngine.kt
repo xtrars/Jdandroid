@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.JdApp
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
@@ -81,6 +82,51 @@ class DownloadEngine(
     private fun downloadDir(): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
             .apply { mkdirs() }
+
+    /**
+     * Vom Nutzer gewaehlter Zielordner (Storage Access Framework), z.B. auf der
+     * SD-Karte. null, wenn keiner gewaehlt oder die Berechtigung verloren ist.
+     */
+    private suspend fun targetTree(): DocumentFile? {
+        val uri = app.settings.currentDownloadTreeUri() ?: return null
+        return runCatching { DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri)) }
+            .getOrNull()?.takeIf { it.canWrite() }
+    }
+
+    /** Datei in den SAF-Ordner kopieren; liefert den Anzeigepfad oder null bei Fehler. */
+    private fun copyToTree(dir: DocumentFile, file: File, name: String): String? {
+        val mime = android.webkit.MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
+            ?: "application/octet-stream"
+        // Vorhandene Datei nicht ueberschreiben, sondern durchnummerieren
+        var candidate = name
+        var index = 2
+        while (dir.findFile(candidate) != null && index < 1000) {
+            val base = name.substringBeforeLast('.', name)
+            val ext = name.substringAfterLast('.', "")
+            candidate = if (ext.isEmpty()) "$base ($index)" else "$base ($index).$ext"
+            index++
+        }
+        val target = dir.createFile(mime, candidate) ?: return null
+        return try {
+            context.contentResolver.openOutputStream(target.uri)?.use { out ->
+                file.inputStream().use { it.copyTo(out) }
+            } ?: return null
+            "${dir.name ?: "Zielordner"}/${target.name ?: candidate}"
+        } catch (e: Exception) {
+            target.delete()
+            null
+        }
+    }
+
+    private fun subDir(root: DocumentFile, path: String): DocumentFile? {
+        var current: DocumentFile = root
+        path.split('/').filter { it.isNotBlank() }.forEach { part ->
+            current = current.findFile(part)?.takeIf { it.isDirectory }
+                ?: current.createDirectory(part) ?: return null
+        }
+        return current
+    }
 
     /**
      * Getaktete Verbindung bei aktiver WLAN-Beschraenkung? Dann wird nicht
@@ -417,6 +463,21 @@ class DownloadEngine(
      * (Downloads/JDAndroid/<base>/...). Ohne Export bleiben sie im App-Ordner.
      */
     private suspend fun exportDirectory(dir: File, base: String): String {
+        // Eigener Zielordner (SAF) hat Vorrang vor Downloads/JDAndroid
+        targetTree()?.let { root ->
+            val target = subDir(root, base) ?: return dir.absolutePath
+            var allOk = true
+            dir.walkTopDown().filter { it.isFile }.forEach { file ->
+                val relDir = file.parentFile!!.relativeTo(dir).path
+                val destDir = if (relDir.isEmpty()) target else subDir(target, relDir)
+                if (destDir == null || copyToTree(destDir, file, file.name) == null) allOk = false
+                else file.delete()
+            }
+            return if (allOk) {
+                dir.deleteRecursively()
+                "${root.name ?: "Zielordner"}/$base"
+            } else dir.absolutePath
+        }
         val export = app.settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
         if (!export) return dir.absolutePath
         val resolver = context.contentResolver
@@ -504,6 +565,13 @@ class DownloadEngine(
 
     /** Verschiebt die fertige Datei ins Ziel (oeffentlicher Download-Ordner oder App-Ordner). */
     private suspend fun finish(temp: File, fileName: String): String {
+        targetTree()?.let { root ->
+            copyToTree(root, temp, fileName)?.let { path ->
+                temp.delete()
+                return path
+            }
+            // Kopieren fehlgeschlagen (Berechtigung weg?) -> regulaerer Weg
+        }
         val export = app.settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
         if (export) {
             try {

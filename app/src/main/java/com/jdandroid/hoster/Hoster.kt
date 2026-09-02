@@ -15,6 +15,17 @@ data class ResolvedLink(
     val hash: String? = null
 )
 
+/**
+ * Ergebnis der Online-Pruefung im Linksammler. [online] null = nicht
+ * pruefbar (z.B. Konto noetig), [note] erklaert das dem Nutzer.
+ */
+data class LinkInfo(
+    val online: Boolean?,
+    val fileName: String? = null,
+    val fileSize: Long = -1,
+    val note: String? = null
+)
+
 data class AccountInfo(
     val valid: Boolean,
     val premiumUntil: Long = 0,
@@ -50,6 +61,13 @@ interface Hoster {
 
     /** Loest einen Hoster-Link in eine direkte Download-URL auf. */
     suspend fun resolve(url: String, account: Account?): ResolvedLink
+
+    /**
+     * Prueft ohne Download, ob die Datei online ist, und liefert wenn moeglich
+     * Name und Groesse (Linksammler). Standard: nicht pruefbar.
+     */
+    suspend fun checkLink(url: String, account: Account?): LinkInfo =
+        LinkInfo(online = null, note = "Keine Prüfung möglich")
 }
 
 object Http {

@@ -325,6 +325,54 @@ class DdownloadHoster : Hoster {
             ResolvedLink(direct, fileName)
         }
 
+    override suspend fun checkLink(url: String, account: Account?): LinkInfo =
+        withContext(Dispatchers.IO) {
+            val code = fileCode(url)
+            val key = account?.plainApiKey
+            if (!key.isNullOrBlank()) {
+                val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
+                    .optJSONArray("result")?.optJSONObject(0)
+                    ?: return@withContext LinkInfo(online = null, note = "Keine Antwort der API")
+                return@withContext if (info.optInt("status") == 404) {
+                    LinkInfo(online = false, note = "Datei nicht gefunden")
+                } else {
+                    LinkInfo(
+                        online = true,
+                        fileName = info.optString("name").ifBlank { null },
+                        fileSize = info.optLong("size", -1)
+                    )
+                }
+            }
+            // Ohne API-Key: oeffentliche Dateiseite auswerten (kein Login noetig)
+            val html = Http.get("$siteBase/$code")
+            if (html.contains("File Not Found", true) || html.contains("No such file", true)) {
+                return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
+            }
+            LinkInfo(
+                online = true,
+                fileName = pageFileName(html),
+                fileSize = pageFileSize(html)
+            )
+        }
+
+    /** Dateiname aus einer XFileSharing-Dateiseite (fname-Feld oder Titel). */
+    internal fun pageFileName(html: String): String? {
+        Regex("""name=["']fname["']\s+value=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.let { return it.groupValues[1].trim() }
+        Regex("""value=["']([^"']+)["']\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.let { return it.groupValues[1].trim() }
+        return Regex("""<title>([^<]+?)(?:\s*[-|–].*)?</title>""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(1)?.trim()
+            ?.takeIf { it.isNotBlank() && !it.contains("ddownload", true) }
+    }
+
+    /** Groesse wie "1.2 GB" aus der Dateiseite. */
+    internal fun pageFileSize(html: String): Long {
+        val m = Regex("""([\d.,]+)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(html)
+            ?: return -1
+        return toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
+    }
+
     /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
     private fun resolveViaApi(key: String, code: String): ResolvedLink {
         var fileName: String? = null
@@ -408,6 +456,7 @@ class DdownloadHoster : Hoster {
             "TB" -> 1L shl 40
             "GB" -> 1L shl 30
             "MB" -> 1L shl 20
+            "KB" -> 1L shl 10
             else -> 1L
         }
         return (n * factor).toLong()
