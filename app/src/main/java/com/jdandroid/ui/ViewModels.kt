@@ -109,11 +109,16 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun importDlc(content: String, onResult: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val message = try {
-                val urls = ContainerDecrypter.decryptDlc(content)
-                val added = LinkSink.addUrls(getApplication(), urls)
-                if (added > 0) "$added Link(s) aus DLC hinzugefügt"
+                // Paketstruktur des DLC uebernehmen - wie im JDownloader
+                val packages = ContainerDecrypter.decryptDlcPackages(content)
+                var added = 0
+                packages.forEach { pkg ->
+                    added += LinkSink.addUrls(getApplication(), pkg.urls, pkg.name)
+                }
+                val total = packages.sumOf { it.urls.size }
+                if (added > 0) "$added Link(s) in ${packages.size} Paket(en) aus DLC hinzugefügt"
                 else "DLC gelesen, aber keine unterstützten Hoster enthalten " +
-                    "(${urls.size} Link(s) insgesamt)"
+                    "($total Link(s) insgesamt)"
             } catch (e: Exception) {
                 e.message ?: "DLC-Import fehlgeschlagen"
             }

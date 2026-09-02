@@ -17,59 +17,103 @@ object ContainerDecrypter {
     // Container-Schluessel (rc) entschluesselt wird. Öffentlich bekannt aus
     // diversen Open-Source-DLC-Implementierungen (pyLoad u.a.).
     private val DLC_KEY = "cb99b5cbc24db398".toByteArray(Charsets.US_ASCII)
-    private val DLC_IV = "9bc24db398cb99b5".toByteArray(Charsets.US_ASCII)
+    // ACHTUNG: IV ist NICHT die umgestellte KEY-Zeichenfolge. Ein falscher IV
+    // liefert bei einem einzelnen CBC-Block trotzdem ASCII-aehnliche Bytes
+    // (er geht nur per XOR ein) und taeuscht damit einen korrekten Schluessel vor.
+    private val DLC_IV = "9bc24cb995cb8db3".toByteArray(Charsets.US_ASCII)
 
     private const val DLC_SERVICE =
         "http://service.jdownloader.org/dlcrypt/service.php?srcType=dlc&destType=pylo&data="
 
     class ContainerException(message: String) : Exception(message)
 
+    /** Ein Paket aus dem DLC mit (dekodiertem) Namen und seinen Links. */
+    data class DlcPackage(val name: String?, val urls: List<String>)
+
+    /** Holt den Container-Schluessel (rc) vom JDownloader-Dienst. */
+    private fun fetchRc(dlcKey: String): String {
+        val response = try {
+            Http.client.newCall(
+                Request.Builder().url(DLC_SERVICE + dlcKey)
+                    .header("User-Agent", Http.USER_AGENT).build()
+            ).execute().use { it.peekBody(Http.MAX_TEXT_BYTES).string() }
+        } catch (e: Exception) {
+            throw ContainerException("DLC-Dienst nicht erreichbar: ${e.message}")
+        }
+        return Regex("<rc>(.+?)</rc>", RegexOption.DOT_MATCHES_ALL).find(response)
+            ?.groupValues?.get(1)?.trim()
+            ?: throw ContainerException(
+                "DLC konnte nicht entschlüsselt werden – der JDownloader-DLC-Dienst " +
+                    "hat keinen Schlüssel geliefert (Dienst evtl. abgeschaltet)."
+            )
+    }
+
     /**
-     * Entschluesselt den Inhalt einer .dlc-Datei zu einer Liste von URLs.
-     * Benoetigt den (historischen) JDownloader-DLC-Dienst.
+     * Leitet aus der Dienst-Antwort (rc, base64) den realen Container-Schluessel
+     * ab. Er dient anschliessend zugleich als Schluessel und IV fuer die Daten.
      */
-    fun decryptDlc(dlcContent: String): List<String> {
+    internal fun deriveKey(rcBase64: String): ByteArray {
+        val rc = base64(rcBase64)
+        if (rc.size < 16) throw ContainerException("DLC-Dienst lieferte ungültige Antwort")
+        // exakt ein Block: eine laengere Antwort wuerde bei NoPadding werfen
+        return aesCbcDecrypt(rc.copyOf(16), DLC_KEY, DLC_IV).copyOf(16)
+    }
+
+    /**
+     * Entschluesselt den Inhalt einer .dlc-Datei zu Paketen mit URLs.
+     * Benoetigt den JDownloader-DLC-Dienst.
+     */
+    fun decryptDlcPackages(dlcContent: String): List<DlcPackage> {
         val data = dlcContent.trim().filterNot { it.isWhitespace() }
         if (data.length < 88) throw ContainerException("DLC-Datei zu kurz oder ungültig")
 
         val dlcKey = data.substring(data.length - 88)
         val dlcData = base64(data.substring(0, data.length - 88))
+        if (dlcData.size % 16 != 0) throw ContainerException("DLC-Datei beschädigt")
 
-        val response = try {
-            Http.client.newCall(
-                Request.Builder().url(DLC_SERVICE + dlcKey)
-                    .header("User-Agent", Http.USER_AGENT).build()
-            ).execute().use { it.body?.string() ?: "" }
-        } catch (e: Exception) {
-            throw ContainerException("DLC-Dienst nicht erreichbar: ${e.message}")
+        val realKey = deriveKey(fetchRc(dlcKey))
+        val xml = decodeXml(aesCbcDecrypt(dlcData, realKey, realKey))
+        val packages = parsePackages(xml)
+        if (packages.all { it.urls.isEmpty() }) {
+            throw ContainerException("DLC enthielt keine lesbaren Links")
         }
+        return packages.filter { it.urls.isNotEmpty() }
+    }
 
-        val rc = Regex("<rc>(.+?)</rc>").find(response)?.groupValues?.get(1)
-            ?: throw ContainerException(
-                "DLC konnte nicht entschlüsselt werden – der JDownloader-DLC-Dienst " +
-                    "hat keinen Schlüssel geliefert (Dienst evtl. abgeschaltet)."
-            )
-        val rcDecoded = base64(rc)
-        if (rcDecoded.size < 16) throw ContainerException("DLC-Dienst lieferte ungültige Antwort")
+    /** Alle URLs eines DLC ohne Paketstruktur. */
+    fun decryptDlc(dlcContent: String): List<String> =
+        decryptDlcPackages(dlcContent).flatMap { it.urls }
 
-        // rc -> realer Schluessel (dient zugleich als IV)
-        val realKey = aesCbcDecrypt(rcDecoded, DLC_KEY, DLC_IV).copyOf(16)
-        val xmlBase64 = aesCbcDecrypt(dlcData, realKey, realKey)
-        // AES/NoPadding hinterlaesst Auffuell-Nullbytes; nur gueltige base64-Zeichen behalten
-        val cleaned = onlyBase64(String(xmlBase64, Charsets.US_ASCII))
-        val xml = String(base64(cleaned), Charsets.UTF_8)
+    /** AES/NoPadding hinterlaesst Auffuellbytes; nur gueltige base64-Zeichen behalten. */
+    internal fun decodeXml(plain: ByteArray): String =
+        String(base64(onlyBase64(String(plain, Charsets.US_ASCII))), Charsets.UTF_8)
 
-        val urls = Regex("<url>(.+?)</url>", RegexOption.DOT_MATCHES_ALL)
-            .findAll(xml)
-            .mapNotNull { match ->
-                runCatching { String(base64(match.groupValues[1].trim()), Charsets.UTF_8) }
-                    .getOrNull()
-            }
+    /**
+     * DLC-XML: <content><package name="BASE64"><file><url>BASE64</url>...</file></package>
+     * Paketname und jede URL sind jeweils nochmals base64-kodiert.
+     */
+    internal fun parsePackages(xml: String): List<DlcPackage> {
+        val packageRegex = Regex(
+            """<package\b([^>]*)>(.*?)</package>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val urlRegex = Regex("<url>(.+?)</url>", RegexOption.DOT_MATCHES_ALL)
+        fun urlsIn(block: String): List<String> = urlRegex.findAll(block)
+            .mapNotNull { m -> runCatching { String(base64(m.groupValues[1].trim()), Charsets.UTF_8) }.getOrNull() }
+            .map { it.trim() }
             .filter { it.startsWith("http", ignoreCase = true) }
             .toList()
 
-        if (urls.isEmpty()) throw ContainerException("DLC enthielt keine lesbaren Links")
-        return urls
+        val packages = packageRegex.findAll(xml).map { m ->
+            val nameB64 = Regex("""name=["']([^"']*)["']""").find(m.groupValues[1])?.groupValues?.get(1)
+            val name = nameB64?.let { n ->
+                runCatching { String(base64(n), Charsets.UTF_8).trim() }.getOrNull()
+            }?.ifBlank { null }
+            DlcPackage(name, urlsIn(m.groupValues[2]))
+        }.toList()
+
+        // DLC ohne <package>-Struktur: alle URLs als ein Paket
+        return packages.ifEmpty { listOf(DlcPackage(null, urlsIn(xml))) }
     }
 
     /**
