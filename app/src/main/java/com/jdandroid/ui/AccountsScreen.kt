@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -251,6 +253,10 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             onValueChange = { username = it },
                             label = { Text("Benutzername / E-Mail") },
                             leadingIcon = { Icon(Icons.Default.Person, null) },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                autoCorrectEnabled = false
+                            ),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -261,6 +267,11 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             label = { Text("Passwort") },
                             leadingIcon = { Icon(Icons.Default.Key, null) },
                             visualTransformation = PasswordVisualTransformation(),
+                            // Passwort-Tastatur: keine Autokorrektur, kein Leerzeichen nach Punkt
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                autoCorrectEnabled = false
+                            ),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -270,6 +281,11 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             onValueChange = { apiKey = it },
                             label = { Text("API-Key") },
                             leadingIcon = { Icon(Icons.Default.Key, null) },
+                            // Wie die Browser-Adresszeile: keine Autokorrektur, keine Leerzeichen
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                autoCorrectEnabled = false
+                            ),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )

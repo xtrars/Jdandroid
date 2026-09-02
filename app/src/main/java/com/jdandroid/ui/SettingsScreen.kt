@@ -155,6 +155,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     if (loaded) scope.launch { settings.setPasswordList(value) }
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                // Wie die Browser-Adresszeile: keine Autokorrektur und kein
+                // automatisches Leerzeichen nach einem Punkt - Passwoerter
+                // duerfen nicht "korrigiert" werden.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    autoCorrectEnabled = false
+                ),
                 placeholder = { Text("passwort1\npasswort2\n…") }
             )
 
