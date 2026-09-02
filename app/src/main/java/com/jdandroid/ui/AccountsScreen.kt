@@ -41,6 +41,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -96,9 +99,18 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
 fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     val accounts by vm.accounts.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
+    val snackbarHost = remember { SnackbarHostState() }
+    val message by vm.message.collectAsState()
+    LaunchedEffect(message) {
+        message?.let {
+            snackbarHost.showSnackbar(it)
+            vm.consumeMessage()
+        }
+    }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = { TopAppBar(title = { Text("Konten") }) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
@@ -135,6 +147,7 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
 private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val isPremium = account.valid && (
         account.premiumUntil > System.currentTimeMillis() ||
             (account.premiumUntil == 0L && account.statusText?.startsWith("Premium") == true)
@@ -181,10 +194,20 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
             IconButton(onClick = { vm.check(account.id) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Prüfen")
             }
-            IconButton(onClick = { vm.delete(account) }) {
+            IconButton(onClick = { confirmDelete = true }) {
                 Icon(Icons.Default.Delete, contentDescription = "Löschen")
             }
         }
+    }
+    if (confirmDelete) {
+        ConfirmDeleteDialog(
+            title = "Konto löschen?",
+            text = "${hoster?.displayName ?: account.hosterId}: " +
+                "${account.username ?: "API-Key"} wird entfernt. Downloads dieses Hosters " +
+                "können danach nicht mehr starten.",
+            onConfirm = { vm.delete(account) },
+            onDismiss = { confirmDelete = false }
+        )
     }
 }
 

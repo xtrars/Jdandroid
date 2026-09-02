@@ -67,6 +67,8 @@ class DdownloadHoster : Hoster {
     )
 
     private fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
+        // OkHttp ruft den CookieJar aus mehreren Threads auf (parallele
+        // Downloads desselben Kontos) - Zugriffe daher synchronisieren.
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -74,13 +76,15 @@ class DdownloadHoster : Hoster {
             .followRedirects(true)
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    for (c in cookies) {
-                        store.removeAll { it.name == c.name && it.domain == c.domain }
-                        store.add(c)
+                    synchronized(store) {
+                        for (c in cookies) {
+                            store.removeAll { it.name == c.name && it.domain == c.domain }
+                            store.add(c)
+                        }
                     }
                 }
                 override fun loadForRequest(url: HttpUrl): List<Cookie> =
-                    store.filter { it.matches(url) }
+                    synchronized(store) { store.filter { it.matches(url) } }
             })
             .build()
     }
@@ -182,20 +186,20 @@ class DdownloadHoster : Hoster {
     /** Cookie-String aus dem Browser in den OkHttp-Cookie-Speicher uebernehmen. */
     private fun seedCookies(accountId: Long, raw: String) {
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
-        if (store.isNotEmpty()) return
-        val url = siteBase.toHttpUrl()
-        raw.split(';').forEach { part ->
-            val name = part.substringBefore('=').trim()
-            val value = part.substringAfter('=', "").trim()
-            if (name.isNotEmpty()) {
-                Cookie.Builder()
-                    .name(name).value(value)
-                    .domain("ddownload.com").path("/")
-                    .build()
-                    .let { store.add(it) }
+        synchronized(store) {
+            if (store.isNotEmpty()) return
+            raw.split(';').forEach { part ->
+                val name = part.substringBefore('=').trim()
+                val value = part.substringAfter('=', "").trim()
+                if (name.isNotEmpty()) {
+                    Cookie.Builder()
+                        .name(name).value(value)
+                        .domain("ddownload.com").path("/")
+                        .build()
+                        .let { store.add(it) }
+                }
             }
         }
-        require(url.host.isNotEmpty())
     }
 
     /** Alle hidden-Felder eines Formulars einsammeln (Reihenfolge der Attribute egal). */

@@ -36,9 +36,17 @@ class JdApp : Application() {
                 NotificationManager.IMPORTANCE_LOW
             )
         )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_EVENTS,
+                "Hinweise",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "Neue Links per Click'n'Load, offene Downloads nach Neustart" }
+        )
     }
 
     companion object {
         const val CHANNEL_DOWNLOADS = "downloads"
+        const val CHANNEL_EVENTS = "events"
     }
 }

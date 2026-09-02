@@ -22,6 +22,8 @@ data class DownloadPackage(
     val name: String,
     /** Automatisch benannt: darf spaeter aus den Dateinamen verfeinert werden. */
     val autoNamed: Boolean = true,
+    /** Herkunft, z.B. die Webseite bei Click'n'Load - sichtbar in der Liste. */
+    val source: String? = null,
     val addedAt: Long = System.currentTimeMillis()
 )
 
@@ -80,6 +82,25 @@ interface DownloadDao {
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
+    suspend fun pausedCount(): Int
+
+    /** Summen fuer die Fortschrittsanzeige in der Benachrichtigung. */
+    @Query(
+        "SELECT COALESCE(SUM(downloadedBytes), 0) FROM downloads " +
+            "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED')"
+    )
+    suspend fun openDownloadedBytes(): Long
+
+    @Query(
+        "SELECT COALESCE(SUM(fileSize), 0) FROM downloads " +
+            "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED') AND fileSize > 0"
+    )
+    suspend fun openTotalBytes(): Long
+
+    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'PAUSED'")
+    suspend fun requeuePaused()
 
     @Query("SELECT COUNT(*) FROM downloads WHERE url = :url")
     suspend fun countByUrl(url: String): Int
@@ -174,8 +195,8 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 4,
-    exportSchema = false
+    version = 5,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
@@ -213,6 +234,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE packages ADD COLUMN source TEXT")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
     }
 }

@@ -37,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.widget.Toast
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
+import com.jdandroid.container.ContainerFiles
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.launch
 
@@ -111,13 +113,16 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (uri != null) {
-            val looksLikeDlc = (uri.toString().endsWith(".dlc", true)) ||
-                intent.type == "application/octet-stream"
-            val content = runCatching {
-                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            }.getOrNull()
-            if (content != null && (looksLikeDlc || content.trim().endsWith("=="))) {
+            // Groessenbegrenzt lesen: der Filter nimmt jede octet-stream-Datei an,
+            // ein versehentlich geteiltes Video darf keinen OutOfMemoryError ausloesen.
+            val result = runCatching { ContainerFiles.readText(contentResolver, uri) }
+            val content = result.getOrNull()
+            if (content != null && ContainerFiles.looksLikeDlc(content)) {
                 dlcContent.value = content
+            } else {
+                val reason = result.exceptionOrNull()?.message
+                    ?: "Die geöffnete Datei ist kein DLC-Container."
+                Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
             }
         }
     }

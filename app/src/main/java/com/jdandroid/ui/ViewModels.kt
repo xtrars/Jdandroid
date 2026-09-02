@@ -119,8 +119,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                 if (added > 0) "$added Link(s) in ${packages.size} Paket(en) aus DLC hinzugefügt"
                 else "DLC gelesen, aber keine unterstützten Hoster enthalten " +
                     "($total Link(s) insgesamt)"
-            } catch (e: Exception) {
+            } catch (e: ContainerDecrypter.ContainerException) {
                 e.message ?: "DLC-Import fehlgeschlagen"
+            } catch (e: Exception) {
+                "DLC-Import fehlgeschlagen: Datei ist kein gültiger Container"
             }
             launch(Dispatchers.Main) { onResult(message) }
         }
@@ -168,6 +170,12 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     private val _webLogin = MutableStateFlow<Hoster?>(null)
     val webLogin: StateFlow<Hoster?> = _webLogin
 
+    /** Meldung fuer den Nutzer (z.B. Keystore-Fehler beim Speichern), null = keine. */
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message
+
+    fun consumeMessage() { _message.value = null }
+
     fun requestWebLogin(hoster: Hoster) { _webLogin.value = hoster }
 
     fun cancelWebLogin() { _webLogin.value = null }
@@ -180,29 +188,37 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addAccount(hoster: Hoster, username: String?, password: String?, apiKey: String?) {
         viewModelScope.launch(Dispatchers.IO) {
-            val id = dao.insert(
+            // Ohne funktionierenden Keystore wird NICHT gespeichert (kein
+            // stiller Klartext-Fallback) - der Nutzer bekommt eine Meldung.
+            val account = try {
                 Account(
                     hosterId = hoster.id,
                     username = username?.ifBlank { null },
                     password = Secrets.encrypt(password?.ifBlank { null }),
                     apiKey = Secrets.encrypt(apiKey?.ifBlank { null })
                 )
-            )
-            check(id)
+            } catch (e: Secrets.SecretsException) {
+                _message.value = e.message
+                return@launch
+            }
+            check(dao.insert(account))
         }
     }
 
     /** Konto aus einer im Browser uebernommenen Session anlegen. */
     fun addAccountWithCookies(hoster: Hoster, cookies: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val id = dao.insert(
+            val account = try {
                 Account(
                     hosterId = hoster.id,
                     username = "Browser-Login",
                     cookies = Secrets.encrypt(cookies)
                 )
-            )
-            check(id)
+            } catch (e: Secrets.SecretsException) {
+                _message.value = e.message
+                return@launch
+            }
+            check(dao.insert(account))
         }
     }
 

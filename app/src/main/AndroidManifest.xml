@@ -7,10 +7,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!--
+      allowBackup="false": Konten (auch verschluesselt) und Download-Liste
+      gehoeren nicht in Cloud-Backups. Ein Backup wuerde zudem den Keystore-
+      Schluessel nicht mitnehmen und die Konten waeren nach Wiederherstellung
+      ohnehin unbrauchbar.
+    -->
     <application
         android:name=".JdApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -31,17 +38,35 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- DLC-Container-Dateien oeffnen -->
+            <!--
+              DLC-Container oeffnen, Weg 1: nach MIME-Typ. Android kennt die
+              Endung .dlc nicht und meldet solche Dateien als
+              application/octet-stream - so liefern Downloads-App, Chrome und
+              Dateimanager sie (content://-URI ohne Endung im Pfad). Ob es
+              wirklich ein DLC ist, prueft die App am Inhalt.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <!--
+              Weg 2: nach Dateiendung (file:// bzw. content:// mit sichtbarem
+              Pfad). pathAdvancedPattern statt pathPattern, weil ".*" bei
+              pathPattern nicht zuruecksetzt und "Serie.S01.dlc" sonst nicht
+              erkannt wuerde.
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
                 <data android:scheme="file" />
-                <data android:mimeType="*/*" />
+                <data android:scheme="content" />
                 <data android:host="*" />
-                <data android:pathPattern=".*\\.dlc" />
+                <data android:pathAdvancedPattern=".*\\.[dD][lL][cC]" />
             </intent-filter>
+            <!-- DLC per "Teilen" aus Dateimanagern -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -53,5 +78,20 @@
             android:name=".engine.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+          Nach einem Neustart darf ein dataSync-Dienst nicht direkt aus dem
+          Hintergrund starten (Android 15). Der Receiver stellt die Warteschlange
+          konsistent her und erinnert per Benachrichtigung an offene Downloads.
+        -->
+        <receiver
+            android:name=".engine.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

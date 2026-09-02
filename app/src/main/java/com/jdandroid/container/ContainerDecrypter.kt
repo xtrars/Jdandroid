@@ -23,7 +23,7 @@ object ContainerDecrypter {
     private val DLC_IV = "9bc24cb995cb8db3".toByteArray(Charsets.US_ASCII)
 
     private const val DLC_SERVICE =
-        "http://service.jdownloader.org/dlcrypt/service.php?srcType=dlc&destType=pylo&data="
+        "https://service.jdownloader.org/dlcrypt/service.php?srcType=dlc&destType=pylo&data="
 
     class ContainerException(message: String) : Exception(message)
 
@@ -64,7 +64,9 @@ object ContainerDecrypter {
      * Benoetigt den JDownloader-DLC-Dienst.
      */
     fun decryptDlcPackages(dlcContent: String): List<DlcPackage> {
-        val data = dlcContent.trim().filterNot { it.isWhitespace() }
+        // Kommt der Container per Formular (Click'n'Load /flash/addcrypted),
+        // hat der Browser "+" bereits zu Leerzeichen dekodiert - zurueckwandeln.
+        val data = dlcContent.replace(' ', '+').filterNot { it.isWhitespace() }
         if (data.length < 88) throw ContainerException("DLC-Datei zu kurz oder ungültig")
 
         val dlcKey = data.substring(data.length - 88)
@@ -124,8 +126,18 @@ object ContainerDecrypter {
     fun decryptClickNLoad(crypted: String, jk: String): List<String> {
         val hexKey = Regex("[\"']([0-9a-fA-F]{16,})[\"']").find(jk)?.groupValues?.get(1)
             ?: throw ContainerException("Click'n'Load: kein Schlüssel gefunden")
+        // Das Protokoll ist AES-128: genau 16 Byte, die zugleich als IV dienen.
+        // Ein laengerer Wert ergaebe einen unbrauchbaren IV und eine kryptische
+        // Exception statt einer klaren Meldung.
+        if (hexKey.length != 32) {
+            throw ContainerException("Click'n'Load: Schlüssel hat ungültige Länge (${hexKey.length / 2} Byte)")
+        }
         val key = hexKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        val decoded = base64(crypted.trim())
+        // Rohes "+" im Formular wird vom Browser als Leerzeichen dekodiert
+        val decoded = base64(crypted.replace(' ', '+').trim())
+        if (decoded.isEmpty() || decoded.size % 16 != 0) {
+            throw ContainerException("Click'n'Load: Daten beschädigt (Länge ${decoded.size})")
+        }
         val plain = aesCbcDecrypt(decoded, key, key)
         // Nullbytes (Blockpadding) entfernen, sonst haengen sie am letzten Link
         return String(plain, Charsets.UTF_8).replace("\u0000", "")

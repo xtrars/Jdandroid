@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <!--
-      Der JDownloader-DLC-Dienst ist nur über HTTP (ohne TLS) erreichbar.
-      Cleartext daher gezielt nur für diese Domain erlauben; der restliche
-      Verkehr (Hoster-APIs) bleibt auf HTTPS beschränkt.
+      Saemtlicher Verkehr (Hoster-APIs, JDownloader-DLC-Dienst, Browser-Login)
+      laeuft ueber HTTPS. Klartext-HTTP ist fuer die ganze App gesperrt.
     -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">jdownloader.org</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

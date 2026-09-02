@@ -56,14 +56,43 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jdandroid.container.ContainerFiles
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.hoster.HosterRegistry
 import java.util.Locale
 
+/** Ziffern mit fester Breite, damit Zahlen beim Aktualisieren nicht springen. */
+private const val TABULAR = "tnum"
+
+/** Rueckfrage vor unwiderruflichem Loeschen. */
+@Composable
+fun ConfirmDeleteDialog(
+    title: String,
+    text: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(); onDismiss() }) {
+                Text("Löschen", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } }
+    )
+}
+
+/**
+ * Binaere Einheiten mit korrekter Beschriftung (1 MiB = 1.048.576 Byte),
+ * wie im JDownloader. Vorher stand "MB" an einem 1024er-Wert.
+ */
 fun formatBytes(bytes: Long): String {
     if (bytes < 0) return "?"
-    val units = listOf("B", "KB", "MB", "GB", "TB")
+    val units = listOf("B", "KiB", "MiB", "GiB", "TiB")
     var value = bytes.toDouble()
     var unit = 0
     while (value >= 1024 && unit < units.lastIndex) {
@@ -107,17 +136,21 @@ fun DownloadsScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch(Dispatchers.IO) {
-            val content = runCatching {
-                context.contentResolver.openInputStream(uri)
-                    ?.bufferedReader()?.use { it.readText() }
-            }.getOrNull()
-            if (content == null) {
-                launch(Dispatchers.Main) {
-                    snackbarHost.showSnackbar("DLC-Datei konnte nicht gelesen werden")
+            // Groessenbegrenzt lesen (siehe ContainerFiles): kein OutOfMemory
+            // bei einer versehentlich gewaehlten grossen Datei.
+            val result = runCatching { ContainerFiles.readText(context.contentResolver, uri) }
+            val content = result.getOrNull()
+            when {
+                content == null -> launch(Dispatchers.Main) {
+                    snackbarHost.showSnackbar(
+                        result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
+                    )
                 }
-            } else {
-                vm.importDlc(content) { result ->
-                    scope.launch { snackbarHost.showSnackbar(result) }
+                !ContainerFiles.looksLikeDlc(content) -> launch(Dispatchers.Main) {
+                    snackbarHost.showSnackbar("Die gewählte Datei ist kein DLC-Container")
+                }
+                else -> vm.importDlc(content) { message ->
+                    scope.launch { snackbarHost.showSnackbar(message) }
                 }
             }
         }
@@ -206,6 +239,7 @@ private fun PackageHeader(
     vm: DownloadViewModel
 ) {
     var renaming by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     Card(
         Modifier.fillMaxWidth(),
@@ -238,8 +272,12 @@ private fun PackageHeader(
                             append(" · ${formatBytes(group.done)} / ${formatBytes(group.total)}")
                         }
                         if (group.speed > 0) append(" · ${formatBytes(group.speed)}/s")
+                        group.pkg.source?.let { append(" · von $it") }
                     }
-                    Text(summary, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        summary,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = TABULAR)
+                    )
                 }
                 if (group.pkg.id != 0L) {
                     IconButton(onClick = { renaming = true }) {
@@ -255,7 +293,7 @@ private fun PackageHeader(
                             else "Paket starten"
                         )
                     }
-                    IconButton(onClick = { vm.deletePackage(group.pkg.id) }) {
+                    IconButton(onClick = { confirmDelete = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Paket löschen")
                     }
                 }
@@ -268,6 +306,16 @@ private fun PackageHeader(
                 )
             }
         }
+    }
+
+    if (confirmDelete) {
+        ConfirmDeleteDialog(
+            title = "Paket löschen?",
+            text = "\"${group.pkg.name}\" mit ${group.items.size} Download(s) wird entfernt. " +
+                "Bereits geladene Teildateien werden gelöscht.",
+            onConfirm = { vm.deletePackage(group.pkg.id) },
+            onDismiss = { confirmDelete = false }
+        )
     }
 
     if (renaming) {
@@ -301,6 +349,17 @@ private fun DownloadRow(
     modifier: Modifier = Modifier
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete) {
+        ConfirmDeleteDialog(
+            title = "Download löschen?",
+            text = (item.fileName ?: item.url) +
+                if (item.status == DownloadStatus.COMPLETED) "\n\nDie fertige Datei bleibt erhalten."
+                else "\n\nBereits geladene Daten gehen verloren.",
+            onConfirm = { vm.delete(item.id) },
+            onDismiss = { confirmDelete = false }
+        )
+    }
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(
@@ -325,7 +384,7 @@ private fun DownloadRow(
             }
             Text(
                 "$hosterName · $statusLine",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = TABULAR),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -362,7 +421,7 @@ private fun DownloadRow(
                         }
                     DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING -> {}
                 }
-                IconButton(onClick = { vm.delete(item.id) }) {
+                IconButton(onClick = { confirmDelete = true }) {
                     Icon(Icons.Default.Delete, contentDescription = "Löschen")
                 }
             }

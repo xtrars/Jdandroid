@@ -34,7 +34,7 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version = "2.3.1" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 zip4j = { group = "net.lingala.zip4j", name = "zip4j", version = "2.11.5" }
-sevenzipjbinding = { group = "com.github.omicronapps", name = "7-Zip-JBinding-4Android", version = "Release-16.02-2.02" }
+sevenzipjbinding = { group = "com.github.omicronapps", name = "7-Zip-JBinding-4Android", version = "Release-16.02-2.03" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version = "1.26.2" }
 xz = { group = "org.tukaani", name = "xz", version = "1.9" }
 

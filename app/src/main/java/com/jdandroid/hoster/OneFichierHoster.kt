@@ -88,14 +88,17 @@ class OneFichierHoster : Hoster {
             )
             var fileName: String? = null
             var size = -1L
+            var checksum: String? = null
             runCatching {
                 val info = post("file/info.cgi", key, JSONObject().put("url", url))
                 fileName = info.optString("filename").ifBlank { null }
                 size = info.optLong("size", -1)
+                // SHA-1 der Datei, fuer die Integritaetspruefung nach dem Download
+                checksum = info.optString("checksum").lowercase().takeIf { it.length == 40 }
             }
             val token = post("download/get_token.cgi", key, JSONObject().put("url", url))
             val direct = token.optString("url")
             if (direct.isBlank()) throw HosterException("1fichier lieferte keine Download-URL", true)
-            ResolvedLink(direct, fileName, size)
+            ResolvedLink(direct, fileName, size, checksum)
         }
 }

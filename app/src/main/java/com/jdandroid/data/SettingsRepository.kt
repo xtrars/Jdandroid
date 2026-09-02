@@ -18,6 +18,7 @@ class SettingsRepository(private val context: Context) {
     private val keyExportToDownloads = booleanPreferencesKey("export_to_downloads")
     private val keyAutoExtract = booleanPreferencesKey("auto_extract")
     private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
+    private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
@@ -34,6 +35,10 @@ class SettingsRepository(private val context: Context) {
 
     val deleteArchiveAfterExtract: Flow<Boolean> =
         context.dataStore.data.map { it[keyDeleteArchive] ?: false }
+
+    /** Eintraege eines Archivs nach erfolgreichem Entpacken aus der Liste entfernen (wie JDownloader). */
+    val removeLinksAfterExtract: Flow<Boolean> =
+        context.dataStore.data.map { it[keyRemoveAfterExtract] ?: true }
 
     /** Passwortliste, ein Passwort pro Zeile. */
     val passwordList: Flow<String> =
@@ -58,6 +63,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun currentAutoExtract(): Boolean = autoExtract.first()
 
     suspend fun currentDeleteArchive(): Boolean = deleteArchiveAfterExtract.first()
+
+    suspend fun currentRemoveLinksAfterExtract(): Boolean = removeLinksAfterExtract.first()
+
+    suspend fun setRemoveLinksAfterExtract(value: Boolean) {
+        context.dataStore.edit { it[keyRemoveAfterExtract] = value }
+    }
 
     suspend fun currentPasswords(): List<String> =
         passwordList.first().lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -96,5 +107,16 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPasswordList(value: String) {
         context.dataStore.edit { it[keyPasswords] = value }
+    }
+
+    /** Neue Passwoerter (z.B. aus Click'n'Load) an die Liste anhaengen, ohne Duplikate. */
+    suspend fun addPasswords(passwords: List<String>) {
+        val fresh = passwords.map { it.trim() }.filter { it.isNotEmpty() }
+        if (fresh.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val existing = (prefs[keyPasswords] ?: "").lines().map { it.trim() }.filter { it.isNotEmpty() }
+            val merged = (existing + fresh).distinct()
+            prefs[keyPasswords] = merged.joinToString("\n")
+        }
     }
 }

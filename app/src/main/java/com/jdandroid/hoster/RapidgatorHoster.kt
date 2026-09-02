@@ -87,7 +87,17 @@ class RapidgatorHoster : Hoster {
                 val resp = call("file/download", mapOf("file_id" to id, "token" to token))
                 val direct = resp.optString("download_url")
                 if (direct.isBlank()) throw HosterException("Rapidgator lieferte keine Download-URL", true)
-                ResolvedLink(direct)
+                // Name, Groesse und MD5 fuer die Integritaetspruefung; optional,
+                // ein Fehler hier darf den Download nicht verhindern.
+                val info = runCatching {
+                    call("file/info", mapOf("file_id" to id, "token" to token)).optJSONObject("file")
+                }.getOrNull()
+                ResolvedLink(
+                    directUrl = direct,
+                    fileName = info?.optString("name")?.ifBlank { null },
+                    fileSize = info?.optLong("size", -1) ?: -1,
+                    hash = info?.optString("hash")?.lowercase()?.takeIf { it.length == 32 }
+                )
             }
             try {
                 attempt(tokenFor(account))

@@ -37,8 +37,16 @@ class DownloadEngine(
     private val dao = app.db.downloadDao()
     private val accountDao = app.db.accountDao()
 
-    private val jobs = HashMap<Long, Job>()
+    // ConcurrentHashMap: size() wird vom Service-Thread ohne Mutex gelesen
+    private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
     private val mutex = Mutex()
+
+    /** Geglaettete Geschwindigkeit je laufendem Download (Bytes/s). */
+    private val speeds = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
+    /** Letzte Benachrichtigung des Service, um Aktualisierungen zu drosseln. */
+    @Volatile
+    private var lastNotify = 0L
 
     /**
      * Serialisiert den Download-Abschluss: verhindert, dass zwei gleichzeitig
@@ -57,6 +65,18 @@ class DownloadEngine(
     }
 
     val activeCount: Int get() = jobs.size
+
+    /** Summe der aktuellen Geschwindigkeiten, fuer die Benachrichtigung. */
+    val totalSpeedBps: Long get() = speeds.values.sum()
+
+    /** Service hoechstens einmal pro Sekunde ueber Fortschritt informieren. */
+    private fun notifyProgress() {
+        val now = System.currentTimeMillis()
+        if (now - lastNotify >= NOTIFY_MS) {
+            lastNotify = now
+            onStateChanged()
+        }
+    }
 
     private fun downloadDir(): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
@@ -138,7 +158,7 @@ class DownloadEngine(
                 dao.update(current)
                 refinePackageName(current.packageId)
             }
-            download(current, resolved.directUrl)
+            download(current, resolved.directUrl, resolved.hash)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: HosterException) {
@@ -151,6 +171,7 @@ class DownloadEngine(
             // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
             handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
         } finally {
+            speeds.remove(id)
             mutex.withLock { jobs.remove(id) }
             scope.launch { pump() }
         }
@@ -200,7 +221,7 @@ class DownloadEngine(
         app.db.packageDao().refineAutoName(id, name)
     }
 
-    private suspend fun download(item: DownloadItem, directUrl: String) {
+    private suspend fun download(item: DownloadItem, directUrl: String, expectedHash: String? = null) {
         var target = tempFile(item)
         var offset = if (target.exists()) target.length() else 0L
 
@@ -232,8 +253,8 @@ class DownloadEngine(
             val free = downloadDir().usableSpace
             if (needed > 0 && free in 0 until needed) {
                 throw HosterException(
-                    "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MB benötigt, " +
-                        "${free / (1 shl 20)} MB frei",
+                    "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
+                        "${free / (1 shl 20)} MiB frei",
                     permanent = true
                 )
             }
@@ -250,8 +271,14 @@ class DownloadEngine(
             }
 
             var written = offset
-            var lastUpdate = 0L
-            var lastBytes = written
+            val startedAt = System.currentTimeMillis()
+            var lastDbWrite = startedAt
+            // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
+            // der Rohwert einzelner Messintervalle springt stark und liess die
+            // Anzeige flackern. In die DB (und damit in die UI) geht der Wert
+            // nur alle DB_WRITE_MS.
+            val samples = ArrayDeque<Pair<Long, Long>>()
+            samples.addLast(startedAt to written)
             body.byteStream().use { input ->
                 java.io.FileOutputStream(target, offset > 0).use { out ->
                     val buffer = ByteArray(64 * 1024)
@@ -262,22 +289,33 @@ class DownloadEngine(
                         written += read
                         limiter.throttle(read)
                         val now = System.currentTimeMillis()
-                        if (now - lastUpdate >= 750) {
-                            val speed = (written - lastBytes) * 1000 / (now - lastUpdate).coerceAtLeast(1)
-                            dao.updateProgress(item.id, written, total, if (lastUpdate == 0L) 0 else speed)
-                            lastUpdate = now
-                            lastBytes = written
-                            onStateChanged()
+                        if (now - samples.last().first >= SAMPLE_MS) {
+                            samples.addLast(now to written)
+                            while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
+                                samples.removeFirst()
+                            }
+                            val (t0, b0) = samples.first()
+                            val speed = if (now > t0) (written - b0) * 1000 / (now - t0) else 0L
+                            speeds[item.id] = speed
+                            if (now - lastDbWrite >= DB_WRITE_MS) {
+                                dao.updateProgress(item.id, written, total, speed)
+                                lastDbWrite = now
+                                notifyProgress()
+                            }
                         }
                         kotlinx.coroutines.yield()
                     }
                 }
             }
+            speeds.remove(item.id)
             dao.updateProgress(item.id, written, total, 0)
             if (total > 0 && written < total) {
                 throw IOException("Download unvollständig ($written von $total Bytes)")
             }
         }
+
+        // Integritaet pruefen, wenn der Hoster eine Pruefsumme geliefert hat
+        if (expectedHash != null) verifyHash(target, expectedHash)
 
         val finalName = dao.byId(item.id)?.fileName ?: target.name.removeSuffix(".part")
         completeDownload(item.id, target, finalName)
@@ -338,9 +376,25 @@ class DownloadEngine(
                     ?.forEach { it.delete() }
             }
             markCompleted(id, exportedPath, null)
+            if (app.settings.currentRemoveLinksAfterExtract()) {
+                removeExtractedEntries(id, base)
+            }
         } catch (e: Exception) {
             markCompleted(id, archiveFile.absolutePath, e.message)
         }
+    }
+
+    /**
+     * Wie im JDownloader ("Links nach dem Entpacken entfernen"): alle fertigen
+     * Eintraege dieses Archivs (alle Teile) verschwinden aus der Liste, leere
+     * Pakete werden aufgeraeumt. Die entpackten Dateien bleiben natuerlich.
+     */
+    private suspend fun removeExtractedEntries(id: Long, base: String) {
+        dao.all()
+            .filter { it.id == id || it.status == DownloadStatus.COMPLETED }
+            .filter { Extractor.archiveBase(it.fileName ?: "") == base }
+            .forEach { dao.delete(it.id) }
+        app.db.packageDao().deleteEmpty()
     }
 
     private suspend fun markCompleted(id: Long, path: String?, note: String?) {
@@ -400,6 +454,34 @@ class DownloadEngine(
             "Downloads/JDAndroid/$base"
         } else {
             dir.absolutePath
+        }
+    }
+
+    /**
+     * Vergleicht die Pruefsumme der Datei mit der vom Hoster gemeldeten. Bei
+     * Abweichung wird die Datei verworfen und der Download (voruebergehender
+     * Fehler) automatisch wiederholt.
+     */
+    private fun verifyHash(file: File, expected: String) {
+        val algorithm = when (expected.length) {
+            32 -> "MD5"
+            40 -> "SHA-1"
+            64 -> "SHA-256"
+            else -> return
+        }
+        val digest = java.security.MessageDigest.getInstance(algorithm)
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actual.equals(expected, ignoreCase = true)) {
+            file.delete()
+            throw HosterException("Prüfsumme ($algorithm) stimmt nicht – Datei wird erneut geladen")
         }
     }
 
@@ -475,5 +557,17 @@ class DownloadEngine(
     private companion object {
         /** Maximale automatische Wiederholversuche je Download. */
         const val MAX_ATTEMPTS = 5
+
+        /** Abstand der Messpunkte fuer die Geschwindigkeit. */
+        const val SAMPLE_MS = 500L
+
+        /** Fenster des gleitenden Durchschnitts. */
+        const val SPEED_WINDOW_MS = 5_000L
+
+        /** Abstand der Fortschritts-Schreibvorgaenge in die Datenbank. */
+        const val DB_WRITE_MS = 2_000L
+
+        /** Mindestabstand der Benachrichtigungs-Aktualisierung. */
+        const val NOTIFY_MS = 1_000L
     }
 }

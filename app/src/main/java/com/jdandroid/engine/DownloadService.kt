@@ -1,12 +1,13 @@
 package com.jdandroid.engine
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -14,10 +15,11 @@ import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
 import com.jdandroid.container.ClickNLoadServer
+import com.jdandroid.container.CnlRequest
 import com.jdandroid.container.CnlStatus
-import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkSink
 import com.jdandroid.ui.MainActivity
+import com.jdandroid.ui.formatBytes
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +97,10 @@ class DownloadService : Service() {
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
+            ACTION_RESUME_ALL -> scope.launch {
+                (application as JdApp).db.downloadDao().requeuePaused()
+                engine.pump()
+            }
             ACTION_START_CNL -> {
                 cnlWanted = true
                 scope.launch { startClickNLoadServer(); refresh() }
@@ -111,20 +117,57 @@ class DownloadService : Service() {
         return START_STICKY
     }
 
+    /**
+     * Android 15 begrenzt dataSync-Vordergrunddienste auf 6 Stunden je Tag.
+     * Statt hart beendet zu werden, pausieren wir sauber und erklaeren es in
+     * einer Benachrichtigung; "Fortsetzen" startet den Dienst neu.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        scope.launch {
+            engine.pauseAll()
+            notifyEvent(
+                NOTIFICATION_TIMEOUT,
+                "Downloads pausiert",
+                "Android erlaubt Hintergrund-Downloads nur 6 Stunden am Stück. " +
+                    "Antippen, um fortzusetzen.",
+                resumeAction = true
+            )
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
     private fun startClickNLoadServer() {
         if (cnlServer != null) return
-        val onLinks: (List<String>) -> Unit = { links ->
-            scope.launch { LinkSink.addUrls(applicationContext, links) }
+        val onRequest: (CnlRequest) -> Unit = { request ->
+            scope.launch {
+                val added = LinkSink.addUrls(
+                    applicationContext, request.urls,
+                    packageName = request.packageName,
+                    source = request.source,
+                    passwords = request.passwords
+                )
+                // Sichtbar machen, woher die Links kamen - eine Webseite kann den
+                // Server sonst unbemerkt fuettern.
+                val origin = request.source?.let { LinkSink.displaySource(it) } ?: "einer Webseite"
+                notifyEvent(
+                    NOTIFICATION_CNL,
+                    "Click'n'Load",
+                    if (added > 0) "$added Link(s) von $origin hinzugefügt"
+                    else "Links von $origin bereits vorhanden oder nicht unterstützt"
+                )
+            }
         }
-        // Zuerst nur loopback (sicher). Schlaegt das fehl - auf manchen Geraeten
-        // laesst sich 127.0.0.1 nicht binden - auf alle Schnittstellen ausweichen.
+        // Ausschliesslich Loopback: ein Server auf allen Schnittstellen waere
+        // fuer jedes Geraet im WLAN erreichbar. Falls 127.0.0.1 nicht bindbar
+        // ist, "localhost" (IPv6-Loopback) versuchen - nie ohne Hostnamen.
         var lastError: Exception? = null
-        for (host in listOf<String?>(ClickNLoadServer.LOOPBACK, null)) {
+        for (host in listOf(ClickNLoadServer.LOOPBACK, "localhost")) {
             try {
-                val server = ClickNLoadServer(host, onLinks)
+                val server = ClickNLoadServer(host, onRequest)
                 server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true)
                 cnlServer = server
-                CnlStatus.started(host ?: "alle Schnittstellen")
+                CnlStatus.started(host)
                 return
             } catch (e: Exception) {
                 lastError = e
@@ -155,11 +198,19 @@ class DownloadService : Service() {
             } else {
                 append("$active aktiv")
                 if (queued > 0) append(", $queued wartend")
+                val speed = engine.totalSpeedBps
+                if (speed > 0) append(" · ${formatBytes(speed)}/s")
                 if (cnlActive) append(" · CnL an")
             }
         }
-        val manager = getSystemService(android.app.NotificationManager::class.java)
-        runCatching { manager.notify(NOTIFICATION_ID, buildNotification(text)) }
+        val done = dao.openDownloadedBytes()
+        val total = dao.openTotalBytes()
+        val progress = if (active > 0 && total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else -1
+        val paused = dao.pausedCount()
+        val manager = getSystemService(NotificationManager::class.java)
+        runCatching {
+            manager.notify(NOTIFICATION_ID, buildNotification(text, progress, active > 0, paused > 0))
+        }
     }
 
     private fun updateWakeLock(shouldHold: Boolean) {
@@ -171,20 +222,65 @@ class DownloadService : Service() {
         }
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun servicePendingIntent(action: String, code: Int): PendingIntent =
+        PendingIntent.getService(
+            this, code,
+            Intent(this, DownloadService::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+    private fun buildNotification(
+        text: String,
+        progress: Int = -1,
+        showPause: Boolean = false,
+        showResume: Boolean = false
+    ): Notification {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, JdApp.CHANNEL_DOWNLOADS)
+        val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_DOWNLOADS)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
-            .build()
+        if (progress >= 0) builder.setProgress(100, progress, false)
+        if (showPause) {
+            builder.addAction(
+                0, "Alle pausieren", servicePendingIntent(ACTION_PAUSE_ALL, 1)
+            )
+        }
+        if (showResume) {
+            builder.addAction(
+                0, "Fortsetzen", servicePendingIntent(ACTION_RESUME_ALL, 2)
+            )
+        }
+        return builder.build()
+    }
+
+    /** Kurze, nicht dauerhafte Benachrichtigung (Click'n'Load, Zeitlimit). */
+    private fun notifyEvent(id: Int, title: String, text: String, resumeAction: Boolean = false) {
+        val open = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_EVENTS)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        if (resumeAction) {
+            builder.addAction(0, "Fortsetzen", servicePendingIntent(ACTION_RESUME_ALL, 2))
+        }
+        runCatching {
+            getSystemService(NotificationManager::class.java)?.notify(id, builder.build())
+        }
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -224,10 +320,13 @@ class DownloadService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1
+        private const val NOTIFICATION_CNL = 2
+        private const val NOTIFICATION_TIMEOUT = 4
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
         const val ACTION_PAUSE_ALL = "com.jdandroid.action.PAUSE_ALL"
+        const val ACTION_RESUME_ALL = "com.jdandroid.action.RESUME_ALL"
         const val ACTION_START_CNL = "com.jdandroid.action.START_CNL"
         const val ACTION_STOP_CNL = "com.jdandroid.action.STOP_CNL"
         const val EXTRA_ID = "id"

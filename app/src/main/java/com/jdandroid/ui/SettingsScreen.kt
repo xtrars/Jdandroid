@@ -53,6 +53,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val export by settings.exportToDownloads.collectAsState(initial = true)
     val autoExtract by settings.autoExtract.collectAsState(initial = true)
     val deleteArchive by settings.deleteArchiveAfterExtract.collectAsState(initial = false)
+    val removeLinks by settings.removeLinksAfterExtract.collectAsState(initial = true)
     val cnlEnabled by settings.clickNLoadEnabled.collectAsState(initial = false)
     val wifiOnly by settings.wifiOnly.collectAsState(initial = false)
 
@@ -101,7 +102,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         if (loaded) scope.launch { settings.setSpeedLimitKbps(n) }
                     }
                 },
-                label = { Text("Geschwindigkeitslimit (KB/s, 0 = unbegrenzt)") },
+                label = { Text("Geschwindigkeitslimit (KiB/s, 0 = unbegrenzt)") },
                 supportingText = { Text("Gilt gemeinsam für alle laufenden Downloads") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
@@ -139,6 +140,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 subtitle = "Spart Speicherplatz, Original-Archiv wird entfernt",
                 checked = deleteArchive,
                 onChange = { v -> scope.launch { settings.setDeleteArchiveAfterExtract(v) } }
+            )
+            SettingSwitch(
+                title = "Einträge nach dem Entpacken entfernen",
+                subtitle = "Alle Teile des Archivs verschwinden aus der Download-Liste, " +
+                    "sobald es erfolgreich entpackt wurde (wie im JDownloader)",
+                checked = removeLinks,
+                onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
             )
             Spacer(Modifier.height(12.dp))
             Text("Passwortliste", style = MaterialTheme.typography.titleSmall)

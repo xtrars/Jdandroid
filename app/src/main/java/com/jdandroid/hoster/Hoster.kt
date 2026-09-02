@@ -10,7 +10,9 @@ enum class AccountType { USERNAME_PASSWORD, API_KEY }
 data class ResolvedLink(
     val directUrl: String,
     val fileName: String? = null,
-    val fileSize: Long = -1
+    val fileSize: Long = -1,
+    /** Pruefsumme als Hex (MD5 = 32, SHA-1 = 40 Zeichen), falls der Hoster eine liefert. */
+    val hash: String? = null
 )
 
 data class AccountInfo(
@@ -58,7 +60,7 @@ object Http {
         .build()
 
     const val USER_AGENT =
-        "Mozilla/5.0 (Android) JDAndroid/0.1"
+        "Mozilla/5.0 (Android) JDAndroid/1.1"
 
     /** Obergrenze fuer als Text gelesene Antworten (API-Antworten sind klein). */
     const val MAX_TEXT_BYTES = 2L * 1024 * 1024

@@ -2,6 +2,7 @@ package com.jdandroid.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,11 @@ import androidx.compose.ui.viewinterop.AndroidView
  * headless ist das nicht loesbar. Nach erfolgreicher Anmeldung werden die
  * Session-Cookies uebernommen.
  *
+ * Sicherheit: Die WebView laedt nur Seiten der Login-Domain und der
+ * Cloudflare-Challenge; Drittanbieter-Cookies sind aus, und nach der
+ * Uebernahme werden die Browser-Cookies wieder geloescht (die Session liegt
+ * dann verschluesselt in der Datenbank).
+ *
  * Bewusst ein vollwertiger Bildschirm statt eines Vollbild-Dialogs: nur so
  * greifen die System-Insets zuverlaessig. Die Schaltflaechen sitzen in der
  * Titelleiste und koennen daher nie aus dem sichtbaren Bereich rutschen.
@@ -50,12 +56,28 @@ fun WebLoginScreen(
     }
     var detectedCookies by remember { mutableStateOf<String?>(null) }
 
+    val loginHost = remember(loginUrl) { android.net.Uri.parse(loginUrl).host.orEmpty() }
+
     fun cookiesFor(url: String): String? =
         CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }
 
     /** XFileSharing setzt xfss/xfsts nach erfolgreichem Login. */
     fun looksLoggedIn(cookies: String?): Boolean =
         cookies != null && Regex("""\bxfs(s|ts)=""").containsMatchIn(cookies)
+
+    /** Nur die Login-Domain (inkl. Subdomains) und die Cloudflare-Challenge. */
+    fun allowed(host: String?): Boolean {
+        val h = host?.lowercase() ?: return false
+        return h == loginHost || h.endsWith(".$loginHost") ||
+            h == "challenges.cloudflare.com" || h.endsWith(".cloudflare.com")
+    }
+
+    fun accept(cookies: String) {
+        onAccept(cookies)
+        // Browser-Cookies nach der Uebernahme entfernen: die Session bleibt
+        // nur noch verschluesselt in der App gespeichert.
+        runCatching { CookieManager.getInstance().removeAllCookies(null) }
+    }
 
     Scaffold(
         topBar = {
@@ -72,7 +94,7 @@ fun WebLoginScreen(
                         if (c.isNullOrBlank()) {
                             status = "Noch keine Session gefunden – bitte zuerst anmelden."
                         } else {
-                            onAccept(c)
+                            accept(c)
                         }
                     }) { Text("Übernehmen") }
                 }
@@ -90,10 +112,24 @@ fun WebLoginScreen(
                 factory = { context ->
                     CookieManager.getInstance().setAcceptCookie(true)
                     WebView(context).apply {
+                        // JavaScript ist fuer die Cloudflare-Challenge zwingend
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                         webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView?,
+                                request: WebResourceRequest?
+                            ): Boolean {
+                                val host = request?.url?.host
+                                if (allowed(host)) return false
+                                status = "Blockiert: ${host ?: "unbekannte Adresse"} " +
+                                    "(nur $loginHost ist erlaubt)."
+                                return true
+                            }
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 val c = cookiesFor(url ?: loginUrl)
                                 if (looksLoggedIn(c)) {

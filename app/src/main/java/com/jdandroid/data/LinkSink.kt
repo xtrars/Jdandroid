@@ -15,11 +15,23 @@ object LinkSink {
     /**
      * Liefert die Anzahl tatsächlich neu hinzugefügter Downloads. Alle Links
      * eines Aufrufs landen wie im JDownloader in einem gemeinsamen Paket.
+     *
+     * @param source Herkunft (z.B. Webseite bei Click'n'Load), wird am Paket angezeigt.
+     * @param passwords Entpack-Passwörter, die mitgeliefert wurden; sie werden
+     *   der Passwortliste hinzugefügt.
      */
-    suspend fun addFromText(context: Context, text: String, packageName: String? = null): Int {
+    suspend fun addFromText(
+        context: Context,
+        text: String,
+        packageName: String? = null,
+        source: String? = null,
+        passwords: List<String> = emptyList()
+    ): Int {
         val app = context.applicationContext as JdApp
         val dao = app.db.downloadDao()
         val packageDao = app.db.packageDao()
+
+        if (passwords.isNotEmpty()) app.settings.addPasswords(passwords)
 
         val links = LinkParser.parse(text).filter { dao.countByUrl(it.first) == 0 }
         if (links.isEmpty()) return 0
@@ -27,7 +39,11 @@ object LinkSink {
         val name = packageName?.takeIf { it.isNotBlank() }
             ?: PackageNaming.suggestFromUrls(links.map { it.first })
         val packageId = packageDao.insert(
-            DownloadPackage(name = name, autoNamed = packageName.isNullOrBlank())
+            DownloadPackage(
+                name = name,
+                autoNamed = packageName.isNullOrBlank(),
+                source = source?.let { displaySource(it) }
+            )
         )
 
         links.forEach { (url, hoster) ->
@@ -37,6 +53,18 @@ object LinkSink {
         return links.size
     }
 
-    suspend fun addUrls(context: Context, urls: List<String>, packageName: String? = null): Int =
-        addFromText(context, urls.joinToString("\n"), packageName)
+    suspend fun addUrls(
+        context: Context,
+        urls: List<String>,
+        packageName: String? = null,
+        source: String? = null,
+        passwords: List<String> = emptyList()
+    ): Int = addFromText(context, urls.joinToString("\n"), packageName, source, passwords)
+
+    /** Aus einer URL nur den Host anzeigen ("example.com"), sonst den Text gekuerzt. */
+    fun displaySource(source: String): String {
+        val host = Regex("""^https?://([^/:?#]+)""", RegexOption.IGNORE_CASE)
+            .find(source.trim())?.groupValues?.get(1)
+        return (host ?: source.trim()).removePrefix("www.").take(80)
+    }
 }

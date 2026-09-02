@@ -42,17 +42,28 @@ object Secrets {
         return generator.generateKey()
     }
 
+    /** Keystore nicht nutzbar: Zugangsdaten werden dann NICHT gespeichert. */
+    class SecretsException(message: String, cause: Throwable?) : Exception(message, cause)
+
+    /**
+     * Verschluesselt [plain]. Schlaegt der Keystore fehl, wird bewusst eine
+     * Exception geworfen statt still im Klartext zu speichern - der Aufrufer
+     * zeigt dem Nutzer eine Meldung.
+     */
     fun encrypt(plain: String?): String? {
         if (plain.isNullOrEmpty()) return plain
-        return runCatching {
+        return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, secretKey())
             val encrypted = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
             PREFIX + Base64.getEncoder().encodeToString(cipher.iv + encrypted)
-        }.getOrElse {
-            // Kein Keystore verfuegbar: lieber unverschluesselt speichern als
-            // das Konto zu verlieren - die Datei liegt in der App-Sandbox.
-            plain
+        } catch (e: Exception) {
+            throw SecretsException(
+                "Zugangsdaten konnten nicht verschlüsselt werden " +
+                    "(Android-Keystore nicht verfügbar: ${e.message ?: e.javaClass.simpleName}). " +
+                    "Bitte Gerät entsperren und erneut versuchen.",
+                e
+            )
         }
     }
 

@@ -13,8 +13,15 @@ android {
         applicationId = "com.jdandroid"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode muss bei jedem Release steigen, sonst verweigert der
+        // Paketinstaller das Update ("App nicht installiert").
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 
     signingConfigs {
@@ -29,7 +36,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Shrinking/Optimierung an, Obfuskation aus (siehe proguard-rules.pro)
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
