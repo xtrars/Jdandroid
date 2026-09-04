@@ -3,7 +3,7 @@
 Ein Download-Manager für Android im Stil des JDownloaders – mit Hoster-Plugins,
 Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Design.
 
-**Fertige APK:** [`release/JDAndroid-1.3.4.apk`](release/JDAndroid-1.3.4.apk)
+**Fertige APK:** [`release/JDAndroid-1.4.0.apk`](release/JDAndroid-1.4.0.apk)
 (signiert, direkt installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Unterstützte Hoster
@@ -54,8 +54,10 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
   mehrere Zeilen einfügen), wird beim Entpacken der Reihe nach durchprobiert;
   Passwörter aus Click'n'Load werden automatisch ergänzt
 - **Export**: fertige Dateien landen in `Downloads/JDAndroid/` (abschaltbar)
-- **Design**: Material 3, dynamische Farben (Material You, ab Android 12),
-  automatischer Hell-/Dunkel-Modus je nach Systemeinstellung
+- **Design**: Material 3 mit eigener Petrol-Palette für Hell und Dunkel,
+  Hell/Dunkel wahlweise nach System oder fest (Einstellungen → Darstellung),
+  Material-You-Farben optional (ab Android 12); Statusplaketten, flache
+  Paket- und Zeilenkarten, dünne Fortschrittsbalken
 
 ## Build
 

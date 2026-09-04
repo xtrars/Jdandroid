@@ -127,7 +127,7 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHost) },
-        topBar = { TopAppBar(title = { Text("Konten") }) },
+        topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Konto hinzufügen")

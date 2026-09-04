@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -123,8 +124,6 @@ fun DownloadsScreen(
     vm: DownloadViewModel,
     sharedText: String?,
     onSharedTextConsumed: () -> Unit,
-    dlcContent: String?,
-    onDlcConsumed: () -> Unit,
     onLinksCollected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -160,44 +159,6 @@ fun DownloadsScreen(
     }
 
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-
-    // DLC-Datei direkt aus der App waehlen (System-Dateidialog);
-    // DLC hat keinen registrierten MIME-Typ, daher alle Dateien anbieten
-    val dlcPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch(Dispatchers.IO) {
-            // Groessenbegrenzt lesen (siehe ContainerFiles): kein OutOfMemory
-            // bei einer versehentlich gewaehlten grossen Datei.
-            val result = runCatching { ContainerFiles.readText(context.contentResolver, uri) }
-            val content = result.getOrNull()
-            when {
-                content == null -> launch(Dispatchers.Main) {
-                    snackbarHost.showSnackbar(
-                        result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
-                    )
-                }
-                !ContainerFiles.looksLikeDlc(content) -> launch(Dispatchers.Main) {
-                    snackbarHost.showSnackbar("Die gewählte Datei ist kein DLC-Container")
-                }
-                else -> vm.importDlc(content) { message ->
-                    scope.launch { snackbarHost.showSnackbar(message) }
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(dlcContent) {
-        if (dlcContent != null) {
-            snackbarHost.showSnackbar("DLC wird importiert …")
-            vm.importDlc(dlcContent) { result ->
-                scope.launch { snackbarHost.showSnackbar(result) }
-            }
-            onDlcConsumed()
-        }
-    }
 
     Scaffold(
         modifier = modifier,
@@ -205,15 +166,13 @@ fun DownloadsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Downloads") },
+                colors = jdTopBarColors(),
                 actions = {
                     IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
                         Icon(
                             if (searchOpen) Icons.Default.Close else Icons.Default.Search,
                             contentDescription = if (searchOpen) "Suche schließen" else "Suchen"
                         )
-                    }
-                    IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "DLC-Datei importieren")
                     }
                     TextButton(onClick = { vm.resumeAll() }) { Text("Alle starten") }
                     TextButton(onClick = { vm.pauseAll() }) { Text("Pause") }
@@ -253,18 +212,20 @@ fun DownloadsScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     if (allGroups.isEmpty()) {
-                        "Noch keine Downloads.\nMit + Links einfügen, aus dem Browser teilen\n" +
-                            "oder über das Ordner-Symbol eine DLC-Datei importieren.\n\n" +
-                            "Neue Links erscheinen zuerst im Linksammler."
+                        "Noch keine Downloads.\n\nMit + Links einfügen oder aus dem Browser " +
+                            "teilen. Neue Links erscheinen zuerst im Linksammler und werden " +
+                            "dort gestartet."
                     } else "Keine Einträge für diesen Filter.",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(24.dp)
                 )
             }
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(12.dp)
             ) {
                 groups.forEach { group ->
@@ -279,9 +240,10 @@ fun DownloadsScreen(
                     }
                     if (!isCollapsed) {
                         items(group.items, key = { it.id }) { item ->
-                            DownloadRow(item, vm, Modifier.padding(start = 12.dp))
+                            DownloadRow(item, vm, Modifier.padding(start = 10.dp))
                         }
                     }
+                    item(key = "gap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
                 }
             }
         }
@@ -313,13 +275,8 @@ private fun PackageHeader(
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        )
-    ) {
-        Column(Modifier.padding(12.dp)) {
+    PackageCard {
+        Column(Modifier.padding(start = 2.dp, end = 4.dp, top = 6.dp, bottom = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onToggle) {
                     Icon(
@@ -332,7 +289,6 @@ private fun PackageHeader(
                     Text(
                         group.pkg.name,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -346,10 +302,7 @@ private fun PackageHeader(
                         if (group.speed > 0) append(" · ${formatBytes(group.speed)}/s")
                         group.pkg.source?.let { append(" · von $it") }
                     }
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = TABULAR)
-                    )
+                    MetaRow(summary)
                 }
                 if (group.pkg.id != 0L) {
                     IconButton(onClick = { renaming = true }) {
@@ -370,11 +323,11 @@ private fun PackageHeader(
                     }
                 }
             }
-            if (group.total > 0) {
+            if (group.total > 0 && group.finished < group.items.size) {
                 Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    progress = { (group.done.toFloat() / group.total).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth()
+                ThinProgress(
+                    group.done.toFloat() / group.total,
+                    Modifier.padding(horizontal = 12.dp)
                 )
             }
         }
@@ -432,51 +385,59 @@ private fun DownloadRow(
             onDismiss = { confirmDelete = false }
         )
     }
-    Card(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text(
-                item.fileName ?: item.url,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(4.dp))
+    RowCard(modifier) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    item.fileName ?: item.url,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.size(8.dp))
+                val (pillText, tone) = when (item.status) {
+                    DownloadStatus.RUNNING -> "Lädt" to Tone.ACTIVE
+                    DownloadStatus.QUEUED -> "Wartend" to Tone.NEUTRAL
+                    DownloadStatus.COLLECTED -> "Linksammler" to Tone.NEUTRAL
+                    DownloadStatus.PAUSED -> "Pausiert" to Tone.WARNING
+                    DownloadStatus.EXTRACTING -> "Entpackt" to Tone.ACTIVE
+                    DownloadStatus.COMPLETED -> "Fertig" to Tone.SUCCESS
+                    DownloadStatus.FAILED -> "Fehler" to Tone.ERROR
+                    DownloadStatus.OFFLINE -> "Offline" to Tone.ERROR
+                }
+                StatusPill(pillText, tone, Modifier.padding(end = 8.dp))
+            }
+            Spacer(Modifier.height(3.dp))
             val statusLine = when (item.status) {
                 DownloadStatus.RUNNING ->
                     "${formatBytes(item.downloadedBytes)} / ${formatBytes(item.fileSize)}" +
-                        if (item.speedBps > 0) " – ${formatBytes(item.speedBps)}/s" else ""
-                DownloadStatus.QUEUED -> "Wartend"
-                DownloadStatus.COLLECTED -> "Im Linksammler"
-                DownloadStatus.PAUSED -> "Pausiert (${formatBytes(item.downloadedBytes)})"
-                DownloadStatus.EXTRACTING -> "Wird entpackt …"
+                        if (item.speedBps > 0) " · ${formatBytes(item.speedBps)}/s" else ""
+                DownloadStatus.QUEUED -> item.errorMessage ?: "in der Warteschlange"
+                DownloadStatus.COLLECTED -> "noch nicht gestartet"
+                DownloadStatus.PAUSED -> "${formatBytes(item.downloadedBytes)} geladen"
+                DownloadStatus.EXTRACTING -> "Archiv wird entpackt …"
                 DownloadStatus.COMPLETED ->
-                    "Fertig – ${item.localPath ?: ""}" +
-                        (item.errorMessage?.let { " ($it)" } ?: "")
-                DownloadStatus.FAILED -> "Fehler: ${item.errorMessage ?: "unbekannt"}"
-                DownloadStatus.OFFLINE -> "Datei offline"
+                    (item.localPath ?: "") + (item.errorMessage?.let { " ($it)" } ?: "")
+                DownloadStatus.FAILED -> item.errorMessage ?: "unbekannter Fehler"
+                DownloadStatus.OFFLINE -> "Datei beim Hoster nicht mehr vorhanden"
             }
-            Text(
+            MetaRow(
                 "$hosterName · $statusLine",
-                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = TABULAR),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = if (item.status == DownloadStatus.FAILED || item.status == DownloadStatus.OFFLINE)
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.PAUSED) {
                 Spacer(Modifier.height(6.dp))
                 if (item.fileSize > 0) {
-                    LinearProgressIndicator(
-                        progress = {
-                            (item.downloadedBytes.toFloat() / item.fileSize).coerceIn(0f, 1f)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ThinProgress(item.downloadedBytes.toFloat() / item.fileSize, Modifier.padding(end = 8.dp))
                 } else if (item.status == DownloadStatus.RUNNING) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    ThinProgress(null, Modifier.padding(end = 8.dp))
                 }
             }
             if (item.status == DownloadStatus.EXTRACTING) {
                 Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                ThinProgress(null, Modifier.padding(end = 8.dp))
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 when (item.status) {

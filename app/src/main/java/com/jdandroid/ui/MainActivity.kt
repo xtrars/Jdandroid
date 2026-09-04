@@ -6,7 +6,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.WindowInsets
@@ -72,18 +74,20 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            val context = LocalContext.current
-            // Material You (dynamische Farben) ab Android 12, sonst Standardpalette;
-            // hell/dunkel folgt automatisch dem System.
-            val colorScheme = when {
-                Build.VERSION.SDK_INT >= 31 && darkTheme -> dynamicDarkColorScheme(context)
-                Build.VERSION.SDK_INT >= 31 -> dynamicLightColorScheme(context)
-                darkTheme -> darkColorScheme()
-                else -> lightColorScheme()
+            val settings = (application as JdApp).settings
+            val modeKey by settings.themeMode.collectAsState(initial = "system")
+            val dynamic by settings.dynamicColors.collectAsState(initial = false)
+            val mode = ThemeMode.fromKey(modeKey)
+            val dark = isDarkFor(mode)
+            // Systemleisten zur gewaehlten Helligkeit passend einfaerben - auch
+            // wenn der Modus manuell vom System abweicht.
+            LaunchedEffect(dark) {
+                val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            MaterialTheme(colorScheme = colorScheme) {
-                Surface {
+            JdTheme(mode = mode, dynamicColors = dynamic) {
+                Surface(color = MaterialTheme.colorScheme.background) {
                     MainScreen(
                         sharedText = sharedText.value,
                         onSharedTextConsumed = { sharedText.value = null },
@@ -142,6 +146,8 @@ fun MainScreen(
 ) {
     var tab by remember { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
+    // Ein DLC gehoert in den Linksammler: dorthin wechseln, die Meldung erscheint dort
+    LaunchedEffect(dlcContent) { if (dlcContent != null) tab = Tab.Collector }
     var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
     crashReport?.let { report ->
         CrashDialog(report = report, onDismiss = { crashReport = null })
@@ -192,10 +198,10 @@ fun MainScreen(
         val modifier = Modifier.padding(padding)
         when (tab) {
             Tab.Downloads -> DownloadsScreen(
-                downloadVm, sharedText, onSharedTextConsumed, dlcContent, onDlcConsumed,
+                downloadVm, sharedText, onSharedTextConsumed,
                 onLinksCollected = { tab = Tab.Collector }, modifier = modifier
             )
-            Tab.Collector -> LinkGrabberScreen(downloadVm, modifier)
+            Tab.Collector -> LinkGrabberScreen(downloadVm, dlcContent, onDlcConsumed, modifier)
             Tab.Accounts -> AccountsScreen(accountVm, modifier)
             Tab.Settings -> SettingsScreen(modifier)
         }

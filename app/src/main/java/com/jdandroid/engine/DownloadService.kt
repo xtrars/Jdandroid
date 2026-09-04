@@ -137,8 +137,20 @@ class DownloadService : Service() {
         }
     }
 
+    /**
+     * Synchronisiert: der Start wird sowohl aus onCreate (Einstellung "an")
+     * als auch per ACTION_START_CNL (App-Start) angestossen. Liefen beide
+     * gleichzeitig, band der zweite Versuch denselben Port und meldete
+     * "Address already in use", obwohl der erste Server laeuft.
+     */
+    @Synchronized
     private fun startClickNLoadServer() {
-        if (cnlServer != null) return
+        cnlServer?.let { existing ->
+            if (existing.isAlive) return
+            // Server-Objekt vorhanden, aber tot (Socket geschlossen): neu starten
+            runCatching { existing.stop() }
+            cnlServer = null
+        }
         val onRequest: (CnlRequest) -> Unit = { request ->
             scope.launch {
                 val added = LinkSink.addUrls(
@@ -173,7 +185,11 @@ class DownloadService : Service() {
                 lastError = e
             }
         }
-        val reason = lastError?.message ?: lastError?.javaClass?.simpleName ?: "unbekannt"
+        val raw = lastError?.message ?: lastError?.javaClass?.simpleName ?: "unbekannt"
+        val reason = if (raw.contains("in use", true) || raw.contains("EADDRINUSE", true)) {
+            "Port ${ClickNLoadServer.PORT} ist belegt (läuft ein anderer Download-Manager " +
+                "oder JDownloader auf dem Gerät?)"
+        } else raw
         CnlStatus.failed(reason)
         android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
     }

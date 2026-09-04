@@ -29,6 +29,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -98,7 +101,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("Einstellungen") }) }
+        topBar = { TopAppBar(title = { Text("Einstellungen") }, colors = jdTopBarColors()) }
     ) { padding ->
         Column(
             Modifier
@@ -106,8 +109,36 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Downloads", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
+            SectionTitle("Darstellung")
+            SettingsGroup {
+                val themeKey by settings.themeMode.collectAsState(initial = "system")
+                val dynamic by settings.dynamicColors.collectAsState(initial = false)
+                Spacer(Modifier.height(6.dp))
+                Text("Hell / Dunkel", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(6.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    ThemeMode.entries.forEachIndexed { index, m ->
+                        SegmentedButton(
+                            selected = themeKey == m.key,
+                            onClick = { scope.launch { settings.setThemeMode(m.key) } },
+                            shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
+                        ) { Text(m.label) }
+                    }
+                }
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    SettingSwitch(
+                        title = "Farben vom Hintergrundbild (Material You)",
+                        subtitle = "Aus: eigene Petrol-Palette der App",
+                        checked = dynamic,
+                        onChange = { v -> scope.launch { settings.setDynamicColors(v) } }
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Spacer(Modifier.height(16.dp))
+            SectionTitle("Downloads")
+            Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = maxConcurrentText,
                 onValueChange = { value ->
@@ -180,7 +211,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            Text("Entpacken", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Entpacken")
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
                 title = "Archive automatisch entpacken",
@@ -212,7 +243,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            Text("Container & Click'n'Load", style = MaterialTheme.typography.titleMedium)
+            SectionTitle("Container & Click'n'Load")
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
                 title = "Click'n'Load aktivieren",
@@ -261,7 +292,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
-                Text("Letzter Absturz", style = MaterialTheme.typography.titleMedium)
+                SectionTitle("Letzter Absturz")
                 Spacer(Modifier.height(8.dp))
                 SelectionContainer {
                     Text(

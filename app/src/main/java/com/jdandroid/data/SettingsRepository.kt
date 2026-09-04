@@ -25,6 +25,8 @@ class SettingsRepository(private val context: Context) {
     private val keyWifiOnly = booleanPreferencesKey("wifi_only")
     private val keyAutoStart = booleanPreferencesKey("auto_start_links")
     private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
+    private val keyThemeMode = stringPreferencesKey("theme_mode")
+    private val keyDynamicColors = booleanPreferencesKey("dynamic_colors")
 
     val maxConcurrent: Flow<Int> =
         context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
@@ -64,6 +66,20 @@ class SettingsRepository(private val context: Context) {
     /** Per Storage Access Framework gewaehlter Zielordner (Tree-URI), null = Downloads/JDAndroid. */
     val downloadTreeUri: Flow<String?> =
         context.dataStore.data.map { it[keyDownloadTree]?.ifBlank { null } }
+
+    /** "system", "light" oder "dark". */
+    val themeMode: Flow<String> = context.dataStore.data.map { it[keyThemeMode] ?: "system" }
+
+    /** Material-You-Farben vom Hintergrundbild (ab Android 12); aus = eigene Palette. */
+    val dynamicColors: Flow<Boolean> = context.dataStore.data.map { it[keyDynamicColors] ?: false }
+
+    suspend fun setThemeMode(value: String) {
+        context.dataStore.edit { it[keyThemeMode] = value }
+    }
+
+    suspend fun setDynamicColors(value: Boolean) {
+        context.dataStore.edit { it[keyDynamicColors] = value }
+    }
 
     suspend fun currentAutoStartLinks(): Boolean = autoStartLinks.first()
 
