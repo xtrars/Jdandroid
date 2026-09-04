@@ -42,6 +42,12 @@ data class DownloadGroup(
     val active: Boolean get() = items.any {
         it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING
     }
+    /** Laeuft gerade ein Entpacken in diesem Paket? */
+    val extracting: Boolean get() = items.any { it.status == DownloadStatus.EXTRACTING }
+    /** Entpack-Fortschritt in Prozent, -1 = unbekannt. */
+    val extractPercent: Int get() = items
+        .filter { it.status == DownloadStatus.EXTRACTING }
+        .maxOfOrNull { it.extractProgress } ?: -1
 }
 
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {

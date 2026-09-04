@@ -75,4 +75,11 @@ class MigrationTest {
             AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7
         )
     }
+
+    @Test
+    fun migrate8To9AddsExtractProgress() {
+        helper.createDatabase(dbName, 8).close()
+        val db = helper.runMigrationsAndValidate(dbName, 9, true, AppDatabase.MIGRATION_8_9)
+        db.query("SELECT extractProgress FROM downloads LIMIT 1").use { c -> assertTrue(c.count == 0) }
+    }
 }

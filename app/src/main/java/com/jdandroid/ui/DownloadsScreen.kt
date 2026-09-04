@@ -295,6 +295,10 @@ private fun PackageHeader(
                             append(" · ${formatBytes(group.done)} / ${formatBytes(group.total)}")
                         }
                         if (group.speed > 0) append(" · ${formatBytes(group.speed)}/s")
+                        if (group.extracting) {
+                            append(" · wird entpackt")
+                            if (group.extractPercent >= 0) append(" ${group.extractPercent} %")
+                        }
                         group.pkg.source?.let { append(" · von $it") }
                     }
                     MetaRow(summary)
@@ -339,7 +343,13 @@ private fun PackageHeader(
                     }
                 }
             }
-            if (group.total > 0 && group.finished < group.items.size) {
+            if (group.extracting) {
+                Spacer(Modifier.height(6.dp))
+                ThinProgress(
+                    if (group.extractPercent >= 0) group.extractPercent / 100f else null,
+                    Modifier.padding(horizontal = 12.dp)
+                )
+            } else if (group.total > 0 && group.finished < group.items.size) {
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(
                     group.done.toFloat() / group.total,
@@ -417,7 +427,7 @@ private fun DownloadRow(
                     DownloadStatus.QUEUED -> "Wartend" to Tone.NEUTRAL
                     DownloadStatus.COLLECTED -> "Linksammler" to Tone.NEUTRAL
                     DownloadStatus.PAUSED -> "Pausiert" to Tone.WARNING
-                    DownloadStatus.EXTRACTING -> "Entpackt" to Tone.ACTIVE
+                    DownloadStatus.EXTRACTING -> "Entpacken" to Tone.ACTIVE
                     DownloadStatus.COMPLETED -> "Fertig" to Tone.SUCCESS
                     DownloadStatus.FAILED -> "Fehler" to Tone.ERROR
                     DownloadStatus.OFFLINE -> "Offline" to Tone.ERROR
@@ -475,7 +485,9 @@ private fun DownloadRow(
                 DownloadStatus.QUEUED -> item.errorMessage ?: "in der Warteschlange"
                 DownloadStatus.COLLECTED -> "noch nicht gestartet"
                 DownloadStatus.PAUSED -> "${formatBytes(item.downloadedBytes)} geladen"
-                DownloadStatus.EXTRACTING -> "Archiv wird entpackt …"
+                DownloadStatus.EXTRACTING ->
+                    if (item.extractProgress >= 0) "Archiv wird entpackt … ${item.extractProgress} %"
+                    else "Archiv wird entpackt …"
                 DownloadStatus.COMPLETED ->
                     (item.localPath ?: "") + (item.errorMessage?.let { " ($it)" } ?: "")
                 DownloadStatus.FAILED -> item.errorMessage ?: "unbekannter Fehler"
@@ -496,7 +508,10 @@ private fun DownloadRow(
             }
             if (item.status == DownloadStatus.EXTRACTING) {
                 Spacer(Modifier.height(6.dp))
-                ThinProgress(null, Modifier.padding(end = 8.dp))
+                ThinProgress(
+                    if (item.extractProgress >= 0) item.extractProgress / 100f else null,
+                    Modifier.padding(end = 8.dp)
+                )
             }
             Spacer(Modifier.height(8.dp))
         }

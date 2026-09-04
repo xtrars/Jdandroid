@@ -24,6 +24,9 @@ object Extractor {
 
     private val archiveExtensions = listOf(".zip", ".7z", ".rar")
 
+    /** Fortschritt hoechstens alle 4 MiB melden. */
+    private const val PROGRESS_STEP = 4L * 1024 * 1024
+
     @Volatile
     private var sevenZipReady = false
 
@@ -149,11 +152,17 @@ object Extractor {
         }
     }
 
+    /** Fortschrittsmeldung: entpackte Bytes und Gesamtbytes (0 = unbekannt). */
+    fun interface ProgressListener {
+        fun onProgress(done: Long, total: Long)
+    }
+
     fun extract(
         archive: File,
         destDir: File,
         passwords: List<String>,
-        excludes: List<String> = emptyList()
+        excludes: List<String> = emptyList(),
+        progress: ProgressListener? = null
     ): String? {
         destDir.mkdirs()
         val candidates = listOf<String?>(null) + passwords.filter { it.isNotBlank() }
@@ -162,10 +171,10 @@ object Extractor {
             try {
                 val lower = archive.name.lowercase()
                 when {
-                    lower.endsWith(".zip") -> extractZip(archive, destDir, password, excludes)
+                    lower.endsWith(".zip") -> extractZip(archive, destDir, password, excludes, progress)
                     lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
-                        extractSevenZip(archive, destDir, password, excludes)
-                    lower.endsWith(".rar") -> extractRar(archive, destDir, password, excludes)
+                        extractSevenZip(archive, destDir, password, excludes, progress)
+                    lower.endsWith(".rar") -> extractRar(archive, destDir, password, excludes, progress)
                     else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
                 }
                 return password
@@ -180,7 +189,9 @@ object Extractor {
         )
     }
 
-    private fun extractZip(archive: File, destDir: File, password: String?, excludes: List<String>) {
+    private fun extractZip(
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+    ) {
         val zip = ZipFile(archive)
         if (zip.isEncrypted) {
             if (password == null) throw ZipException("Passwort erforderlich")
@@ -189,15 +200,17 @@ object Extractor {
             // unverschluesselt wurde bereits im ersten Durchlauf probiert
             throw ZipException("Kein Passwort nötig")
         }
-        if (excludes.isEmpty()) {
-            zip.extractAll(destDir.absolutePath)
-            return
-        }
-        for (header in zip.fileHeaders) {
-            if (header.isDirectory) continue
-            if (isExcluded(header.fileName, excludes)) continue
+        // Datei fuer Datei statt extractAll: so greifen Ausschlussmuster und
+        // der Fortschritt laesst sich melden
+        val headers = zip.fileHeaders.filter { !it.isDirectory && !isExcluded(it.fileName, excludes) }
+        val total = headers.sumOf { it.uncompressedSize.coerceAtLeast(0) }
+        var done = 0L
+        progress?.onProgress(0, total)
+        for (header in headers) {
             safeChild(destDir, header.fileName)
             zip.extractFile(header, destDir.absolutePath)
+            done += header.uncompressedSize.coerceAtLeast(0)
+            progress?.onProgress(done, total)
         }
     }
 
@@ -214,7 +227,9 @@ object Extractor {
             ?: listOf(archive)
     }
 
-    private fun extractSevenZip(archive: File, destDir: File, password: String?, excludes: List<String>) {
+    private fun extractSevenZip(
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+    ) {
         val volumes = sevenZVolumes(archive)
         val builder = SevenZFile.builder()
         if (volumes.size > 1) {
@@ -225,6 +240,12 @@ object Extractor {
         }
         if (password != null) builder.setPassword(password.toCharArray())
         builder.get().use { sevenZ ->
+            val total = sevenZ.entries
+                .filter { !it.isDirectory && !isExcluded(it.name, excludes) }
+                .sumOf { it.size.coerceAtLeast(0) }
+            var done = 0L
+            var lastReport = 0L
+            progress?.onProgress(0, total)
             while (true) {
                 val entry = sevenZ.nextEntry ?: break
                 if (isExcluded(entry.name, excludes)) continue
@@ -240,9 +261,15 @@ object Extractor {
                         val read = sevenZ.read(buffer)
                         if (read < 0) break
                         stream.write(buffer, 0, read)
+                        done += read
+                        if (done - lastReport >= PROGRESS_STEP) {
+                            lastReport = done
+                            progress?.onProgress(done, total)
+                        }
                     }
                 }
             }
+            progress?.onProgress(done, total)
         }
     }
 
@@ -250,7 +277,9 @@ object Extractor {
      * RAR ueber das native 7-Zip-Binding: unterstuetzt RAR4 und RAR5,
      * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
      */
-    private fun extractRar(archive: File, destDir: File, password: String?, excludes: List<String>) {
+    private fun extractRar(
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+    ) {
         ensureSevenZip()
         val openCallback = RarOpenCallback(archive, password)
         RandomAccessFile(archive, "r").use { raf ->
@@ -258,6 +287,14 @@ object Extractor {
                 null, RandomAccessFileInStream(raf), openCallback
             )
             try {
+                val items = inArchive.simpleInterface.archiveItems.filter { item ->
+                    val path = item.path
+                    path != null && !item.isFolder && !isExcluded(path, excludes)
+                }
+                val total = items.sumOf { (it.size ?: 0L).coerceAtLeast(0) }
+                var done = 0L
+                var lastReport = 0L
+                progress?.onProgress(0, total)
                 for (item in inArchive.simpleInterface.archiveItems) {
                     val path = item.path ?: continue
                     if (isExcluded(path, excludes)) continue
@@ -270,6 +307,11 @@ object Extractor {
                     val result = out.outputStream().use { stream ->
                         val sink = net.sf.sevenzipjbinding.ISequentialOutStream { data ->
                             stream.write(data)
+                            done += data.size
+                            if (done - lastReport >= PROGRESS_STEP) {
+                                lastReport = done
+                                progress?.onProgress(done, total)
+                            }
                             data.size
                         }
                         if (password != null) item.extractSlow(sink, password)
@@ -279,6 +321,7 @@ object Extractor {
                         throw IOException("RAR-Extraktion: $result")
                     }
                 }
+                progress?.onProgress(done, total)
             } finally {
                 runCatching { inArchive.close() }
                 openCallback.close()

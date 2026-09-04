@@ -558,7 +558,9 @@ class DownloadEngine(
                 markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
                 false
             } else {
-                dao.setStatus(id, DownloadStatus.EXTRACTING)
+                // Alle Teile des Sets zeigen "wird entpackt", nicht nur der zuletzt
+                // fertige - sonst wirkt der Zustand willkuerlich verteilt
+                dao.setExtractingSet(archiveSetIds(id, base!!))
                 true
             }
         }
@@ -574,6 +576,13 @@ class DownloadEngine(
         // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
         launchExtraction(id, base!!, primary, archiveFile)
     }
+
+    /** Alle Eintraege eines Archiv-Sets (fertig oder gerade fertig werdend), inklusive [id]. */
+    private suspend fun archiveSetIds(id: Long, base: String): List<Long> =
+        (dao.all().filter {
+            it.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING, DownloadStatus.RUNNING) &&
+                Extractor.archiveBase(Extractor.repairName(it.fileName ?: "")) == base
+        }.map { it.id } + id).distinct()
 
     private fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
         extracting.incrementAndGet()
@@ -649,7 +658,7 @@ class DownloadEngine(
         }
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
             ?: return "Erstes Archiv-Teil fehlt"
-        dao.setStatus(id, DownloadStatus.EXTRACTING)
+        dao.setExtractingSet(archiveSetIds(id, base))
         launchExtraction(id, base, primary, File(downloadDir(), name))
         return null
     }
@@ -709,10 +718,25 @@ class DownloadEngine(
                     // JDownloader); ohne Paket der Archivname
                     val folder = packageFolder(id) ?: base
                     val extractDir = File(downloadDir(), folder)
+                    val setIds = archiveSetIds(id, base)
+                    // Fortschritt in Prozent fuer alle Teile, hoechstens jede Sekunde
+                    var lastWrite = 0L
+                    var lastPercent = -1
+                    val listener = Extractor.ProgressListener { done, total ->
+                        if (total <= 0) return@ProgressListener
+                        val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+                        val now = System.currentTimeMillis()
+                        if (percent != lastPercent && (now - lastWrite >= 1000 || percent == 100)) {
+                            lastWrite = now
+                            lastPercent = percent
+                            scope.launch { dao.setExtractProgress(setIds, percent) }
+                        }
+                    }
                     Extractor.extract(
                         primary, extractDir,
                         app.settings.currentPasswords(),
-                        app.settings.currentExtractExcludes()
+                        app.settings.currentExtractExcludes(),
+                        listener
                     )
                     val exportedPath = exportDirectory(extractDir, folder)
                     if (app.settings.currentDeleteArchive()) {
@@ -720,17 +744,14 @@ class DownloadEngine(
                             ?.filter { Extractor.archiveBase(it.name) == base }
                             ?.forEach { it.delete() }
                     }
-                    markCompleted(id, exportedPath, null)
-                    // Alle fertigen Teile des Sets: Pfad setzen, alte Notizen loeschen
-                    val setIds = dao.all()
-                        .filter { it.status == DownloadStatus.COMPLETED && Extractor.archiveBase(it.fileName ?: "") == base }
-                        .map { it.id }
-                    if (setIds.isNotEmpty()) dao.updateCompletedSet(setIds, exportedPath)
+                    dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
+                    // Alle Teile des Sets zurueck auf fertig, mit dem Zielordner
+                    dao.completeExtractingSet(setIds, exportedPath, null)
                     if (app.settings.currentRemoveLinksAfterExtract()) {
                         removeExtractedEntries(id, base)
                     }
                 } catch (e: Exception) {
-                    markCompleted(id, archiveFile.absolutePath, e.message)
+                    dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, e.message)
                 }
             }
         }

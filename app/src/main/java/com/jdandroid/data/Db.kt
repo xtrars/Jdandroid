@@ -57,6 +57,8 @@ data class DownloadItem(
     val retryAt: Long = 0,
     /** Online-Pruefung (siehe [OnlineState]); Hinweis dazu in [errorMessage]. */
     val online: Int = OnlineState.UNKNOWN,
+    /** Fortschritt des Entpackens in Prozent (Status EXTRACTING), -1 = unbekannt. */
+    val extractProgress: Int = -1,
     val addedAt: Long = System.currentTimeMillis()
 )
 
@@ -177,8 +179,28 @@ interface DownloadDao {
     suspend fun updateProgress(id: Long, bytes: Long, total: Long, speed: Long)
 
     /** Nach Prozess-Ende: laufende und entpackende Eintraege wieder einreihen. */
-    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 WHERE status IN ('RUNNING', 'EXTRACTING')")
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0, extractProgress = -1 " +
+            "WHERE status IN ('RUNNING', 'EXTRACTING')"
+    )
     suspend fun requeueRunning()
+
+    /** Alle Teile eines Archiv-Sets auf "wird entpackt" setzen (auch den gerade fertigen). */
+    @Query(
+        "UPDATE downloads SET status = 'EXTRACTING', extractProgress = 0, errorMessage = NULL, speedBps = 0 " +
+            "WHERE id IN (:ids) AND status IN ('COMPLETED', 'EXTRACTING', 'RUNNING')"
+    )
+    suspend fun setExtractingSet(ids: List<Long>)
+
+    @Query("UPDATE downloads SET extractProgress = :percent WHERE id IN (:ids) AND status = 'EXTRACTING'")
+    suspend fun setExtractProgress(ids: List<Long>, percent: Int)
+
+    /** Entpacken beendet: alle Teile des Sets zurueck auf fertig, mit Zielpfad bzw. Fehlerhinweis. */
+    @Query(
+        "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
+            "extractProgress = -1, attempts = 0, retryAt = 0 WHERE id IN (:ids) AND status = 'EXTRACTING'"
+    )
+    suspend fun completeExtractingSet(ids: List<Long>, path: String?, note: String?)
 
     /** Pause nur, wenn der Eintrag wirklich noch laeuft (nicht bereits fertig/entpackend). */
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
@@ -191,7 +213,8 @@ interface DownloadDao {
     /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
     @Query(
         "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
-            "speedBps = 0, attempts = 0, retryAt = 0 WHERE id = :id AND status IN ('RUNNING', 'EXTRACTING')"
+            "speedBps = 0, attempts = 0, retryAt = 0, extractProgress = -1 " +
+            "WHERE id = :id AND status IN ('RUNNING', 'EXTRACTING')"
     )
     suspend fun completeIfActive(id: Long, path: String?, note: String?): Int
 
@@ -298,7 +321,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -365,9 +388,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN extractProgress INTEGER NOT NULL DEFAULT -1")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-            MIGRATION_7_8
+            MIGRATION_7_8, MIGRATION_8_9
         )
     }
 }
