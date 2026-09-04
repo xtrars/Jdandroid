@@ -104,7 +104,10 @@ class DownloadService : Service() {
                 }
                 // Nach Prozess-Neustart haengen gebliebene RUNNING/EXTRACTING-
                 // Eintraege wieder einreihen - BEVOR irgendein pump() laeuft
-                (application as JdApp).db.downloadDao().requeueRunning()
+                // Eintraege, die eine vorige Dienst-Instanz gerade noch entpackt
+                // (NonCancellable), nicht neu einreihen - sonst doppelt entpackt
+                (application as JdApp).db.downloadDao()
+                    .requeueRunningExcept(ExtractionRegistry.activeIds())
                 startupDone = true
             } finally {
                 // Startsperre der Engine oeffnen (auch bei Fehler, sonst haengt pump())

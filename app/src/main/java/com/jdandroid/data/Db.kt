@@ -185,6 +185,13 @@ interface DownloadDao {
     )
     suspend fun requeueRunning()
 
+    /** Wie [requeueRunning], aber ohne Eintraege, die im Prozess gerade noch entpackt werden. */
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0, extractProgress = -1 " +
+            "WHERE status IN ('RUNNING', 'EXTRACTING') AND id NOT IN (:except)"
+    )
+    suspend fun requeueRunningExcept(except: List<Long>)
+
     /** Alle Teile eines Archiv-Sets auf "wird entpackt" setzen (auch den gerade fertigen). */
     @Query(
         "UPDATE downloads SET status = 'EXTRACTING', extractProgress = 0, errorMessage = NULL, speedBps = 0 " +

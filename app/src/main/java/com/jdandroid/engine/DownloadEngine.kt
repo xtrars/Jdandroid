@@ -64,7 +64,8 @@ class DownloadEngine(
 
     /** Entpacken/Export laufen in eigenen Jobs, immer nur einer gleichzeitig. */
     private val extractLimiter = Semaphore(1)
-    private val extracting = java.util.concurrent.atomic.AtomicInteger()
+    /** Prozessweit (siehe [ExtractionRegistry]): ueberlebt einen Neustart des Dienstes. */
+    private val extracting get() = ExtractionRegistry.count
 
     /**
      * Startsperre: pump() wartet, bis der Dienst haengen gebliebene Eintraege
@@ -554,7 +555,7 @@ class DownloadEngine(
                         (other.fileName == null && other.packageId != null && other.packageId == self?.packageId)
                     )
             }
-            if (pending) {
+            if (pending || ExtractionRegistry.isActive(base!!)) {
                 markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
                 false
             } else {
@@ -584,13 +585,18 @@ class DownloadEngine(
                 Extractor.archiveBase(Extractor.repairName(it.fileName ?: "")) == base
         }.map { it.id } + id).distinct()
 
-    private fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
+    private suspend fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
+        val setIds = archiveSetIds(id, base)
+        // Laeuft dieses Archiv bereits (z.B. aus einer frueheren Dienst-Instanz),
+        // nicht ein zweites Mal entpacken; die laufende Instanz schliesst das Set ab
+        if (!ExtractionRegistry.start(base, setIds)) return
         extracting.incrementAndGet()
         onStateChanged()
         scope.launch {
             try {
                 extractAndExport(id, base, primary, archiveFile)
             } finally {
+                ExtractionRegistry.finish(base, setIds)
                 extracting.decrementAndGet()
                 onStateChanged()
                 scope.launch { pump() }
@@ -605,6 +611,21 @@ class DownloadEngine(
      * Fehlermeldung oder null, wenn das Entpacken gestartet wurde.
      */
     suspend fun extractNow(id: Long): String? {
+        // Als laufender Vorgang zaehlen, bevor Dateien zurueckgeholt werden:
+        // sonst haelt sich der frisch gestartete Dienst fuer untaetig, beendet
+        // sich, und die naechste Instanz reiht die EXTRACTING-Eintraege neu ein
+        startGate.await()
+        extracting.incrementAndGet()
+        onStateChanged()
+        try {
+            return extractNowInner(id)
+        } finally {
+            extracting.decrementAndGet()
+            onStateChanged()
+        }
+    }
+
+    private suspend fun extractNowInner(id: Long): String? {
         val item = dao.byId(id) ?: return "Eintrag nicht gefunden"
         if (item.status == DownloadStatus.EXTRACTING) return "Wird bereits entpackt"
         if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
@@ -658,6 +679,7 @@ class DownloadEngine(
         }
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
             ?: return "Erstes Archiv-Teil fehlt"
+        if (ExtractionRegistry.isActive(base)) return "Wird bereits entpackt"
         dao.setExtractingSet(archiveSetIds(id, base))
         launchExtraction(id, base, primary, File(downloadDir(), name))
         return null
