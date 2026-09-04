@@ -131,7 +131,6 @@ fun DownloadsScreen(
     val collapsed = remember { mutableStateMapOf<Long, Boolean>() }
     var showAddDialog by remember { mutableStateOf(false) }
     var prefill by remember { mutableStateOf("") }
-    val snackbarHost = remember { SnackbarHostState() }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ListFilter.ALL) }
@@ -162,7 +161,6 @@ fun DownloadsScreen(
 
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = {
             TopAppBar(
                 title = { Text("Downloads") },
@@ -256,8 +254,12 @@ fun DownloadsScreen(
             onDismiss = { showAddDialog = false },
             onAdd = { text, pkg ->
                 vm.addLinks(text, pkg) { added ->
-                    if (added > 0) onLinksCollected()
-                    else scope.launch { snackbarHost.showSnackbar("Keine neuen Links (bereits vorhanden?)") }
+                    if (added > 0) {
+                        AppMessages.success("$added Link(s) in den Linksammler übernommen")
+                        onLinksCollected()
+                    } else {
+                        AppMessages.info("Keine neuen Links – alle bereits vorhanden")
+                    }
                 }
             }
         )

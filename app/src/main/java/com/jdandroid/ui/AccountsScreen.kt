@@ -104,7 +104,6 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
 fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     val accounts by vm.accounts.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
-    val snackbarHost = remember { SnackbarHostState() }
     val message by vm.message.collectAsState()
     // Solange die Kontenansicht sichtbar ist (Tab offen, App im Vordergrund),
     // jede Minute den Stand beim Hoster nachladen; beim Oeffnen sofort.
@@ -119,14 +118,13 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     }
     LaunchedEffect(message) {
         message?.let {
-            snackbarHost.showSnackbar(it)
+            AppMessages.error(it)
             vm.consumeMessage()
         }
     }
 
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {

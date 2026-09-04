@@ -38,9 +38,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.SnackbarHostState
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.widget.Toast
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerFiles
@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 val reason = result.exceptionOrNull()?.message
                     ?: "Die geöffnete Datei ist kein DLC-Container."
-                Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
+                AppMessages.error(reason)
             }
         }
     }
@@ -148,6 +148,16 @@ fun MainScreen(
     val context = LocalContext.current
     // Ein DLC gehoert in den Linksammler: dorthin wechseln, die Meldung erscheint dort
     LaunchedEffect(dlcContent) { if (dlcContent != null) tab = Tab.Collector }
+
+    // Zentrale Meldungen (DLC-Import, Kontofehler, ...): eine Fortschrittsmeldung
+    // bleibt stehen, bis die naechste Meldung sie abloest.
+    val messageHost = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        AppMessages.events.collect { message ->
+            messageHost.currentSnackbarData?.dismiss()
+            launch { messageHost.showSnackbar(message) }
+        }
+    }
     var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
     crashReport?.let { report ->
         CrashDialog(report = report, onDismiss = { crashReport = null })
@@ -172,6 +182,7 @@ fun MainScreen(
         // Die Insets behandeln die inneren Bildschirme (eigene TopAppBar) und
         // die NavigationBar selbst - sonst kaeme der Abstand doppelt.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { JdSnackbarHost(messageHost) },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->

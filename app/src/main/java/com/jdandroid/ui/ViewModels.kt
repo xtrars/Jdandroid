@@ -141,9 +141,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
      * Importiert eine DLC-Container-Datei: entschluesselt sie und reiht die
      * enthaltenen Links ein. Meldet Ergebnis/Fehler ueber [onResult].
      */
-    fun importDlc(content: String, onResult: (String) -> Unit) {
+    fun importDlc(content: String) {
+        AppMessages.progress("DLC wird entschlüsselt …")
         viewModelScope.launch(Dispatchers.IO) {
-            val message = try {
+            try {
                 // Paketstruktur des DLC uebernehmen - wie im JDownloader
                 val packages = ContainerDecrypter.decryptDlcPackages(content)
                 var added = 0
@@ -151,15 +152,20 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                     added += LinkSink.addUrls(getApplication(), pkg.urls, pkg.name)
                 }
                 val total = packages.sumOf { it.urls.size }
-                if (added > 0) "$added Link(s) in ${packages.size} Paket(en) in den Linksammler übernommen"
-                else "DLC gelesen, aber keine unterstützten Hoster enthalten " +
-                    "($total Link(s) insgesamt)"
+                if (added > 0) {
+                    AppMessages.success(
+                        "$added Link(s) in ${packages.size} Paket(en) in den Linksammler übernommen"
+                    )
+                } else {
+                    AppMessages.info(
+                        "DLC gelesen, aber keine neuen unterstützten Links ($total Link(s) insgesamt)"
+                    )
+                }
             } catch (e: ContainerDecrypter.ContainerException) {
-                e.message ?: "DLC-Import fehlgeschlagen"
+                AppMessages.error(e.message ?: "DLC-Import fehlgeschlagen")
             } catch (e: Exception) {
-                "DLC-Import fehlgeschlagen: Datei ist kein gültiger Container"
+                AppMessages.error("DLC-Import fehlgeschlagen: Datei ist kein gültiger Container")
             }
-            launch(Dispatchers.Main) { onResult(message) }
         }
     }
 

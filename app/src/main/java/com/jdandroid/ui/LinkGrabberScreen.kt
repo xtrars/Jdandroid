@@ -29,8 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -72,15 +70,13 @@ fun LinkGrabberScreen(
     val groups by vm.collectorGroups.collectAsState()
     val total = groups.sumOf { it.items.size }
     val offline = groups.sumOf { g -> g.items.count { it.online == OnlineState.OFFLINE } }
-    val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     // DLC ueber "Oeffnen mit"/Teilen: kommt aus der MainActivity hierher
     LaunchedEffect(dlcContent) {
         if (dlcContent != null) {
-            snackbarHost.showSnackbar("DLC wird importiert …")
-            vm.importDlc(dlcContent) { result -> scope.launch { snackbarHost.showSnackbar(result) } }
+            vm.importDlc(dlcContent)
             onDlcConsumed()
         }
     }
@@ -94,25 +90,18 @@ fun LinkGrabberScreen(
             val result = runCatching { ContainerFiles.readText(context.contentResolver, uri) }
             val content = result.getOrNull()
             when {
-                content == null -> launch(Dispatchers.Main) {
-                    snackbarHost.showSnackbar(
-                        result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
-                    )
-                }
-                !ContainerFiles.looksLikeDlc(content) -> launch(Dispatchers.Main) {
-                    snackbarHost.showSnackbar("Die gewählte Datei ist kein DLC-Container")
-                }
-                else -> {
-                    launch(Dispatchers.Main) { snackbarHost.showSnackbar("DLC wird importiert …") }
-                    vm.importDlc(content) { message -> scope.launch { snackbarHost.showSnackbar(message) } }
-                }
+                content == null -> AppMessages.error(
+                    result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
+                )
+                !ContainerFiles.looksLikeDlc(content) ->
+                    AppMessages.error("Die gewählte Datei ist kein DLC-Container")
+                else -> vm.importDlc(content)
             }
         }
     }
 
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = {
             TopAppBar(
                 title = { Text("Linksammler") },
