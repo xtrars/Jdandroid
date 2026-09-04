@@ -112,5 +112,10 @@ class DdownloadFormTest {
         assertFalse(hoster.isFileServerUrl("https://ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
         assertFalse(hoster.isFileServerUrl("https://s12.ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
         assertFalse(hoster.isFileServerUrl("https://cdn.ddownload.com/assets/style.css"))
+        // Fileserver mit Port, dl.cgi-Pfad und fremder CDN-Host sind Direktlinks
+        assertTrue(hoster.isFileServerUrl("https://fs07.ddownload.com:183/d/abc123/name.part1.rar"))
+        assertTrue(hoster.isFileServerUrl("https://s12.ddownload.com/cgi-bin/dl.cgi/abc/name.rar"))
+        assertTrue(hoster.isFileServerUrl("https://cdn7.ddl-cdn.net/d/abc/name.mkv?token=1"))
+        assertFalse(hoster.isFileServerUrl("https://ddownload.com/premium.html"))
     }
 }

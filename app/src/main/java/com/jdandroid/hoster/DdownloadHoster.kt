@@ -60,12 +60,24 @@ class DdownloadHoster : Hoster {
         return 0L
     }
 
-    /**
-     * premium_traffic_left liefert die API in Megabyte (Doku: 102400 = 100 GB).
-     * Keine Plausibilitaetsgrenze mehr: Ultimate-Konten haben laut Kontoseite
-     * tatsaechlich Kontingente im Bereich von hunderten Terabyte.
-     */
+    /** premium_traffic_left liefert die API in Megabyte (Doku: 102400 = 100 GB). */
     internal fun quotaToBytes(raw: Double): Long = (raw * (1L shl 20)).toLong()
+
+    /**
+     * Oberhalb dieser Grenze ist ein Kontingent sicher falsch beschriftet: die
+     * Kontoseite zeigt bei einem 200-GB-Tageskontingent "197040 GB", meint
+     * aber MB. Erst ab 16 TiB eingreifen, damit dazugekaufter Traffic
+     * (z.B. 1 TB) unangetastet bleibt.
+     */
+    private val MAX_PLAUSIBLE_QUOTA = 16L shl 40
+
+    /** Falsch beschriftete Einheit korrigieren: durch 1024 teilen, bis der Wert plausibel ist. */
+    internal fun plausibleQuota(bytes: Long): Long {
+        var v = bytes
+        var guard = 0
+        while (v > MAX_PLAUSIBLE_QUOTA && guard++ < 4) v /= 1024
+        return v
+    }
 
     /**
      * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
@@ -78,7 +90,11 @@ class DdownloadHoster : Hoster {
      * Direktlinks liegen auf Fileservern (Subdomain ausser www), nie auf der
      * Hauptdomain und nie unter /cgi-bin/ (dort liegt z.B. tracker.cgi).
      */
-    private val fileServerRegex = Regex("""https?://(?!www\.)[a-z0-9-]+\.ddownload\.com/[^\s"'<>]+""")
+    private val fileServerRegex =
+        Regex("""https?://(?!www\.)[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)(?::\d+)?/[^\s"'<>]+""")
+
+    /** Hauptdomains, auf denen nie eine Datei liegt (nur Seiten). */
+    private val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
     /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
     private val browserUa =
@@ -301,14 +317,18 @@ class DdownloadHoster : Hoster {
             }
         }
 
-        val traffic = parseTraffic(html)
+        val parsed = parseTraffic(html)
+        val traffic = parsed.copy(
+            left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
+            total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
+        )
         // Erkannten Wert immer festhalten: so laesst sich eine falsche Einheit
         // anhand des Seitenausschnitts nachvollziehen
         com.jdandroid.Diagnostics.sink?.invoke(
             "ddownload_account_parse",
             "ddownload-Kontoseite: erkanntes Kontingent",
-            "rest=${traffic.left} gesamt=${traffic.total} unbegrenzt=${traffic.unlimited}\n" +
-                traffic.snippet.take(1200)
+            "rest=${parsed.left} (plausibel ${traffic.left}) gesamt=${parsed.total} unbegrenzt=${parsed.unlimited}\n" +
+                parsed.snippet.take(1200)
         )
         if (traffic.left < 0 && !traffic.unlimited) {
             // Nicht lesbar: Seitenausschnitt fuer die Diagnose ablegen (nur Text,
@@ -435,7 +455,7 @@ class DdownloadHoster : Hoster {
             (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
             unlimited -> -1L
-            premiumLeft != null -> quotaToBytes(premiumLeft)
+            premiumLeft != null -> plausibleQuota(quotaToBytes(premiumLeft))
             else -> {
                 // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
@@ -483,7 +503,14 @@ class DdownloadHoster : Hoster {
             account.plainApiKey?.takeIf { it.isNotBlank() }?.let { key ->
                 return@withContext resolveViaApi(key, code)
             }
-            val (client, _) = sessionAndAccountPage(account)
+            val (client, accountHtml) = sessionAndAccountPage(account)
+            // Steht auf der Kontoseite ein API-Key, ist die API der sicherste Weg
+            // zum Direktlink (kein Formular, keine Weiterleitungskette)
+            apiKeyFromPage(accountHtml)?.let { key ->
+                runCatching { resolveViaApi(key, code) }
+                    .onFailure { if (it is HosterException && it.permanent && it.message?.contains("offline") == true) throw it }
+                    .getOrNull()?.let { return@withContext it }
+            }
             val pageUrl = "$siteBase/$code"
 
             var page = client.fetch(pageUrl, referer = siteBase)
@@ -491,33 +518,52 @@ class DdownloadHoster : Hoster {
             checkOffline(page.body)
 
             var direct = extractDirectLink(page.body)
-            if (direct == null) {
+            val steps = mutableListOf("GET $pageUrl -> ${page.code}")
+            var formsSent = 0
+            var hops = 0
+            while (direct == null && hops++ < 6) {
+                if (page.code in 300..399 && !page.location.isNullOrBlank()) {
+                    // Weiterleitung: zeigt sie auf eine Datei, ist das der Direktlink;
+                    // sonst der naechsten Seite folgen (ohne die Datei selbst zu laden)
+                    val target = resolveLocation(pageUrl, page.location!!)
+                    steps += "-> ${stripQuery(target)}"
+                    if (isFileServerUrl(target)) { direct = target; break }
+                    page = client.fetch(target, referer = pageUrl, followRedirects = false)
+                    checkBlocked(page)
+                    steps += "GET -> ${page.code}"
+                    direct = extractDirectLink(page.body)
+                    continue
+                }
+                if (formsSent >= 2) break
+                // Download-Formular (op=download2, method_premium) abschicken. Ohne
+                // Redirect-Folgen: XFileSharing antwortet mit einer Weiterleitung,
+                // deren Location bereits der Direktlink ist.
                 val form = downloadForm(page.body, code)
-                // Ohne Redirect-Folgen: XFileSharing antwortet auf das Formular
-                // mit einer Weiterleitung, deren Location bereits der
-                // Direktlink ist. Wuerde man folgen, laedt man die Datei selbst.
-                page = client.fetch(
-                    pageUrl, form = form, referer = pageUrl, followRedirects = false
-                )
+                formsSent++
+                page = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
                 checkBlocked(page)
-                // Location nur uebernehmen, wenn sie auf einen Fileserver zeigt -
-                // relative Ziele oder /login.html sind kein Direktlink.
-                direct = page.location?.takeIf { isFileServerUrl(it) }
-                    ?: extractDirectLink(page.body)
-                if (direct == null) checkOffline(page.body)
+                steps += "POST ${form.keys.joinToString(",")} -> ${page.code}"
+                direct = extractDirectLink(page.body)
+                if (direct == null && page.code !in 300..399) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
-                // Diagnosefaehige Meldung statt pauschalem "kein Premium"
+                val text = visibleText(page.body)
+                com.jdandroid.Diagnostics.sink?.invoke(
+                    "ddownload_resolve",
+                    "ddownload: kein Direktlink (Ablauf der Anfrage)",
+                    steps.joinToString("\n") + "\nContent-Type=${page.contentType}\n" + text.take(1000)
+                )
                 val hint = when {
-                    page.body.contains("premium", true) &&
-                        page.body.contains("only", true) -> "Datei ist nur für Premium verfügbar"
-                    page.body.contains("countdown", true) ||
-                        page.body.contains("wait", true) -> "Server verlangt Wartezeit (Free-Modus)"
+                    text.contains("premium", true) && text.contains("only", true) ->
+                        "Datei ist nur für Premium verfügbar"
+                    text.contains("countdown", true) || text.contains("wait", true) ->
+                        "Server verlangt Wartezeit (Free-Modus)"
+                    page.code in 300..399 -> "Weiterleitung ohne Datei"
                     else -> "unerwartete Antwort"
                 }
                 throw HosterException(
                     "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint). " +
-                        "Bei einem Free-Konto sind Downloads nicht möglich.",
+                        "Ablauf unter Einstellungen → Diagnose.",
                     permanent = true
                 )
             }
@@ -657,19 +703,26 @@ class DdownloadHoster : Hoster {
     )
 
     /**
-     * Gilt nur fuer Adressen auf einem Fileserver (Subdomain von ddownload.com
-     * ausser www), nicht unter /cgi-bin/ und mit Dateiendung, die kein
-     * Seiten-Asset ist. Damit fallen Seitenlinks, tracker.cgi, relative
-     * Weiterleitungen und /login.html heraus.
+     * Gilt fuer Adressen mit Dateinamen auf einem anderen Host als der
+     * Hauptdomain: Fileserver (Subdomain, auch mit Port wie :183, auch unter
+     * /cgi-bin/dl.cgi/) und fremde CDN-Hosts, auf die die Formular-Antwort
+     * weiterleiten kann. Seitenlinks, tracker.cgi, relative Weiterleitungen
+     * und /login.html fallen durch Host- und Endungspruefung heraus.
      */
     internal fun isFileServerUrl(url: String): Boolean {
-        if (fileServerRegex.matchEntire(url) == null) return false
-        if (url.contains("/cgi-bin/", ignoreCase = true)) return false
-        val path = url.substringAfter("://").substringAfter('/', "")
-        val last = path.substringBefore('?').substringAfterLast('/')
+        val http = url.toHttpUrlOrNull() ?: return false
+        if (http.host.lowercase() in siteHosts) return false
+        val last = http.pathSegments.lastOrNull().orEmpty()
         val ext = last.substringAfterLast('.', "").lowercase()
         return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
     }
+
+    /** Adresse ohne Query fuer die Diagnose (Direktlinks tragen Tokens). */
+    private fun stripQuery(url: String): String = url.substringBefore('?')
+
+    /** Location-Header (auch relativ) gegen die Seitenadresse aufloesen. */
+    private fun resolveLocation(base: String, location: String): String =
+        base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
     /**
      * Direktlink aus dem HTML. Das frühere Muster "URL enthält download" traf

@@ -79,9 +79,26 @@ class DdownloadQuotaUnitTest {
     }
 
     @Test
-    fun grosseKontingenteBleibenErhalten() {
-        // Ultimate: 197040 GB laut Kontoseite, in MB von der API
-        assertEquals(197040L shl 30, ddl.quotaToBytes(197040.0 * 1024))
+    fun apiWertLandetImTageskontingent() {
+        // 197040 MB laut API = 192,4 GiB; passt zu 200 GB pro Tag
+        assertEquals(197040L shl 20, ddl.plausibleQuota(ddl.quotaToBytes(197040.0)))
+    }
+}
+
+class DdownloadPlausibilityTest {
+    private val ddl = DdownloadHoster()
+
+    @Test
+    fun falschBeschriftetesGbWirdZuMb() {
+        // Kontoseite: "197040 GB" bei 200 GB Tageskontingent -> gemeint sind MB
+        assertEquals(197040L shl 20, ddl.plausibleQuota(197040L shl 30))
+    }
+
+    @Test
+    fun dazugekaufterTrafficBleibtErhalten() {
+        assertEquals(1200L shl 30, ddl.plausibleQuota(1200L shl 30))
+        assertEquals(150L shl 30, ddl.plausibleQuota(150L shl 30))
+        assertEquals(0L, ddl.plausibleQuota(0L))
     }
 }
 
@@ -99,6 +116,8 @@ class DdownloadUltimatePageTest {
         val t = ddl.parseTraffic(html)
         assertEquals(197040 * gb, t.left)
         assertFalse(t.unlimited)
+        // Die Seite beschriftet falsch: gemeint sind 192,4 GiB
+        assertEquals(197040L shl 20, ddl.plausibleQuota(t.left))
     }
 
     @Test
