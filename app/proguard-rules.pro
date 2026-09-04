@@ -3,9 +3,13 @@
 # "Letzter Absturz") direkt nachvollziehbar sind.
 -dontobfuscate
 
-# 7-Zip-JBinding ruft Java-Klassen und -Methoden aus nativem Code per Name auf.
+# 7-Zip-JBinding ruft Java-Klassen und -Methoden aus nativem Code per Name auf -
+# auch UNSERE Implementierungen der Callback-Interfaces (RarOpenCallback,
+# ISequentialOutStream). Ohne diese Regeln entfernt R8 sie als "unbenutzt".
 -keep class net.sf.sevenzipjbinding.** { *; }
 -keepclassmembers class net.sf.sevenzipjbinding.** { *; }
+-keep class * implements net.sf.sevenzipjbinding.** { *; }
+-keep class com.jdandroid.engine.** { *; }
 
 # NanoHTTPD (Click'n'Load-Server)
 -keep class fi.iki.elonen.** { *; }

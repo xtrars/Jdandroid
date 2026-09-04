@@ -270,24 +270,30 @@ class DdownloadHoster : Hoster {
                 .parse(result.optString("premium_expire"))?.time ?: 0L
         }.getOrDefault(0L)
         val premium = expire > System.currentTimeMillis()
-        val rawLeft = result.opt("traffic_left")?.toString()?.trim().orEmpty()
-        val unlimited = rawLeft.contains("unlimited", true)
-        // Zahl in Byte; manche XFS-Installationen liefern MB - Werte unter 1e6 als MB werten
-        val left = rawLeft.toDoubleOrNull()?.let { if (it in 1.0..1_000_000.0) (it * (1L shl 20)).toLong() else it.toLong() } ?: -1L
-        val rawUsed = result.opt("traffic_used")?.toString()?.trim().orEmpty()
-        val used = rawUsed.toDoubleOrNull()?.let { if (it in 1.0..1_000_000.0) (it * (1L shl 20)).toLong() else it.toLong() } ?: -1L
-        // Gesamtkontingent: Rest + Verbrauch, wenn die API beides liefert; sonst
-        // das Tageskontingent von ddownload Premium (200 GB laut Anbieter)
+        // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
+        // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
+        // betreffen den Free-Traffic und sind fuer Premium irrelevant.
+        val rawPremiumLeft = result.opt("premium_traffic_left")?.toString()?.trim().orEmpty()
+        val unlimited = rawPremiumLeft.contains("unlimited", true) || rawPremiumLeft == "inf"
+        val premiumLeftMb = rawPremiumLeft.toDoubleOrNull()
+        val left = when {
+            unlimited -> -1L
+            premiumLeftMb != null -> (premiumLeftMb * (1L shl 20)).toLong()
+            else -> {
+                // Aeltere API ohne premium_traffic_left: traffic_left (MB) als Notnagel
+                result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
+                    ?.let { (it * (1L shl 20)).toLong() } ?: -1L
+            }
+        }
         val total = when {
             unlimited -> -1L
-            left >= 0 && used >= 0 -> left + used
             premium && left >= 0 -> maxOf(DAILY_QUOTA, left)
             else -> -1L
         }
         return AccountInfo(
             valid = true,
             premiumUntil = expire,
-            trafficLeft = if (unlimited) -1 else left,
+            trafficLeft = left,
             trafficTotal = total,
             trafficUnlimited = unlimited,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
@@ -379,10 +385,16 @@ class DdownloadHoster : Hoster {
                     )
                 }
             }
-            // Ohne API-Key: oeffentliche Dateiseite auswerten (kein Login noetig)
-            val html = Http.get("$siteBase/$code")
+            // Ohne API-Key: oeffentliche Dateiseite auswerten (kein Login noetig).
+            // Mit Browser-Kennung, sonst liefert Cloudflare nur eine Challenge.
+            val html = clientFor(0L).fetch("$siteBase/$code").body
             if (html.contains("File Not Found", true) || html.contains("No such file", true)) {
                 return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
+            }
+            if (html.contains("Just a moment", true) || html.contains("cf-challenge", true) ||
+                html.contains("challenge-platform", true)
+            ) {
+                return@withContext LinkInfo(online = null, note = "Cloudflare-Prüfung – Status unbekannt")
             }
             LinkInfo(
                 online = true,

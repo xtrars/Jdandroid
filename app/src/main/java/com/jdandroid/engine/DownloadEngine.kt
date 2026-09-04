@@ -390,11 +390,13 @@ class DownloadEngine(
             temp.renameTo(archiveFile)
         }
 
-        // Warten noch andere Teile desselben Archivs? Dann erst mal fertig melden.
+        // Warten noch andere Teile desselben Archivs (auch solche, die noch im
+        // Linksammler liegen)? Dann erst mal fertig melden; entpackt wird, sobald
+        // der letzte Teil da ist.
         val pending = dao.all().any { other ->
             other.id != id &&
                 other.status in listOf(
-                    DownloadStatus.QUEUED, DownloadStatus.RUNNING,
+                    DownloadStatus.COLLECTED, DownloadStatus.QUEUED, DownloadStatus.RUNNING,
                     DownloadStatus.PAUSED, DownloadStatus.EXTRACTING
                 ) &&
                 Extractor.archiveBase(other.fileName ?: "") == base

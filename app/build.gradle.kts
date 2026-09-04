@@ -15,8 +15,8 @@ android {
         targetSdk = 35
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
-        versionCode = 10
-        versionName = "1.4.1"
+        versionCode = 11
+        versionName = "1.4.2"
     }
 
     // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
@@ -36,9 +36,14 @@ android {
 
     buildTypes {
         release {
-            // Shrinking/Optimierung an, Obfuskation aus (siehe proguard-rules.pro)
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // R8 bewusst AUS: der Shrinker hat die RAR-Rueckrufklasse
+            // (Extractor.RarOpenCallback, ISequentialOutStream-Lambda) entfernt,
+            // weil sie nur aus nativem 7-Zip-Code per JNI aufgerufen wird -
+            // Ergebnis: Release-Builds entpackten kein RAR mehr. Die Keep-Regeln
+            // in proguard-rules.pro decken das inzwischen ab, aber ohne Geraete-
+            // test bleibt der sichere Weg ein unveraenderter Build.
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -63,10 +63,17 @@ object AccountRefresher {
         }
     }
 
-    /** Alle Konten sofort pruefen (Minutentakt in der Kontenansicht). */
+    /**
+     * Minutentakt in der Kontenansicht: Konten mit Kontingent jede Minute,
+     * Konten ohne Limit (1fichier) nur alle [STALE_MS] - deren Stand aendert
+     * sich nicht, und 1fichier sperrt bei zu vielen Anfragen voruebergehend.
+     */
     fun refreshAll(app: JdApp) {
         app.appScope.launch {
-            app.db.accountDao().all().forEach { launch { check(app, it.id) } }
+            val cutoff = System.currentTimeMillis() - STALE_MS
+            app.db.accountDao().all()
+                .filter { !it.trafficUnlimited || it.lastChecked < cutoff }
+                .forEach { launch { check(app, it.id) } }
         }
     }
 

@@ -3,7 +3,7 @@
 Ein Download-Manager für Android im Stil des JDownloaders – mit Hoster-Plugins,
 Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Design.
 
-**Fertige APK:** [`release/JDAndroid-1.4.1.apk`](release/JDAndroid-1.4.1.apk)
+**Fertige APK:** [`release/JDAndroid-1.4.2.apk`](release/JDAndroid-1.4.2.apk)
 (signiert, direkt installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Unterstützte Hoster
@@ -38,9 +38,9 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
   Click'n'Load wird die Herkunfts-Webseite am Paket angezeigt
 - **Konten-Verwaltung**: Accounts pro Hoster hinterlegen und prüfen
   (Premium-Status, Ablaufdatum); **verbleibende Restmenge** als eigene Zeile
-  mit Balken zum Kontingent (Rapidgator: Tageskontingent aus der API,
-  ddownload: Rest + Verbrauch bzw. 200 GB Tageskontingent; 1fichier:
-  unbegrenzt), im Konten-Tab jede Minute
+  mit Balken zum Kontingent (Rapidgator: `traffic.left/total` in Byte,
+  ddownload: `premium_traffic_left` in MB gegen 200 GB Tageskontingent;
+  1fichier: unbegrenzt), im Konten-Tab jede Minute
   neu abgefragt und zusätzlich nach jedem fertigen Download
 - **Container-Import**: **DLC**-Dateien (über „Öffnen mit"/Teilen oder den
   Ordner-Knopf in der App) und **Click'n'Load 2** (lokaler Server auf Port
@@ -181,8 +181,9 @@ und die Klasse in `HosterRegistry` registriert wird.
   implementiert, aber nicht mit echten Premium-Accounts live getestet –
   Feldabweichungen wären in der jeweiligen Datei unter
   `app/src/main/java/com/jdandroid/hoster/` schnell korrigiert.
-- R8 läuft im Release-Build mit Shrinking und Optimierung, aber ohne
-  Obfuskation (Absturzberichte bleiben lesbar); Keep-Regeln in
-  `app/proguard-rules.pro`.
+- R8/Minify ist im Release-Build **aus**: der Shrinker entfernte die
+  RAR-Rückrufklassen, die nur aus nativem 7-Zip-Code per JNI aufgerufen
+  werden (kein RAR-Entpacken mehr in 1.1.0 bis 1.4.1). Keep-Regeln dafür
+  liegen in `app/proguard-rules.pro`, falls R8 später wieder aktiviert wird.
 - Die native 7-Zip-Bibliothek (Release-16.02-2.03) ist 16-KB-Page-kompatibel
   (Android 15 auf neueren Geräten).

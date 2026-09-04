@@ -54,8 +54,13 @@ data class JdMessage(
 ) : SnackbarVisuals
 
 object AppMessages {
-    private val _events = MutableSharedFlow<JdMessage>(extraBufferCapacity = 16)
+    // replay = 1: eine Meldung, die vor dem Aufbau der Oberflaeche entsteht
+    // (z.B. "keine DLC-Datei" beim Kaltstart per Intent), geht nicht verloren.
+    private val _events = MutableSharedFlow<JdMessage>(replay = 1, extraBufferCapacity = 16)
     val events: SharedFlow<JdMessage> = _events
+
+    /** Nach der Anzeige aufrufen, damit die Meldung nicht erneut erscheint. */
+    fun markShown() = _events.resetReplayCache()
 
     fun post(text: String, kind: MessageKind = MessageKind.INFO) {
         _events.tryEmit(JdMessage(text, kind))

@@ -154,6 +154,7 @@ fun MainScreen(
     val messageHost = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
         AppMessages.events.collect { message ->
+            AppMessages.markShown()
             messageHost.currentSnackbarData?.dismiss()
             launch { messageHost.showSnackbar(message) }
         }
