@@ -28,9 +28,13 @@ object LinkChecker {
                     if (item.status != DownloadStatus.COLLECTED) return@withPermit
                     dao.setOnline(id, OnlineState.CHECKING)
                     val hoster = HosterRegistry.byId(item.hosterId)
-                    val result = runCatching {
+                    val result = try {
                         hoster?.checkLink(item.url, accountDao.validForHoster(item.hosterId))
-                    }.getOrNull()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
                     when (result?.online) {
                         true -> dao.applyCheck(id, OnlineState.ONLINE, null, result.fileName?.let { sanitize(it) }, result.fileSize)
                         false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: "Datei offline", null, -1)

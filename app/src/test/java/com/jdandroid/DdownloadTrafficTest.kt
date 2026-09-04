@@ -54,6 +54,20 @@ class DdownloadTrafficTest {
     }
 
     @Test
+    fun kaufangebotGiltNichtAlsRestmenge() {
+        val free = """<div>Account-Status Free</div><a>Traffic kaufen</a><div>200 GB + Daten &euro;15.99</div>"""
+        assertEquals(-1L, ddl.parseTraffic(free).left)
+        val premium = """<div>Premium: 200 GB traffic per day</div><div>Verfügbare Daten</div><div>45 GB</div>"""
+        assertEquals(45 * gb, ddl.parseTraffic(premium).left)
+    }
+
+    @Test
+    fun deutschesDatumWirdGelesen() {
+        assertTrue(ddl.parseExpire("2 Dezember 2030") > 0)
+        assertTrue(ddl.pageExpire("Aktiv bis 2 Dezember 2030") > 0)
+    }
+
+    @Test
     fun scriptInhaltWirdIgnoriert() {
         val html = """<script>var traffic = "999 GB";</script><div>Traffic available: 10 GB</div>"""
         assertEquals(10 * gb, ddl.parseTraffic(html).left)

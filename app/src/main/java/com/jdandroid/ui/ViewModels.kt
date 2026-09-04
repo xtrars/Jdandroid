@@ -33,7 +33,8 @@ data class DownloadGroup(
     val items: List<DownloadItem>
 ) {
     val total: Long get() = items.sumOf { it.fileSize.coerceAtLeast(0) }
-    val done: Long get() = items.sumOf { it.downloadedBytes }
+    // Nur Eintraege mit bekannter Groesse zaehlen, sonst steht "1,2 GiB / 700 MiB"
+    val done: Long get() = items.sumOf { if (it.fileSize > 0) it.downloadedBytes else 0L }
     val speed: Long get() = items.sumOf { it.speedBps }
     val finished: Int get() = items.count { it.status == DownloadStatus.COMPLETED }
     val failed: Int get() = items.count { it.status == DownloadStatus.FAILED }

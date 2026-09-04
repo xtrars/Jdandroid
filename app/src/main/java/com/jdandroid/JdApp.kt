@@ -29,6 +29,11 @@ class JdApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install(this)
+        // WebView-Kennung im Hintergrund holen (laedt den WebView-Provider)
+        Thread {
+            com.jdandroid.hoster.Http.browserUserAgent =
+                runCatching { android.webkit.WebSettings.getDefaultUserAgent(this) }.getOrNull()
+        }.start()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "jdandroid.db")
             .addMigrations(*AppDatabase.ALL_MIGRATIONS)
             // Nur bei einer aelteren App-Version als der Datenbank neu aufbauen;

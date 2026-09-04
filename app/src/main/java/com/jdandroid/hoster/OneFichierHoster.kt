@@ -38,7 +38,7 @@ class OneFichierHoster : Hoster {
     )
 
     /** user/info.cgi erlaubt nur einen Aufruf pro 5 Minuten - Ergebnis zwischenspeichern. */
-    private val accountCache = ConcurrentHashMap<Long, Pair<Long, AccountInfo>>()
+    private val accountCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, Result<AccountInfo>>>()
     private val accountCacheMs = 5L * 60 * 1000
 
     /** Fehler der Zugangsdaten (ungueltiger API-Key), immer permanent. */
@@ -67,13 +67,21 @@ class OneFichierHoster : Hoster {
         }
         val json = runCatching { JSONObject(text) }.getOrNull()
         val msg = json?.optString("message")?.ifBlank { null }
-        // HTTP-Status zuerst: 401/403 = API-Key ungueltig/gesperrt (permanent),
-        // 429 = Rate-Limit (voruebergehend)
-        when (code) {
-            401, 403 -> throw AuthException("1fichier: ${msg ?: "Nicht angemeldet (HTTP $code)"}")
-            429 -> throw HosterException("1fichier: ${msg ?: "Zu viele Anfragen (HTTP 429)"}", permanent = false)
+        // Voruebergehendes zuerst: Flood-Sperre (kommt auch als HTTP 403),
+        // Rate-Limit, Serverfehler, Cloudflare-Seite. Nur ein klar
+        // ausgewiesener Anmeldefehler darf das Konto dauerhaft abschalten -
+        // ein pauschales 403 waere sonst das Aus fuer alle 1fichier-Downloads.
+        val flood = msg?.let { it.contains("Flood", true) || it.contains("try again", true) } == true
+        if (flood || code == 429 || code in 500..599) {
+            throw HosterException("1fichier: ${msg ?: "Zu viele Anfragen (HTTP $code)"}", permanent = false)
         }
-        if (json == null) throw HosterException("1fichier: unerwartete Antwort (HTTP $code)")
+        if (code == 401 || (code == 403 && msg?.contains("Not authenticated", true) == true)) {
+            throw AuthException("1fichier: ${msg ?: "Nicht angemeldet (HTTP $code)"}")
+        }
+        if (code == 403) {
+            throw HosterException("1fichier: ${msg ?: "Zugriff blockiert (HTTP 403)"}", permanent = false)
+        }
+        if (json == null) throw HosterException("1fichier: unerwartete Antwort (HTTP $code)", permanent = false)
         if (json.optString("status") == "KO") {
             val m = msg ?: "Unbekannter Fehler"
             if (m.contains("Not authenticated", true)) throw AuthException("1fichier: $m")
@@ -93,18 +101,20 @@ class OneFichierHoster : Hoster {
 
     /**
      * Oeffentlicher Link-Check ohne API-Key: check_links.pl liefert je Zeile
-     * "url;dateiname;groesse;STATUS" (STATUS leer/OK = online, sonst z.B. NOT FOUND).
+     * "url;dateiname;groesse" fuer eine vorhandene Datei und "url;;NOT FOUND"
+     * bzw. "url;BAD LINK" sonst. Entscheidend ist das letzte Feld, nicht die
+     * Spaltenzahl - so bleibt die Auswertung gegen Formatvarianten robust.
      */
     internal fun parseCheckLine(line: String): LinkInfo {
-        val parts = line.trim().split(';')
-        if (parts.size < 4) return LinkInfo(online = null, note = "Unerwartete Antwort")
+        val parts = line.trim().split(';').map { it.trim() }
+        if (parts.size < 2) return LinkInfo(online = null, note = "Unerwartete Antwort")
+        val status = parts.last()
+        val offline = listOf("NOT FOUND", "BAD LINK", "DELETED").any { status.contains(it, true) }
+        if (offline) return LinkInfo(online = false, note = status.lowercase().replaceFirstChar { it.uppercase() })
+        if (parts.size < 3) return LinkInfo(online = null, note = "Unerwartete Antwort")
         val name = parts[1].ifBlank { null }
         val size = parts[2].toLongOrNull() ?: -1
-        val status = parts[3].trim()
-        val offline = status.contains("NOT FOUND", true) || status.contains("BAD LINK", true) ||
-            status.contains("DELETED", true)
-        return if (offline) LinkInfo(online = false, note = status.lowercase().replaceFirstChar { it.uppercase() })
-        else LinkInfo(online = true, fileName = name, fileSize = size)
+        return LinkInfo(online = true, fileName = name, fileSize = size)
     }
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
@@ -128,9 +138,18 @@ class OneFichierHoster : Hoster {
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         val key = account.plainApiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
         val now = System.currentTimeMillis()
-        accountCache[account.id]?.let { (at, info) ->
-            if (now - at < accountCacheMs) return@withContext info
+        // Auch Fehlschlaege zwischenspeichern: 1fichier erlaubt user/info nur
+        // alle 5 Minuten, und die Kontenansicht fragt jede Minute nach. Ein
+        // wiederholter Fehlversuch wuerde sonst erst die Flood-Sperre ausloesen.
+        accountCache[account.id]?.let { (at, cached) ->
+            if (now - at < accountCacheMs) return@withContext cached.getOrThrow()
         }
+        val result = runCatching { fetchAccount(key) }
+        accountCache[account.id] = now to result
+        result.getOrThrow()
+    }
+
+    private fun fetchAccount(key: String): AccountInfo {
         val json = post("user/info.cgi", key, JSONObject())
         // "offer" kann als Zahl (>0 = zahlend) oder als Text ("Premium"/"Access"/"Free") kommen
         val offerRaw = json.opt("offer")?.toString()?.trim().orEmpty()
@@ -144,10 +163,11 @@ class OneFichierHoster : Hoster {
             end > System.currentTimeMillis() -> true
             else -> false
         }
-        // 1fichier begrenzt Premium/Access-Downloads nicht; CDN-Guthaben (GB) nur als Hinweis
-        val cdnGb = json.optDouble("cdn", -1.0).takeIf { it >= 0 }
-            ?: json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
-        val info = AccountInfo(
+        // 1fichier begrenzt Premium/Access-Downloads nicht; CDN-Guthaben (GB) nur
+        // als Hinweis. "cdn" ist nur das 0/1-Kennzeichen, der Betrag steht in
+        // available_credits_in_gb.
+        val cdnGb = json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
+        return AccountInfo(
             valid = true,
             premiumUntil = end,
             trafficLeft = -1,
@@ -157,8 +177,6 @@ class OneFichierHoster : Hoster {
                 if (cdnGb != null && cdnGb > 0) append(" · CDN-Guthaben ${"%.1f".format(Locale.GERMANY, cdnGb)} GB")
             }
         )
-        accountCache[account.id] = now to info
-        info
     }
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =

@@ -210,6 +210,10 @@ interface DownloadDao {
     )
     suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
+    /** Nach echtem Fortschritt: Fehlversuche zaehlen von vorn. */
+    @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
+    suspend fun resetAttempts(id: Long)
+
     /** Manueller Neustart: nur fuer pausierte/gescheiterte Eintraege (laufende nie doppelt starten). */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +

@@ -66,9 +66,21 @@ class RapidgatorHoster : Hoster {
     private fun fail(json: JSONObject, loginCall: Boolean): Nothing {
         val status = json.optInt("status")
         val details = json.optString("details").ifBlank { "HTTP $status" }
-        val permanent = status in listOf(402, 403, 404) || (loginCall && status == 401)
+        // Rapidgator meldet unter 403 auch Tageslimit, IP-Sperre und
+        // Parallel-Limit - alles voruebergehend. Dauerhaft sind nur falsche
+        // Zugangsdaten (401 beim Login), fehlende Datei (404) und fehlendes
+        // Premium (402), sofern der Text nichts anderes sagt.
+        val transient = details.contains("traffic", true) ||
+            details.contains("limit", true) ||
+            details.contains("Denied by IP", true) ||
+            details.contains("Session", true) ||
+            status in 500..599
+        val permanent = !transient && (status in listOf(402, 404) || (loginCall && status == 401))
         throw HosterException("Rapidgator: $details", permanent = permanent)
     }
+
+    /** Logins pro Konto serialisieren: parallele Downloads sollen eine Session teilen. */
+    private val loginLocks = java.util.concurrent.ConcurrentHashMap<Long, Any>()
 
     private fun call(path: String, params: Map<String, String>, loginCall: Boolean = false): JSONObject {
         val json = callRaw(path, params)
@@ -87,7 +99,10 @@ class RapidgatorHoster : Hoster {
         return token to (resp.optJSONObject("user") ?: JSONObject())
     }
 
-    private fun tokenFor(account: Account): String = tokens[account.id] ?: login(account).first
+    private fun tokenFor(account: Account): String =
+        tokens[account.id] ?: synchronized(loginLocks.getOrPut(account.id) { Any() }) {
+            tokens[account.id] ?: login(account).first
+        }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         // Mit vorhandenem Token reicht user/info; nur bei 401 (Token abgelaufen)
@@ -138,21 +153,25 @@ class RapidgatorHoster : Hoster {
             } catch (e: Exception) {
                 return@withContext LinkInfo(online = null, note = e.message ?: "Rapidgator-Login fehlgeschlagen")
             }
-            try {
-                val file = call("file/info", mapOf("file_id" to id, "token" to token))
-                    .optJSONObject("file")
-                    ?: return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
-                LinkInfo(
+            val query: (String) -> LinkInfo = { t ->
+                val file = call("file/info", mapOf("file_id" to id, "token" to t)).optJSONObject("file")
+                if (file == null) LinkInfo(online = false, note = "Datei nicht gefunden")
+                else LinkInfo(
                     online = true,
                     fileName = file.optString("name").ifBlank { null },
                     fileSize = file.optLong("size", -1)
                 )
+            }
+            try {
+                query(token)
             } catch (e: HosterException) {
-                if (e.permanent) LinkInfo(online = false, note = e.message)
-                else {
-                    // Token abgelaufen: einmal neu anmelden
-                    tokens.remove(account.id)
-                    LinkInfo(online = null, note = e.message)
+                if (e.permanent) return@withContext LinkInfo(online = false, note = e.message)
+                // Token abgelaufen: einmal neu anmelden und die Pruefung wiederholen
+                tokens.remove(account.id)
+                val fresh = runCatching { tokenFor(account) }
+                    .getOrElse { return@withContext LinkInfo(online = null, note = it.message) }
+                runCatching { query(fresh) }.getOrElse {
+                    LinkInfo(online = if (it is HosterException && it.permanent) false else null, note = it.message)
                 }
             }
         }
@@ -196,6 +215,6 @@ class RapidgatorHoster : Hoster {
                     tokens.remove(account.id)
                 }
             }
-            attempt(login(account).first)
+            attempt(tokenFor(account))
         }
 }

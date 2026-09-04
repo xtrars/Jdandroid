@@ -93,4 +93,10 @@ class LinkParserTest {
         assertEquals(2, links.size)
         assertTrue(links.all { it.second.id == "onefichier" })
     }
+
+    @Test
+    fun semikolonTrenntLinks() {
+        val urls = LinkParser.parse("https://1fichier.com/?abcde12345;https://1fichier.com/?fghij67890").map { it.first }
+        assertEquals(2, urls.size)
+    }
 }

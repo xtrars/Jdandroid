@@ -23,10 +23,36 @@ class LinkCheckTest {
 
     @Test
     fun fichierTrefferLiefertNameUndGroesse() {
-        val info = fichier.parseCheckLine("https://1fichier.com/?abcdefghij;Film.mkv;734003200;OK")
+        // Tatsaechliches Format von check_links.pl: drei Felder, kein Status
+        val info = fichier.parseCheckLine("https://1fichier.com/?abcdefghij;Film.mkv;734003200")
         assertEquals(true, info.online)
         assertEquals("Film.mkv", info.fileName)
         assertEquals(734003200L, info.fileSize)
+        // Vier Felder mit OK bleiben ebenfalls lesbar
+        assertEquals(true, fichier.parseCheckLine("https://1fichier.com/?abcdefghij;Film.mkv;734003200;OK").online)
+    }
+
+    @Test
+    fun fichierBadLinkMitZweiFeldernIstOffline() {
+        assertEquals(false, fichier.parseCheckLine("https://1fichier.com/?abcdefghij;BAD LINK").online)
+        assertEquals(null, fichier.parseCheckLine("kaputt").online)
+    }
+
+    @Test
+    fun ddownloadGroesseNichtAusWerbung() {
+        val html = """<div class="ad">Premium: 200 GB traffic per day</div>
+            <h1 class="dk-dl-name">x.rar</h1><span>1.2 GB</span>"""
+        val size = ddl.pageFileSize(html)
+        assertTrue("Groesse $size", size > 1_200_000_000L && size < 1_300_000_000L)
+    }
+
+    @Test
+    fun ddownloadApostrophImDateinamen() {
+        assertEquals(
+            "It's.a.file.mkv",
+            ddl.pageFileName("""<input type="hidden" name="fname" value="It's.a.file.mkv">""")
+        )
+        assertEquals("It's", ddl.hiddenInputs("""<input name="fname" value="It's">""")["fname"])
     }
 
     /**

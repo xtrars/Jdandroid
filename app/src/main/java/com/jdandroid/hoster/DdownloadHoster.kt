@@ -55,7 +55,9 @@ class DdownloadHoster : Hoster {
             "dd MMMM yyyy", "dd MMM yyyy", "dd.MM.yyyy", "MM/dd/yyyy"
         )
         for (fmt in formats) {
-            runCatching { SimpleDateFormat(fmt, Locale.US).parse(value)?.time }.getOrNull()?.let { return it }
+            for (locale in listOf(Locale.US, Locale.GERMAN)) {
+                runCatching { SimpleDateFormat(fmt, locale).parse(value)?.time }.getOrNull()?.let { return it }
+            }
         }
         return 0L
     }
@@ -97,9 +99,10 @@ class DdownloadHoster : Hoster {
     private val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
     /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
-    private val browserUa =
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/122.0.0.0 Mobile Safari/537.36"
+    private val browserUa: String
+        get() = Http.browserUserAgent
+            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.0.0 Mobile Safari/537.36"
 
     /** Ein Cookie-Speicher (Session) pro Account-Id. */
     private val cookieStores = java.util.concurrent.ConcurrentHashMap<Long, MutableList<Cookie>>()
@@ -115,8 +118,18 @@ class DdownloadHoster : Hoster {
         val code: Int,
         val body: String,
         val location: String? = null,
-        val contentType: String? = null
-    )
+        val contentType: String? = null,
+        /** Adresse nach allen gefolgten Weiterleitungen. */
+        val finalUrl: String = "",
+        val contentDisposition: String? = null
+    ) {
+        /** Antwort ist eine Datei, keine Seite. */
+        val isFile: Boolean
+            get() = contentDisposition?.contains("attachment", true) == true ||
+                (!contentType.isNullOrBlank() && !isTextualType(contentType))
+    }
+
+
 
     private fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
         // OkHttp ruft den CookieJar aus mehreren Threads auf (parallele
@@ -136,7 +149,10 @@ class DdownloadHoster : Hoster {
                     }
                 }
                 override fun loadForRequest(url: HttpUrl): List<Cookie> =
-                    synchronized(store) { store.filter { it.matches(url) } }
+                    synchronized(store) {
+                        val now = System.currentTimeMillis()
+                        store.filter { it.matches(url) && it.expiresAt > now }
+                    }
             })
             .build()
     }
@@ -170,20 +186,16 @@ class DdownloadHoster : Hoster {
             } else {
                 ""
             }
-            Resp(resp.code, text, resp.header("Location"), contentType)
+            Resp(
+                resp.code, text, resp.header("Location"), contentType,
+                resp.request.url.toString(), resp.header("Content-Disposition")
+            )
         }
     }
 
     /** Nur textartige Antworten duerfen in den Speicher gelesen werden. */
-    internal fun isTextual(contentType: String?): Boolean {
-        if (contentType.isNullOrBlank()) return true
-        val type = contentType.lowercase()
-        return type.startsWith("text/") ||
-            type.contains("html") ||
-            type.contains("json") ||
-            type.contains("xml") ||
-            type.contains("javascript")
-    }
+    internal fun isTextual(contentType: String?): Boolean =
+        contentType.isNullOrBlank() || isTextualType(contentType)
 
     /** Erkennt Cloudflare-/WAF-Blockaden, damit die Meldung nicht "falsches Passwort" lautet. */
     private fun checkBlocked(resp: Resp) {
@@ -223,8 +235,25 @@ class DdownloadHoster : Hoster {
         val client = clientFor(account.id)
         seedCookies(account.id, raw)
 
-        val page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
+        var page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
         checkBlocked(page)
+        if (page.code !in 200..299) {
+            // Serverfehler oder Wartungsseite: voruebergehend, kein Grund, das
+            // Konto abzuschalten
+            throw HosterException("ddownload: Kontoseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+        }
+        if (!isLoggedIn(page.body)) {
+            // Der Cookie-Speicher kann eine vom Server "geloeschte" Session
+            // tragen (Set-Cookie mit Ablauf in der Vergangenheit). Einmal mit
+            // den gespeicherten Browser-Cookies neu beginnen, bevor die
+            // Session als abgelaufen gilt.
+            seedCookies(account.id, raw, force = true)
+            page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
+            checkBlocked(page)
+            if (page.code !in 200..299) {
+                throw HosterException("ddownload: Kontoseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+            }
+        }
         if (!isLoggedIn(page.body)) {
             throw HosterException(
                 "ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut " +
@@ -236,10 +265,11 @@ class DdownloadHoster : Hoster {
     }
 
     /** Cookie-String aus dem Browser in den OkHttp-Cookie-Speicher uebernehmen. */
-    private fun seedCookies(accountId: Long, raw: String) {
+    private fun seedCookies(accountId: Long, raw: String, force: Boolean = false) {
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
         synchronized(store) {
-            if (store.isNotEmpty()) return
+            if (store.isNotEmpty() && !force) return
+            store.clear()
             raw.split(';').forEach { part ->
                 val name = part.substringBefore('=').trim()
                 val value = part.substringAfter('=', "").trim()
@@ -259,10 +289,12 @@ class DdownloadHoster : Hoster {
         val result = LinkedHashMap<String, String>()
         Regex("""<input\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(html).forEach { tag ->
             val t = tag.value
-            val name = Regex("""\bname=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-                .find(t)?.groupValues?.get(1) ?: return@forEach
-            val value = Regex("""\bvalue=["']([^"']*)["']""", RegexOption.IGNORE_CASE)
-                .find(t)?.groupValues?.get(1) ?: ""
+            // Oeffnendes Anfuehrungszeichen merken: ein Apostroph im Wert
+            // ("It's.a.file.mkv") darf den Wert nicht abschneiden
+            val name = Regex("""\bname=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
+                .find(t)?.groupValues?.get(2)?.takeIf { it.isNotBlank() } ?: return@forEach
+            val value = Regex("""\bvalue=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
+                .find(t)?.groupValues?.get(2) ?: ""
             result[name] = value
         }
         return result
@@ -406,11 +438,20 @@ class DdownloadHoster : Hoster {
         var total = -1L
         var unlimited = false
 
+        // Kaufangebote und Werbung ("200 GB + Daten €15.99", "200 GB traffic per
+        // day") duerfen nie als Restmenge gelten
+        val offerLike = Regex("""(?i)^\s*(?:\+|per\s+day|pro\s+tag|/\s*(?:day|tag)|€|\$|&euro;)""")
+        fun isOffer(m: MatchResult) = offerLike.containsMatchIn(text.substring(m.range.last + 1).take(14))
+        // 0) Eindeutige Beschriftung direkt vor der Zahl
+        val labelled = Regex(
+            """(?i)(?:verf[üu]gbare?r?\s+(?:daten|traffic)|available\s+(?:data|traffic)|traffic\s+(?:available|left)|premium\s+traffic\s+left)\s*:?\s*$size"""
+        ).findAll(text).firstOrNull { !isOffer(it) }
         // 1) Wort vor Zahl: "Traffic available: 120.5 GB", "Premium traffic left 120 GB"
-        val after = Regex("""(?i)(?:traffic|verf[üu]gbare?r?\s+daten|available\s+data)[^0-9]{0,60}?$size""").find(text)
+        val after = Regex("""(?i)(?:traffic|verf[üu]gbare?r?\s+daten|available\s+data)[^0-9]{0,60}?$size""")
+            .findAll(text).firstOrNull { !isOffer(it) }
         // 2) Zahl vor Wort: "120.5 GB traffic left"
-        val before = Regex("""(?i)$size[^0-9]{0,40}?traffic""").find(text)
-        val hit = listOfNotNull(after, before).minByOrNull { it.range.first }
+        val before = Regex("""(?i)$size[^0-9]{0,40}?traffic""").findAll(text).firstOrNull { !isOffer(it) }
+        val hit = labelled ?: listOfNotNull(after, before).minByOrNull { it.range.first }
         if (hit != null) {
             val (v, u) = hit.destructured
             left = unit(v, u)
@@ -455,7 +496,7 @@ class DdownloadHoster : Hoster {
             (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
             unlimited -> -1L
-            premiumLeft != null -> plausibleQuota(quotaToBytes(premiumLeft))
+            premiumLeft != null && premiumLeft >= 0 -> plausibleQuota(quotaToBytes(premiumLeft))
             else -> {
                 // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
@@ -481,15 +522,24 @@ class DdownloadHoster : Hoster {
         val query = params.entries.joinToString("&") {
             "${it.key}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
         }
-        val resp = Http.client.newCall(
+        val (code, text) = Http.client.newCall(
             okhttp3.Request.Builder().url("$apiBase/$path?$query")
                 .header("User-Agent", browserUa).build()
-        ).execute().use { it.body?.string() ?: "" }
-        val json = org.json.JSONObject(resp)
+        ).execute().use { it.code to it.peekBody(MAX_TEXT_BYTES).string() }
+        // Cloudflare-/Fehlerseiten sind kein JSON: voruebergehend, nicht "Konto ungueltig"
+        val json = runCatching { org.json.JSONObject(text) }.getOrElse {
+            throw HosterException("ddownload-API: keine JSON-Antwort (HTTP $code)", permanent = false)
+        }
         val status = json.optInt("status")
         if (status != 200) {
             val msg = json.optString("msg").ifBlank { "HTTP $status" }
-            throw HosterException("ddownload: $msg", permanent = status in listOf(400, 403, 404))
+            // Dauerhaft nur, was der Text als solches ausweist (Datei weg,
+            // Schluessel ungueltig); Tageslimit, Sperren und Serverfehler sind
+            // voruebergehend
+            val permanent = status == 404 ||
+                msg.contains("not found", true) || msg.contains("invalid key", true) ||
+                msg.contains("wrong key", true) || msg.contains("no such", true)
+            throw HosterException("ddownload: $msg", permanent = permanent)
         }
         return json
     }
@@ -515,22 +565,33 @@ class DdownloadHoster : Hoster {
 
             var page = client.fetch(pageUrl, referer = siteBase)
             checkBlocked(page)
+            // Konto mit "Direct Downloads": die Seite leitet sofort zur Datei
+            // weiter; der Client ist ihr gefolgt, die Endadresse ist der Link
+            if (page.isFile && page.finalUrl.toHttpUrlOrNull()?.host?.lowercase() !in siteHosts) {
+                return@withContext ResolvedLink(page.finalUrl, fileNameFromDisposition(page.contentDisposition))
+            }
             checkOffline(page.body)
 
             var direct = extractDirectLink(page.body)
             val steps = mutableListOf("GET $pageUrl -> ${page.code}")
             var formsSent = 0
             var hops = 0
+            var currentUrl = pageUrl
             while (direct == null && hops++ < 6) {
                 if (page.code in 300..399 && !page.location.isNullOrBlank()) {
                     // Weiterleitung: zeigt sie auf eine Datei, ist das der Direktlink;
-                    // sonst der naechsten Seite folgen (ohne die Datei selbst zu laden)
-                    val target = resolveLocation(pageUrl, page.location!!)
+                    // sonst der naechsten Seite folgen (ohne die Datei selbst zu laden).
+                    // Relative Ziele gegen die zuletzt geholte Adresse aufloesen.
+                    val target = resolveLocation(currentUrl, page.location!!)
                     steps += "-> ${stripQuery(target)}"
                     if (isFileServerUrl(target)) { direct = target; break }
-                    page = client.fetch(target, referer = pageUrl, followRedirects = false)
+                    page = client.fetch(target, referer = currentUrl, followRedirects = false)
+                    currentUrl = target
                     checkBlocked(page)
-                    steps += "GET -> ${page.code}"
+                    steps += "GET -> ${page.code} ${page.contentType ?: ""}"
+                    // Antwort ist bereits die Datei (Adresse ohne Dateiendung,
+                    // z.B. dl.cgi/<token>): der Koerper wurde nicht gelesen
+                    if (page.code in 200..299 && page.isFile) { direct = target; break }
                     direct = extractDirectLink(page.body)
                     continue
                 }
@@ -541,7 +602,9 @@ class DdownloadHoster : Hoster {
                 val form = downloadForm(page.body, code)
                 formsSent++
                 page = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
+                currentUrl = pageUrl
                 checkBlocked(page)
+                if (page.code in 200..299 && page.isFile) { direct = page.finalUrl; break }
                 steps += "POST ${form.keys.joinToString(",")} -> ${page.code}"
                 direct = extractDirectLink(page.body)
                 if (direct == null && page.code !in 300..399) checkOffline(page.body)
@@ -553,18 +616,22 @@ class DdownloadHoster : Hoster {
                     "ddownload: kein Direktlink (Ablauf der Anfrage)",
                     steps.joinToString("\n") + "\nContent-Type=${page.contentType}\n" + text.take(1000)
                 )
+                val limitReached = Regex("""(?i)download limit|reached the|limit reached|too many|try again later""")
+                    .containsMatchIn(text)
+                val freeMode = page.body.contains("countdown", true) ||
+                    Regex("""(?i)name=["']method_free["'][^>]*value=["'][^"']+""").containsMatchIn(page.body)
                 val hint = when {
+                    limitReached -> "Tageslimit erreicht oder Sperre – wird später erneut versucht"
                     text.contains("premium", true) && text.contains("only", true) ->
                         "Datei ist nur für Premium verfügbar"
-                    text.contains("countdown", true) || text.contains("wait", true) ->
-                        "Server verlangt Wartezeit (Free-Modus)"
+                    freeMode -> "Server verlangt Wartezeit (Free-Modus)"
                     page.code in 300..399 -> "Weiterleitung ohne Datei"
                     else -> "unerwartete Antwort"
                 }
                 throw HosterException(
                     "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint). " +
                         "Ablauf unter Einstellungen → Diagnose.",
-                    permanent = true
+                    permanent = !limitReached
                 )
             }
             val fileName = pageFileName(page.body)
@@ -596,14 +663,19 @@ class DdownloadHoster : Hoster {
             }
             // Ohne API-Key: oeffentliche Dateiseite auswerten (kein Login noetig).
             // Mit Browser-Kennung, sonst liefert Cloudflare nur eine Challenge.
-            val html = clientFor(0L).fetch("$siteBase/$code").body
-            if (html.contains("File Not Found", true) || html.contains("No such file", true)) {
+            val resp = clientFor(0L).fetch("$siteBase/$code")
+            val html = resp.body
+            if (resp.code == 404 || html.contains("File Not Found", true) || html.contains("No such file", true)) {
                 return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
             }
             if (html.contains("Just a moment", true) || html.contains("cf-challenge", true) ||
-                html.contains("challenge-platform", true)
+                html.contains("challenge-platform", true) || html.contains("Attention Required", true)
             ) {
                 return@withContext LinkInfo(online = null, note = "Cloudflare-Prüfung – Status unbekannt")
+            }
+            // Fehlerseite (5xx, 403) ist kein Beleg fuer "online"
+            if (resp.code !in 200..299) {
+                return@withContext LinkInfo(online = null, note = "HTTP ${resp.code} – Status unbekannt")
             }
             LinkInfo(
                 online = true,
@@ -624,10 +696,10 @@ class DdownloadHoster : Hoster {
             """<h[12]\b[^>]*class=["'][^"']*\bdk-dl-name\b[^"']*["'][^>]*>\s*([^<]+?)\s*</h[12]>""",
             RegexOption.IGNORE_CASE
         ).find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
-        Regex("""name=["']fname["']\s+value=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-            .find(html)?.let { return it.groupValues[1].trim() }
-        Regex("""value=["']([^"']+)["']\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
-            .find(html)?.let { return it.groupValues[1].trim() }
+        Regex("""name=["']fname["']\s+value=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+        Regex("""value=(["'])(.*?)\1\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         return Regex("""<title>([^<]+?)(?:\s*[-|–].*)?</title>""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.trim()
             ?.removePrefix("Download ")?.trim()
@@ -639,9 +711,25 @@ class DdownloadHoster : Hoster {
 
     /** Groesse wie "1.2 GB" aus der Dateiseite. */
     internal fun pageFileSize(html: String): Long {
-        val m = Regex("""([\d.,]+)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(html)
+        // Nur sichtbarer Text, und erst ab dem Dateinamen: davor stehen
+        // Werbung und Kontingent-Angaben ("200 GB traffic per day")
+        val text = visibleText(html)
+        val start = pageFileName(html)?.let { text.indexOf(it) }?.takeIf { it >= 0 } ?: 0
+        val m = Regex("""(\d+(?:[.,]\d+)?)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(text, start)
             ?: return -1
         return toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
+    }
+
+    /** Dateiname aus Content-Disposition (nur einfache Formen). */
+    private fun fileNameFromDisposition(cd: String?): String? {
+        if (cd.isNullOrBlank()) return null
+        Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
+            runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }.getOrNull()
+                ?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)
+            ?.let { (it.groupValues[1].ifEmpty { it.groupValues[2] }).trim() }
+            ?.takeIf { it.isNotBlank() }
     }
 
     /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
@@ -732,7 +820,7 @@ class DdownloadHoster : Hoster {
      */
     internal fun extractDirectLink(html: String): String? =
         fileServerRegex.findAll(html)
-            .map { it.value.trimEnd('\\', '"', '\'', ')') }
+            .map { it.value.trimEnd('\\', '"', '\'', ')').replace("&amp;", "&") }
             .firstOrNull { isFileServerUrl(it) }
 
     private fun parseDate(s: String): Long = runCatching {
@@ -752,4 +840,11 @@ class DdownloadHoster : Hoster {
     }
 
     private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
+}
+
+/** Textartige Antworten (Seiten, JSON) - alles andere ist Dateiinhalt. */
+private fun isTextualType(contentType: String): Boolean {
+    val type = contentType.lowercase()
+    return type.startsWith("text/") || type.contains("html") || type.contains("json") ||
+        type.contains("xml") || type.contains("javascript")
 }

@@ -76,6 +76,15 @@ interface Hoster {
 }
 
 object Http {
+    /**
+     * Kennung der System-WebView, beim App-Start ermittelt. Cloudflare bindet
+     * das Cookie cf_clearance an die Kennung, mit der es ausgestellt wurde -
+     * eine per Browser-Login uebernommene Session gilt daher nur mit
+     * derselben Kennung.
+     */
+    @Volatile
+    var browserUserAgent: String? = null
+
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -120,8 +129,8 @@ object LinkParser {
     /** Extrahiert alle unterstuetzten Links aus beliebigem Text. */
     fun parse(text: String): List<Pair<String, Hoster>> =
         urlRegex.findAll(text)
-            // Kommas trennen Links ("url1,url2"): Teile ohne http verwerfen
-            .flatMap { m -> m.value.split(',').asSequence().filter { it.startsWith("http") } }
+            // Kommas und Semikola trennen Links ("url1,url2"): Teile ohne http verwerfen
+            .flatMap { m -> m.value.split(',', ';').asSequence().filter { it.startsWith("http") } }
             .map { it.trimEnd(')', ']', '>', '.', ',', ';', '"', '\'') }
             .filter { it.isNotBlank() }
             .distinct()

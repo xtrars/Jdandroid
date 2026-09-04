@@ -286,12 +286,19 @@ class DownloadEngine(
         } catch (e: com.jdandroid.data.Secrets.SecretsException) {
             // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
             dao.setStatus(id, DownloadStatus.FAILED, e.message)
+        } catch (e: IllegalArgumentException) {
+            // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
+            dao.setStatus(id, DownloadStatus.FAILED, "Ungültige Download-Adresse: ${e.message}")
         } catch (e: Exception) {
             // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
             handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
         } finally {
-            speeds.remove(id)
-            mutex.withLock { jobs.remove(id) }
+            // Auch bei Abbruch zuverlaessig austragen: withLock wuerde in einer
+            // abgebrochenen Coroutine bei Konkurrenz sofort werfen
+            withContext(NonCancellable) {
+                speeds.remove(id)
+                mutex.withLock { jobs.remove(id) }
+            }
             scope.launch { pump() }
         }
     }
@@ -347,6 +354,8 @@ class DownloadEngine(
         val builder = Request.Builder()
             .url(directUrl)
             .header("User-Agent", Http.USER_AGENT)
+            // Ohne gzip: sonst fehlt Content-Length und die Vollstaendigkeitspruefung
+            .header("Accept-Encoding", "identity")
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
         // Bei Pause/Loeschen die Verbindung sofort kappen: sonst wirkt der
@@ -357,13 +366,32 @@ class DownloadEngine(
         }
         try {
         call.execute().use { resp ->
-            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig
+            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig.
+            // Nur wenn die Teildatei auch zur bekannten Groesse passt; sonst ist
+            // sie zu lang (z.B. Fremdinhalt) und muss neu geladen werden.
             if (resp.code == 416 && offset > 0) {
+                if (item.fileSize > 0 && offset != item.fileSize) {
+                    target.delete()
+                    throw HosterException("Teildatei passt nicht zur Dateigröße – Neustart")
+                }
                 dao.updateProgress(item.id, offset, offset, 0)
                 return@use
             }
             if (!resp.isSuccessful) {
                 throw HosterException("Server antwortete mit HTTP ${resp.code}")
+            }
+            // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
+            // niemals als Dateiinhalt speichern - sonst landet die Seite in der
+            // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
+            val contentType = resp.header("Content-Type").orEmpty().lowercase()
+            val disposition = resp.header("Content-Disposition").orEmpty().lowercase()
+            if ((contentType.startsWith("text/html") || contentType.startsWith("application/xhtml")) &&
+                !disposition.startsWith("attachment")
+            ) {
+                throw HosterException(
+                    "Server lieferte eine HTML-Seite statt der Datei (${resp.request.url.host}) – " +
+                        "Link wird neu aufgelöst"
+                )
             }
             // Server ignoriert Range -> von vorn beginnen
             if (offset > 0 && resp.code != 206) {
@@ -388,7 +416,7 @@ class DownloadEngine(
             // Dateiname ggf. aus Content-Disposition oder URL ableiten
             var current = dao.byId(item.id) ?: return
             if (current.fileName == null) {
-                val name = fileNameFrom(resp.header("Content-Disposition"), directUrl)
+                val name = fileNameFrom(resp.header("Content-Disposition"), resp.request.url)
                 current = current.copy(fileName = name)
                 dao.update(current)
                 val renamed = tempFile(current)
@@ -399,6 +427,7 @@ class DownloadEngine(
             var written = offset
             val startedAt = System.currentTimeMillis()
             var lastDbWrite = startedAt
+            var attemptsReset = false
             // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
             // der Rohwert einzelner Messintervalle springt stark und liess die
             // Anzeige flackern. In die DB (und damit in die UI) geht der Wert
@@ -414,6 +443,12 @@ class DownloadEngine(
                         out.write(buffer, 0, read)
                         written += read
                         limiter.throttle(read)
+                        if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
+                            // Echter Fortschritt: ein wackliges Netz darf einen
+                            // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
+                            attemptsReset = true
+                            dao.resetAttempts(item.id)
+                        }
                         val now = System.currentTimeMillis()
                         if (now - samples.last().first >= SAMPLE_MS) {
                             samples.addLast(now to written)
@@ -614,13 +649,14 @@ class DownloadEngine(
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        file.inputStream().use { it.copyTo(out) }
+                    if (!copyToMediaStore(resolver, uri, file)) {
+                        allOk = false
+                    } else {
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                        file.delete()
                     }
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    file.delete()
                 } else {
                     allOk = false
                 }
@@ -664,7 +700,7 @@ class DownloadEngine(
         }
     }
 
-    private fun fileNameFrom(contentDisposition: String?, url: String): String {
+    private fun fileNameFrom(contentDisposition: String?, url: okhttp3.HttpUrl): String {
         contentDisposition?.let { cd ->
             // RFC 5987: nur filename*= ist URL-kodiert; ein rohes filename="C++.zip"
             // darf nicht dekodiert werden ("C  .zip", "100%.rar" wuerde werfen)
@@ -677,15 +713,48 @@ class DownloadEngine(
                 if (raw.isNotEmpty()) return sanitizeFileName(raw)
             }
         }
-        return sanitizeFileName(url.substringBefore('?').substringAfterLast('/'))
+        // Endgueltige Adresse nach Weiterleitungen, Segmente bereits dekodiert
+        // ("My%20File.rar" -> "My File.rar")
+        return sanitizeFileName(url.pathSegments.lastOrNull { it.isNotBlank() } ?: "")
     }
 
     /** Server-gelieferte Namen bereinigen (Pfad-Traversal, verbotene Zeichen). */
-    private fun sanitizeFileName(name: String): String =
-        name.replace(Regex("""[/\\:*?"<>|]"""), "_")
+    private fun sanitizeFileName(name: String): String {
+        val clean = name.replace(Regex("""[/\\:*?"<>|]"""), "_")
             .trim()
             .trimStart('.')
             .ifBlank { "download.bin" }
+        return limitLength(clean)
+    }
+
+    /** Dateisysteme erlauben 255 Byte; Endung erhalten, Basis kuerzen. */
+    private fun limitLength(name: String, maxBytes: Int = 200): String {
+        if (name.toByteArray().size <= maxBytes) return name
+        val ext = name.substringAfterLast('.', "").take(10)
+        var base = name.substringBeforeLast('.')
+        while (base.isNotEmpty() && (base + "." + ext).toByteArray().size > maxBytes) base = base.dropLast(1)
+        return if (ext.isEmpty()) base else "$base.$ext"
+    }
+
+    /**
+     * Datei in einen MediaStore-Eintrag kopieren. Ohne Ausgabestream oder bei
+     * einem Fehler mitten im Kopieren wird der (halbe) Eintrag wieder
+     * geloescht - sonst bliebe eine leere Datei in "Downloads" zurueck und die
+     * Quelle wuerde trotzdem entfernt.
+     */
+    private fun copyToMediaStore(resolver: android.content.ContentResolver, uri: android.net.Uri, source: File): Boolean {
+        try {
+            val out = resolver.openOutputStream(uri) ?: run {
+                resolver.delete(uri, null, null)
+                return false
+            }
+            out.use { o -> source.inputStream().use { it.copyTo(o) } }
+            return true
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            return false
+        }
+    }
 
     /** Verschiebt die fertige Datei ins Ziel (oeffentlicher Download-Ordner oder App-Ordner). */
     private suspend fun finish(temp: File, fileName: String): String {
@@ -706,10 +775,7 @@ class DownloadEngine(
                 }
                 val resolver = context.contentResolver
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        temp.inputStream().use { it.copyTo(out) }
-                    }
+                if (uri != null && copyToMediaStore(resolver, uri, temp)) {
                     values.clear()
                     values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                     resolver.update(uri, values, null, null)
@@ -749,6 +815,9 @@ class DownloadEngine(
     private companion object {
         /** Maximale automatische Wiederholversuche je Download. */
         const val MAX_ATTEMPTS = 5
+
+        /** Ab so viel neuem Fortschritt gilt ein Versuch als erfolgreich. */
+        const val PROGRESS_RESET_BYTES = 4L * 1024 * 1024
 
         /** Abstand der Messpunkte fuer die Geschwindigkeit. */
         const val SAMPLE_MS = 500L

@@ -46,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -249,7 +250,16 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
 @Composable
 private fun TrafficLine(account: Account) {
     val left = account.trafficLeft
-    val minutesAgo = ((System.currentTimeMillis() - account.lastChecked) / 60_000L).coerceAtLeast(0)
+    // Uhr laeuft mit: Konten ohne Limit werden nur alle 15 min neu geprueft,
+    // die Angabe "vor X min" soll trotzdem stimmen
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    val minutesAgo = ((now - account.lastChecked) / 60_000L).coerceAtLeast(0)
     val checked = when {
         account.lastChecked == 0L -> ""
         minutesAgo < 1 -> " · gerade geprüft"

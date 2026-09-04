@@ -41,6 +41,8 @@ object AccountRefresher {
                     statusText = info.statusText,
                     lastChecked = System.currentTimeMillis()
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Nur ein endgueltiger Fehler (falsches Passwort, Konto gesperrt,
                 // Zugangsdaten nicht mehr entschluesselbar) macht das Konto
