@@ -29,7 +29,12 @@ data class LinkInfo(
 data class AccountInfo(
     val valid: Boolean,
     val premiumUntil: Long = 0,
+    /** Verbleibender Traffic in Byte, -1 = unbekannt. */
     val trafficLeft: Long = -1,
+    /** Gesamtkontingent in Byte (fuer den Balken), -1 = unbekannt. */
+    val trafficTotal: Long = -1,
+    /** Hoster ohne Traffic-Begrenzung (z.B. 1fichier Premium). */
+    val trafficUnlimited: Boolean = false,
     val statusText: String
 )
 

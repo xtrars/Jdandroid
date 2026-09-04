@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.data.Account
+import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadPackage
 import com.jdandroid.data.DownloadStatus
@@ -205,7 +206,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
 class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val dao = (app as JdApp).db.accountDao()
+    private val jdApp = app as JdApp
+    private val dao = jdApp.db.accountDao()
 
     val accounts: StateFlow<List<Account>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -269,28 +271,11 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun check(accountId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val account = dao.byId(accountId) ?: return@launch
-            val hoster = HosterRegistry.byId(account.hosterId) ?: return@launch
-            val updated = try {
-                val info = hoster.checkAccount(account)
-                account.copy(
-                    valid = info.valid,
-                    premiumUntil = info.premiumUntil,
-                    trafficLeft = info.trafficLeft,
-                    statusText = info.statusText,
-                    lastChecked = System.currentTimeMillis()
-                )
-            } catch (e: Exception) {
-                account.copy(
-                    valid = false,
-                    statusText = e.message ?: "Prüfung fehlgeschlagen",
-                    lastChecked = System.currentTimeMillis()
-                )
-            }
-            dao.update(updated)
-        }
+        viewModelScope.launch(Dispatchers.IO) { AccountRefresher.check(jdApp, accountId) }
     }
+
+    /** Beim Oeffnen der Kontenansicht: veraltete Angaben (Traffic!) nachladen. */
+    fun refreshStale() = AccountRefresher.refreshStale(jdApp)
 
     fun delete(account: Account) {
         viewModelScope.launch(Dispatchers.IO) { dao.delete(account) }

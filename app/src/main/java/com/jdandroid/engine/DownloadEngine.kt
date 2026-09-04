@@ -444,6 +444,9 @@ class DownloadEngine(
     }
 
     private suspend fun markCompleted(id: Long, path: String?, note: String?) {
+        // Traffic-Stand des Hosters nachladen (gedrosselt), damit die
+        // Kontenansicht den Verbrauch zeigt
+        dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
         dao.byId(id)?.let {
             dao.update(
                 it.copy(

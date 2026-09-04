@@ -68,7 +68,12 @@ data class Account(
     /** Session-Cookies aus dem Browser-Login (Name=Wert; ...), falls genutzt. */
     val cookies: String? = null,
     val premiumUntil: Long = 0,
+    /** Verbleibender Traffic in Byte, -1 = unbekannt. */
     val trafficLeft: Long = -1,
+    /** Gesamtkontingent in Byte, -1 = unbekannt. */
+    val trafficTotal: Long = -1,
+    /** Hoster ohne Traffic-Limit. */
+    val trafficUnlimited: Boolean = false,
     val valid: Boolean = false,
     val lastChecked: Long = 0,
     val statusText: String? = null
@@ -221,6 +226,12 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun byId(id: Long): Account?
 
+    @Query("SELECT * FROM accounts")
+    suspend fun all(): List<Account>
+
+    @Query("SELECT * FROM accounts WHERE hosterId = :hosterId")
+    suspend fun byHoster(hosterId: String): List<Account>
+
     @Insert
     suspend fun insert(account: Account): Long
 
@@ -233,7 +244,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -284,8 +295,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN trafficTotal INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN trafficUnlimited INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
-            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
         )
     }
 }

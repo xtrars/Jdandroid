@@ -104,11 +104,18 @@ class OneFichierHoster : Hoster {
             end > System.currentTimeMillis() -> true
             else -> false
         }
+        // 1fichier begrenzt Premium/Access-Downloads nicht; CDN-Guthaben (GB) nur als Hinweis
+        val cdnGb = json.optDouble("cdn", -1.0).takeIf { it >= 0 }
+            ?: json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
         AccountInfo(
             valid = true,
             premiumUntil = end,
             trafficLeft = -1,
-            statusText = if (premium) "Premium/Access" else "Free (Downloads nicht möglich)"
+            trafficUnlimited = premium,
+            statusText = buildString {
+                append(if (premium) "Premium/Access" else "Free (Downloads nicht möglich)")
+                if (cdnGb != null && cdnGb > 0) append(" · CDN-Guthaben ${"%.1f".format(Locale.GERMANY, cdnGb)} GB")
+            }
         )
     }
 

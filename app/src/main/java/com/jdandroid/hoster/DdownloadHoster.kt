@@ -228,14 +228,18 @@ class DdownloadHoster : Hoster {
             !Regex("""Account type[^<]*(?:</?[^>]*>\s*)*Free""", RegexOption.IGNORE_CASE)
                 .containsMatchIn(html)
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
-        val trafficLeft = Regex(
+        val trafficMatch = Regex(
             """[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*([\d.]+)\s*(GB|MB|TB)"""
-        ).find(html)?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
+        ).find(html)
+        val trafficLeft = trafficMatch?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
+        val unlimited = trafficMatch == null &&
+            Regex("""[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*[Uu]nlimited""").containsMatchIn(html)
 
         AccountInfo(
             valid = true,
             premiumUntil = expire,
             trafficLeft = trafficLeft,
+            trafficUnlimited = unlimited,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
         )
     }
@@ -250,10 +254,15 @@ class DdownloadHoster : Hoster {
                 .parse(result.optString("premium_expire"))?.time ?: 0L
         }.getOrDefault(0L)
         val premium = expire > System.currentTimeMillis()
+        val rawLeft = result.opt("traffic_left")?.toString()?.trim().orEmpty()
+        val unlimited = rawLeft.contains("unlimited", true)
+        // Zahl in Byte; manche XFS-Installationen liefern MB - Werte unter 1e6 als MB werten
+        val left = rawLeft.toDoubleOrNull()?.let { if (it in 1.0..1_000_000.0) (it * (1L shl 20)).toLong() else it.toLong() } ?: -1L
         return AccountInfo(
             valid = true,
             premiumUntil = expire,
-            trafficLeft = result.optLong("traffic_left", -1),
+            trafficLeft = if (unlimited) -1 else left,
+            trafficUnlimited = unlimited,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
         )
     }

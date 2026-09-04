@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -101,6 +102,8 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     var showAdd by remember { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
     val message by vm.message.collectAsState()
+    // Beim Oeffnen veraltete Kontodaten (Traffic) nachladen
+    LaunchedEffect(Unit) { vm.refreshStale() }
     LaunchedEffect(message) {
         message?.let {
             snackbarHost.showSnackbar(it)
@@ -186,9 +189,12 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                         if (isPremium && account.premiumUntil > 0) {
                             append(" · bis ${dateFormat.format(Date(account.premiumUntil))}")
                         }
-                        if (account.trafficLeft >= 0) append(" · ${formatBytes(account.trafficLeft)}")
                     }
                     Text(details, style = MaterialTheme.typography.bodySmall, color = tint)
+                }
+                if (account.valid) {
+                    Spacer(Modifier.height(6.dp))
+                    TrafficLine(account)
                 }
             }
             IconButton(onClick = { vm.check(account.id) }) {
@@ -207,6 +213,45 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                 "können danach nicht mehr starten.",
             onConfirm = { vm.delete(account) },
             onDismiss = { confirmDelete = false }
+        )
+    }
+}
+
+/**
+ * Verbleibender Traffic des Kontos: Balken (wenn das Kontingent bekannt ist),
+ * sonst nur die Restmenge; "unbegrenzt" bei Hostern ohne Limit.
+ */
+@Composable
+private fun TrafficLine(account: Account) {
+    val left = account.trafficLeft
+    val total = account.trafficTotal
+    val minutesAgo = ((System.currentTimeMillis() - account.lastChecked) / 60_000L).coerceAtLeast(0)
+    val checked = when {
+        account.lastChecked == 0L -> ""
+        minutesAgo < 1 -> " · gerade geprüft"
+        minutesAgo < 60 -> " · vor $minutesAgo min"
+        else -> " · vor ${minutesAgo / 60} h"
+    }
+    val (text, fraction) = when {
+        account.trafficUnlimited -> "Kontingent: unbegrenzt$checked" to null
+        left >= 0 && total > 0 ->
+            "Kontingent: ${formatBytes(left)} von ${formatBytes(total)} verbleibend$checked" to
+                (left.toFloat() / total).coerceIn(0f, 1f)
+        left >= 0 -> "Kontingent: ${formatBytes(left)} verbleibend$checked" to null
+        else -> "Kontingent: unbekannt$checked" to null
+    }
+    val low = left in 0 until (1L shl 30) && !account.trafficUnlimited
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+        color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    )
+    if (fraction != null) {
+        Spacer(Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth(),
+            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         )
     }
 }

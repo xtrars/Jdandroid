@@ -65,11 +65,16 @@ class RapidgatorHoster : Hoster {
         val premium = user.optBoolean("is_premium", false) ||
             premiumEnd > System.currentTimeMillis() ||
             user.optString("state_label").contains("Premium", ignoreCase = true)
-        val trafficLeft = user.optJSONObject("traffic")?.optLong("left", -1) ?: -1
+        val traffic = user.optJSONObject("traffic")
+        // "left"/"total" in Byte; null bei Konten ohne Tageslimit
+        val trafficLeft = traffic?.takeUnless { it.isNull("left") }?.optLong("left", -1) ?: -1
+        val trafficTotal = traffic?.takeUnless { it.isNull("total") }?.optLong("total", -1) ?: -1
         AccountInfo(
             valid = true,
             premiumUntil = premiumEnd,
             trafficLeft = trafficLeft,
+            trafficTotal = trafficTotal,
+            trafficUnlimited = premium && trafficLeft < 0 && trafficTotal < 0,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
         )
     }
