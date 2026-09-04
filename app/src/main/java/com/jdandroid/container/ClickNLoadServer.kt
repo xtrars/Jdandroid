@@ -29,12 +29,15 @@ class ClickNLoadServer(
 ) : NanoHTTPD(hostname, PORT) {
 
     override fun serve(session: IHTTPSession): Response {
+        var outcome = "ok"
         val response = try {
             when {
                 // CORS-Preflight: neuere Chrome-Versionen (Local Network Access)
                 // fragen vor fetch/XHR an localhost per OPTIONS nach.
-                session.method == Method.OPTIONS ->
+                session.method == Method.OPTIONS -> {
+                    outcome = "Preflight beantwortet"
                     newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, "")
+                }
                 session.uri == "/jdcheck.js" -> newFixedLengthResponse(
                     // Muss als JavaScript ausgeliefert werden: bei text/html
                     // verweigern Browser die Ausfuehrung und die Seite haelt den
@@ -47,16 +50,23 @@ class ClickNLoadServer(
                     """<?xml version="1.0"?><cross-domain-policy>""" +
                         """<allow-access-from domain="*"/></cross-domain-policy>"""
                 )
-                session.uri in ADD_PATHS -> handleAdd(session)
+                session.uri in ADD_PATHS -> {
+                    val (resp, note) = handleAdd(session)
+                    outcome = note
+                    resp
+                }
                 else -> newFixedLengthResponse("JDAndroid")
             }
         } catch (e: ContainerDecrypter.ContainerException) {
             Log.w("ClickNLoad", "Abgelehnt bei ${session.uri}: ${e.message}")
+            outcome = "abgelehnt: ${e.message}"
             newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n")
         } catch (e: Exception) {
             Log.w("ClickNLoad", "Fehler bei ${session.uri}: ${e.message}")
+            outcome = "Fehler: ${e.message ?: e.javaClass.simpleName}"
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "failed\r\n")
         }
+        CnlStatus.record(session.method.name, session.uri, outcome)
         return response.withCors(session)
     }
 
@@ -65,18 +75,29 @@ class ClickNLoadServer(
         // Credentials ab; ohne Origin (Formular-POST) bleibt "*".
         addHeader("Access-Control-Allow-Origin", session.headers["origin"] ?: "*")
         addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        addHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With")
+        // Angefragte Header spiegeln, sonst scheitert der Preflight an einem
+        // Header, den die Seite zusaetzlich sendet
+        addHeader(
+            "Access-Control-Allow-Headers",
+            session.headers["access-control-request-headers"]?.ifBlank { null }
+                ?: "Content-Type, X-Requested-With"
+        )
+        // Chrome: aelterer Name (Private Network Access) und neuer Name
+        // (Local Network Access, ab Chrome 138) - beide setzen
         addHeader("Access-Control-Allow-Private-Network", "true")
+        addHeader("Access-Control-Allow-Local-Network", "true")
         addHeader("Access-Control-Max-Age", "86400")
         return this
     }
 
-    private fun handleAdd(session: IHTTPSession): Response {
+    /** Antwort plus Kurzbeschreibung des Ergebnisses fuer die Statuszeile. */
+    private fun handleAdd(session: IHTTPSession): Pair<Response, String> {
         // Jede im Browser geoeffnete Seite darf hierher senden: die Groesse
         // begrenzen, sonst laesst ein 50-MB-Koerper die App per OOM abstuerzen.
         val length = session.headers["content-length"]?.trim()?.toLongOrNull()
         if (length != null && length > MAX_BODY_BYTES) {
-            return newFixedLengthResponse(Response.Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n")
+            return newFixedLengthResponse(Response.Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n") to
+                "Anfrage zu gross"
         }
         val body = HashMap<String, String>()
         if (session.method == Method.POST || session.method == Method.PUT) {
@@ -103,7 +124,10 @@ class ClickNLoadServer(
         if (links.isEmpty()) {
             // Wie JDownloader: die Seite zeigt dann "fehlgeschlagen" statt
             // faelschlich Erfolg zu melden.
-            return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n")
+            val note = if (crypted.isNullOrBlank() && plainUrls.isNullOrBlank()) {
+                "keine Links im Formular (Felder: ${params.keys.joinToString(",").ifBlank { "keine" }})"
+            } else "keine Links entschlüsselt"
+            return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n") to note
         }
 
         // Paketname und Passwoerter kappen: eine Seite darf die Passwortliste
@@ -123,7 +147,7 @@ class ClickNLoadServer(
                     ?: session.headers["referer"]?.takeIf { it.isNotBlank() }
             )
         )
-        return newFixedLengthResponse("success\r\n")
+        return newFixedLengthResponse("success\r\n") to "${links.size} Link(s) übernommen"
     }
 
     companion object {

@@ -178,6 +178,7 @@ class ClickNLoadServerTest {
         )
         assertEquals(204, reply.code)
         assertEquals(listOf("true"), reply.headers["access-control-allow-private-network"])
+        assertEquals(listOf("true"), reply.headers["access-control-allow-local-network"])
         // HttpURLConnection unterdrueckt den Origin-Header (restricted header),
         // daher hier nur pruefen, dass der Server ueberhaupt einen Origin freigibt
         assertNotNull(reply.headers["access-control-allow-origin"])

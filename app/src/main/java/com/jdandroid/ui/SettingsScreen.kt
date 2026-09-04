@@ -65,6 +65,8 @@ import com.jdandroid.container.CnlStatus
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,6 +300,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             val cnlRunning by CnlStatus.running.collectAsStateWithLifecycle()
             val cnlError by CnlStatus.error.collectAsStateWithLifecycle()
             val cnlBoundTo by CnlStatus.boundTo.collectAsStateWithLifecycle()
+            val cnlLast by CnlStatus.lastRequest.collectAsStateWithLifecycle()
+            var cnlTest by remember { mutableStateOf<String?>(null) }
             Text(
                 when {
                     cnlRunning -> "Status: Server läuft auf Port " +
@@ -314,6 +318,42 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
+            if (cnlRunning) {
+                Text(
+                    cnlLast?.let { "Letzte Anfrage: $it" }
+                        ?: "Noch keine Anfrage eines Browsers eingegangen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = {
+                        cnlTest = "Teste …"
+                        scope.launch {
+                            cnlTest = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val req = okhttp3.Request.Builder()
+                                        .url("http://127.0.0.1:${ClickNLoadServer.PORT}/jdcheck.js").build()
+                                    com.jdandroid.hoster.Http.client.newCall(req).execute().use { r ->
+                                        if (r.isSuccessful) "Server antwortet (HTTP ${r.code})."
+                                        else "Server antwortet mit HTTP ${r.code}."
+                                    }
+                                }.getOrElse { "Server nicht erreichbar: ${it.message}" }
+                            }
+                        }
+                    }) { Text("Verbindung testen") }
+                    cnlTest?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                }
+                Text(
+                    "Hinweis: Chrome fragt beim ersten Click'n'Load, ob die Seite auf " +
+                        "das lokale Netzwerk zugreifen darf – das muss erlaubt werden. " +
+                        "Erscheint hier nach dem Klick keine Anfrage, hat der Browser die " +
+                        "Verbindung zu 127.0.0.1 blockiert.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 "DLC-Dateien lassen sich über \"Öffnen mit\" bzw. Teilen importieren. " +

@@ -18,6 +18,16 @@ object CnlStatus {
     private val _boundTo = MutableStateFlow<String?>(null)
     val boundTo: StateFlow<String?> = _boundTo
 
+    /** Letzte eingegangene Anfrage (Uhrzeit, Methode, Pfad, Ergebnis) - eine Zeile. */
+    private val _lastRequest = MutableStateFlow<String?>(null)
+    val lastRequest: StateFlow<String?> = _lastRequest
+
+    fun record(method: String, uri: String, result: String) {
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.GERMANY)
+            .format(java.util.Date())
+        _lastRequest.value = "$time $method $uri → $result"
+    }
+
     fun started(address: String) {
         _running.value = true
         _error.value = null

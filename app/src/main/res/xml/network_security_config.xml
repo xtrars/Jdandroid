@@ -2,7 +2,12 @@
 <network-security-config>
     <!--
       Saemtlicher Verkehr (Hoster-APIs, JDownloader-DLC-Dienst, Browser-Login)
-      laeuft ueber HTTPS. Klartext-HTTP ist fuer die ganze App gesperrt.
+      laeuft ueber HTTPS. Klartext-HTTP ist fuer die ganze App gesperrt -
+      ausser zum eigenen Click'n'Load-Server auf Loopback (Selbsttest).
     -->
     <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
 </network-security-config>
