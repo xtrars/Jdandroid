@@ -17,9 +17,10 @@ import com.jdandroid.R
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlRequest
 import com.jdandroid.container.CnlStatus
+import com.jdandroid.core.AppMessages
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.LinkSink
 import com.jdandroid.ui.MainActivity
-import com.jdandroid.ui.formatBytes
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,8 +127,10 @@ class DownloadService : Service() {
             ACTION_PUMP -> scope.launch { engine.pump() }
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
+            ACTION_PAUSE_PACKAGE -> scope.launch { engine.pausePackage(id) }
+            ACTION_DELETE_PACKAGE -> scope.launch { engine.deletePackage(id) }
             ACTION_EXTRACT -> scope.launch {
-                engine.extractNow(id)?.let { com.jdandroid.ui.AppMessages.error(it) }
+                engine.extractNow(id)?.let { AppMessages.error(it) }
             }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
             ACTION_RESUME_ALL -> scope.launch {
@@ -221,7 +224,7 @@ class DownloadService : Service() {
         var lastError: Exception? = null
         for (host in listOf(ClickNLoadServer.LOOPBACK, "localhost")) {
             try {
-                val server = ClickNLoadServer(host, onRequest)
+                val server = ClickNLoadServer(host, onRequest = onRequest)
                 server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true)
                 cnlServer = server
                 CnlStatus.started(host)
@@ -415,6 +418,9 @@ class DownloadService : Service() {
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
+        /** Ganzes Paket pausieren/loeschen; [EXTRA_ID] traegt hier die Paket-ID. */
+        const val ACTION_PAUSE_PACKAGE = "com.jdandroid.action.PAUSE_PACKAGE"
+        const val ACTION_DELETE_PACKAGE = "com.jdandroid.action.DELETE_PACKAGE"
         const val ACTION_EXTRACT = "com.jdandroid.action.EXTRACT"
         const val ACTION_PAUSE_ALL = "com.jdandroid.action.PAUSE_ALL"
         const val ACTION_RESUME_ALL = "com.jdandroid.action.RESUME_ALL"

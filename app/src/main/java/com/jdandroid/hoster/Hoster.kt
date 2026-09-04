@@ -2,7 +2,6 @@ package com.jdandroid.hoster
 
 import com.jdandroid.data.Account
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 enum class AccountType { USERNAME_PASSWORD, API_KEY }
@@ -91,23 +90,16 @@ object Http {
         .followRedirects(true)
         .build()
 
-    const val USER_AGENT =
-        "Mozilla/5.0 (Android) JDAndroid/1.1"
-
-    /** Obergrenze fuer als Text gelesene Antworten (API-Antworten sind klein). */
-    const val MAX_TEXT_BYTES = 2L * 1024 * 1024
+    // Ohne Versionsnummer: sie lief der App-Version davon (versionName in build.gradle.kts)
+    const val USER_AGENT = "Mozilla/5.0 (Android) JDAndroid"
 
     /**
-     * Liest eine Antwort als Text - aber nie unbegrenzt: antwortet ein Server
+     * Obergrenze fuer als Text gelesene Antworten (API-Antworten sind klein).
+     * Antworten immer mit peekBody(MAX_TEXT_BYTES) lesen: antwortet ein Server
      * unerwartet mit einer Datei statt JSON, wuerde ein ungebremstes string()
      * den gesamten Inhalt in den Speicher laden (OutOfMemoryError).
      */
-    fun get(url: String): String = client.newCall(
-        Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
-    ).execute().use { resp ->
-        if (resp.body == null) throw HosterException("Leere Antwort vom Server")
-        resp.peekBody(MAX_TEXT_BYTES).string()
-    }
+    const val MAX_TEXT_BYTES = 2L * 1024 * 1024
 }
 
 object HosterRegistry {

@@ -4,8 +4,11 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.room.Room
+import com.jdandroid.core.AppMessages
 import com.jdandroid.data.AppDatabase
+import com.jdandroid.data.LinkSink
 import com.jdandroid.data.SettingsRepository
+import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +44,9 @@ class JdApp : Application() {
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsRepository(this)
+        // Die Datenschicht kennt den Download-Dienst nicht; der Start beim
+        // Einreihen wird hier (Kompositionswurzel) verdrahtet.
+        LinkSink.onQueued = { DownloadService.send(it, DownloadService.ACTION_PUMP) }
         createNotificationChannel()
         // Beim Prozess-Ende haengen gebliebene Linkpruefungen zuruecksetzen
         appScope.launch { db.downloadDao().resetChecking() }
@@ -71,7 +77,7 @@ class JdApp : Application() {
         /** Unbehandelte Fehler in Hintergrund-Coroutinen als Meldung statt Absturz. */
         fun backgroundErrors(where: String) = CoroutineExceptionHandler { _, e ->
             android.util.Log.w("JDAndroid", "$where: ${e.message}", e)
-            com.jdandroid.ui.AppMessages.error("$where: ${e.message ?: e.javaClass.simpleName}")
+            AppMessages.error("$where: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 }

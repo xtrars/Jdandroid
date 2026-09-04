@@ -19,6 +19,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -199,7 +202,9 @@ class DownloadEngine(
                 copy
             }
             running.values.forEach { it.cancel() }
-            running.keys.forEach { dao.requeueIfRunning(it) }
+            // Unter der Abschluss-Sperre: ein Job im NonCancellable-Abschluss
+            // (Datei wird gerade verschoben) darf nicht mehr zurueckgestuft werden
+            completionMutex.withLock { running.keys.forEach { dao.requeueIfRunning(it) } }
             onStateChanged()
         } else {
             pump()
@@ -209,8 +214,9 @@ class DownloadEngine(
     suspend fun pause(id: Long) {
         mutex.withLock { jobs.remove(id) }?.cancel()
         // Nur RUNNING/QUEUED pausieren - ein Eintrag, der gerade fertig wird
-        // oder entpackt, bleibt unberuehrt (sonst Neudownload beim Fortsetzen)
-        dao.pauseIfActive(id)
+        // oder entpackt, bleibt unberuehrt (sonst Neudownload beim Fortsetzen).
+        // Unter der Abschluss-Sperre, damit ein laufender Abschluss zu Ende kommt
+        completionMutex.withLock { dao.pauseIfActive(id) }
         pump()
     }
 
@@ -232,6 +238,21 @@ class DownloadEngine(
         pump()
     }
 
+    /** Alle Eintraege eines Pakets pausieren - ein Dienst-Aufruf statt einem je Eintrag. */
+    suspend fun pausePackage(packageId: Long) {
+        dao.byPackage(packageId).forEach { pause(it.id) }
+    }
+
+    /**
+     * Paket samt Eintraegen loeschen: erst jeden Eintrag (Job abbrechen, Dateien
+     * entfernen), dann die Paketzeile - so bleiben keine verwaisten Eintraege
+     * zurueck, deren Paket schon verschwunden ist.
+     */
+    suspend fun deletePackage(packageId: Long) {
+        dao.byPackage(packageId).forEach { cancelAndDelete(it.id) }
+        app.db.packageDao().delete(packageId)
+    }
+
     suspend fun pauseAll() {
         // Erst die Warteschlange anhalten: die abgebrochenen Jobs rufen in ihrem
         // finally pump() auf und wuerden sonst sofort die naechsten Eintraege starten.
@@ -243,7 +264,7 @@ class DownloadEngine(
         }
         running.values.forEach { it.cancel() }
         // Entpackende Eintraege bleiben EXTRACTING (laufen unter NonCancellable weiter)
-        running.keys.forEach { dao.pauseIfActive(it) }
+        completionMutex.withLock { running.keys.forEach { dao.pauseIfActive(it) } }
         onStateChanged()
     }
 
@@ -270,10 +291,10 @@ class DownloadEngine(
             val resolved = hoster.resolve(item.url, account)
 
             var current = dao.byId(id) ?: return
-            val resolvedName = resolved.fileName?.let { sanitizeFileName(it) }
-            if (resolvedName != null && preferName(current.fileName, resolvedName)) {
+            val resolvedName = resolved.fileName?.let { FileNames.sanitize(it) }
+            if (resolvedName != null && FileNames.preferName(current.fileName, resolvedName)) {
                 current = adoptFileName(current, resolvedName)
-                refinePackageName(current.packageId)
+                PackageNaming.refineAutoName(app.db, current.packageId)
             }
             download(current, resolved.directUrl, resolved.hash)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -291,6 +312,9 @@ class DownloadEngine(
             // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
             dao.setStatus(id, DownloadStatus.FAILED, "Ungültige Download-Adresse: ${e.message}")
         } catch (e: Exception) {
+            // Abbruch (Pause/Loeschen) kommt von OkHttp als IOException("Canceled"):
+            // nicht als voruebergehenden Fehler zaehlen, sondern sauber beenden
+            coroutineContext.ensureActive()
             // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
             handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
         } finally {
@@ -332,22 +356,6 @@ class DownloadEngine(
         }
     }
 
-    private fun backoffMillis(attempt: Int): Long {
-        val base = 10_000L shl (attempt - 1).coerceAtMost(5)
-        return base.coerceAtMost(5 * 60_000L)
-    }
-
-    /**
-     * Sobald Dateinamen bekannt sind, wird ein automatisch benanntes Paket
-     * nach dem gemeinsamen Namensteil benannt - wie im JDownloader.
-     */
-    private suspend fun refinePackageName(packageId: Long?) {
-        val id = packageId ?: return
-        val names = dao.byPackage(id).mapNotNull { it.fileName }
-        val name = PackageNaming.commonName(names) ?: return
-        app.db.packageDao().refineAutoName(id, name)
-    }
-
     private suspend fun download(item: DownloadItem, directUrl: String, expectedHash: String? = null) {
         var target = tempFile(item)
         var offset = if (target.exists()) target.length() else 0L
@@ -360,130 +368,20 @@ class DownloadEngine(
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
         // Bei Pause/Loeschen die Verbindung sofort kappen: sonst wirkt der
-        // Abbruch erst nach dem naechsten Socket-Read (bis zu 60 s).
+        // Abbruch erst nach dem naechsten Socket-Read (bis zu 60 s). Ein
+        // invokeOnCompletion-Handler feuert erst im Endzustand des Jobs - also
+        // erst, wenn der blockierende Read ohnehin zurueck ist. Der Waechter
+        // reagiert dagegen sofort auf den Uebergang nach "cancelling".
         val call = Http.client.newCall(builder.build())
-        val cancelHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
-            if (cause != null) call.cancel()
-        }
-        try {
-        call.execute().use { resp ->
-            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig.
-            // Nur wenn die Teildatei auch zur bekannten Groesse passt; sonst ist
-            // sie zu lang (z.B. Fremdinhalt) und muss neu geladen werden.
-            if (resp.code == 416 && offset > 0) {
-                if (item.fileSize > 0 && offset != item.fileSize) {
-                    target.delete()
-                    throw HosterException("Teildatei passt nicht zur Dateigröße – Neustart")
-                }
-                dao.updateProgress(item.id, offset, offset, 0)
-                return@use
-            }
-            if (!resp.isSuccessful) {
-                throw HosterException("Server antwortete mit HTTP ${resp.code}")
-            }
-            // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
-            // niemals als Dateiinhalt speichern - sonst landet die Seite in der
-            // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
-            val contentType = resp.header("Content-Type").orEmpty().lowercase()
-            val disposition = resp.header("Content-Disposition").orEmpty().lowercase()
-            if ((contentType.startsWith("text/html") || contentType.startsWith("application/xhtml")) &&
-                !disposition.startsWith("attachment")
-            ) {
-                throw HosterException(
-                    "Server lieferte eine HTML-Seite statt der Datei (${resp.request.url.host}) – " +
-                        "Link wird neu aufgelöst"
-                )
-            }
-            // Server ignoriert Range -> von vorn beginnen
-            if (offset > 0 && resp.code != 206) {
-                target.delete()
-                offset = 0
-            }
-            val body = resp.body ?: throw HosterException("Leere Antwort beim Download")
-            val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
-
-            // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
-            // Minuten mit einem nichtssagenden IO-Fehler ab.
-            val needed = if (total > 0) total - offset else 0
-            val free = downloadDir().usableSpace
-            if (needed > 0 && free in 0 until needed) {
-                throw HosterException(
-                    "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
-                        "${free / (1 shl 20)} MiB frei",
-                    permanent = true
-                )
-            }
-
-            // Dateiname ggf. aus Content-Disposition oder URL ableiten. Der vom
-            // Server gelieferte Name ersetzt einen Platzhalter ohne Endung (z.B.
-            // aus dem Seitentitel der Linkpruefung) - sonst erkennt die App das
-            // Archiv nicht und entpackt nie.
-            var current = dao.byId(item.id) ?: return
-            val serverName = resp.header("Content-Disposition")
-                ?.let { fileNameFromDisposition(it) }
-            val candidate = when {
-                current.fileName == null -> fileNameFrom(resp.header("Content-Disposition"), resp.request.url)
-                serverName != null && preferName(current.fileName, serverName) -> serverName
-                else -> null
-            }
-            if (candidate != null) {
-                current = adoptFileName(current, candidate)
-                target = tempFile(current)
-            }
-
-            var written = offset
-            val startedAt = System.currentTimeMillis()
-            var lastDbWrite = startedAt
-            var attemptsReset = false
-            // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
-            // der Rohwert einzelner Messintervalle springt stark und liess die
-            // Anzeige flackern. In die DB (und damit in die UI) geht der Wert
-            // nur alle DB_WRITE_MS.
-            val samples = ArrayDeque<Pair<Long, Long>>()
-            samples.addLast(startedAt to written)
-            body.byteStream().use { input ->
-                java.io.FileOutputStream(target, offset > 0).use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        out.write(buffer, 0, read)
-                        written += read
-                        limiter.throttle(read)
-                        if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
-                            // Echter Fortschritt: ein wackliges Netz darf einen
-                            // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
-                            attemptsReset = true
-                            dao.resetAttempts(item.id)
-                        }
-                        val now = System.currentTimeMillis()
-                        if (now - samples.last().first >= SAMPLE_MS) {
-                            samples.addLast(now to written)
-                            while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
-                                samples.removeFirst()
-                            }
-                            val (t0, b0) = samples.first()
-                            val speed = if (now > t0) (written - b0) * 1000 / (now - t0) else 0L
-                            speeds[item.id] = speed
-                            if (now - lastDbWrite >= DB_WRITE_MS) {
-                                dao.updateProgress(item.id, written, total, speed)
-                                lastDbWrite = now
-                                notifyProgress()
-                            }
-                        }
-                        kotlinx.coroutines.yield()
-                    }
-                }
-            }
-            speeds.remove(item.id)
-            dao.updateProgress(item.id, written, total, 0)
-            if (total > 0 && written < total) {
-                throw IOException("Download unvollständig ($written von $total Bytes)")
+        val vanished = !coroutineScope {
+            val watcher = launch { try { awaitCancellation() } finally { call.cancel() } }
+            try {
+                call.execute().use { resp -> transfer(resp, item, target, offset) { target = it } }
+            } finally {
+                watcher.cancel()
             }
         }
-        } finally {
-            cancelHandle?.dispose()
-        }
+        if (vanished) return
 
         // Integritaet pruefen, wenn der Hoster eine Pruefsumme geliefert hat
         if (expectedHash != null) verifyHash(target, expectedHash)
@@ -491,6 +389,135 @@ class DownloadEngine(
         val finalName = dao.byId(item.id)?.fileName ?: target.name.removeSuffix(".part")
         completeDownload(item.id, target, finalName)
         onStateChanged()
+    }
+
+    /**
+     * Antwort einordnen und die Daten in [initialTarget] schreiben. Liefert
+     * false, wenn der Eintrag zwischenzeitlich geloescht wurde. [onTarget]
+     * meldet eine umbenannte Teildatei (Name kam erst mit der Antwort).
+     */
+    private suspend fun transfer(
+        resp: okhttp3.Response,
+        item: DownloadItem,
+        initialTarget: File,
+        initialOffset: Long,
+        onTarget: (File) -> Unit
+    ): Boolean {
+        var target = initialTarget
+        var offset = initialOffset
+        when (
+            classifyResponse(
+                resp.code, resp.header("Content-Type"), resp.header("Content-Disposition"),
+                offset, item.fileSize
+            )
+        ) {
+            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig.
+            ResponseKind.AlreadyComplete -> {
+                dao.updateProgress(item.id, offset, offset, 0)
+                return true
+            }
+            // Teildatei zu lang (z.B. Fremdinhalt): muss neu geladen werden
+            ResponseKind.RestartMismatch -> {
+                target.delete()
+                throw HosterException("Teildatei passt nicht zur Dateigröße – Neustart")
+            }
+            ResponseKind.HttpError -> throw HosterException("Server antwortete mit HTTP ${resp.code}")
+            // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
+            // niemals als Dateiinhalt speichern - sonst landet die Seite in der
+            // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
+            ResponseKind.HtmlPage -> throw HosterException(
+                "Server lieferte eine HTML-Seite statt der Datei (${resp.request.url.host}) – " +
+                    "Link wird neu aufgelöst"
+            )
+            // Server ignoriert Range -> von vorn beginnen
+            ResponseKind.RangeIgnored -> {
+                target.delete()
+                offset = 0
+            }
+            ResponseKind.Continue -> Unit
+        }
+        val body = resp.body ?: throw HosterException("Leere Antwort beim Download")
+        val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
+
+        // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
+        // Minuten mit einem nichtssagenden IO-Fehler ab.
+        val needed = if (total > 0) total - offset else 0
+        val free = downloadDir().usableSpace
+        if (needed > 0 && free in 0 until needed) {
+            throw HosterException(
+                "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
+                    "${free / (1 shl 20)} MiB frei",
+                permanent = true
+            )
+        }
+
+        // Dateiname ggf. aus Content-Disposition oder URL ableiten. Der vom
+        // Server gelieferte Name ersetzt einen Platzhalter ohne Endung (z.B.
+        // aus dem Seitentitel der Linkpruefung) - sonst erkennt die App das
+        // Archiv nicht und entpackt nie.
+        var current = dao.byId(item.id) ?: return false
+        val serverName = FileNames.fromDisposition(resp.header("Content-Disposition"))
+        val candidate = when {
+            current.fileName == null -> FileNames.fromResponse(resp.header("Content-Disposition"), resp.request.url)
+            serverName != null && FileNames.preferName(current.fileName, serverName) -> serverName
+            else -> null
+        }
+        if (candidate != null) {
+            current = adoptFileName(current, candidate)
+            target = tempFile(current)
+            onTarget(target)
+        }
+
+        var written = offset
+        val startedAt = System.currentTimeMillis()
+        var lastDbWrite = startedAt
+        var attemptsReset = false
+        // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
+        // der Rohwert einzelner Messintervalle springt stark und liess die
+        // Anzeige flackern. In die DB (und damit in die UI) geht der Wert
+        // nur alle DB_WRITE_MS.
+        val samples = ArrayDeque<Pair<Long, Long>>()
+        samples.addLast(startedAt to written)
+        body.byteStream().use { input ->
+            java.io.FileOutputStream(target, offset > 0).use { out ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    written += read
+                    limiter.throttle(read)
+                    if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
+                        // Echter Fortschritt: ein wackliges Netz darf einen
+                        // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
+                        attemptsReset = true
+                        dao.resetAttempts(item.id)
+                    }
+                    val now = System.currentTimeMillis()
+                    if (now - samples.last().first >= SAMPLE_MS) {
+                        samples.addLast(now to written)
+                        while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
+                            samples.removeFirst()
+                        }
+                        val (t0, b0) = samples.first()
+                        val speed = if (now > t0) (written - b0) * 1000 / (now - t0) else 0L
+                        speeds[item.id] = speed
+                        if (now - lastDbWrite >= DB_WRITE_MS) {
+                            dao.updateProgress(item.id, written, total, speed)
+                            lastDbWrite = now
+                            notifyProgress()
+                        }
+                    }
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+        speeds.remove(item.id)
+        dao.updateProgress(item.id, written, total, 0)
+        if (total > 0 && written < total) {
+            throw IOException("Download unvollständig ($written von $total Bytes)")
+        }
+        return true
     }
 
     /**
@@ -525,65 +552,102 @@ class DownloadEngine(
         val autoExtract = app.settings.currentAutoExtract()
 
         if (!autoExtract || base == null) {
-            val path = finish(temp, fileName)
-            markCompleted(id, path, null)
+            // Verschieben und Statuswechsel unter der Abschluss-Sperre: pause()/
+            // Netzwechsel warten so, statt den Eintrag mit bereits verschobener
+            // Teildatei auf PAUSED/QUEUED zu setzen (Neudownload plus Duplikat)
+            val packageId = completionMutex.withLock {
+                val path = finish(temp, fileName)
+                markCompleted(id, path, null)
+                dao.byId(id)?.packageId
+            }
+            // Ein wartendes Archiv-Set desselben Pakets kann jetzt vollstaendig sein
+            retryWaitingSets(packageId)
             return@withContext
         }
 
-        // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
-        // Multipart-Teile zueinander finden
         val archiveFile = File(downloadDir(), fileName)
-        if (temp.path != archiveFile.path) {
-            archiveFile.delete()
-            temp.renameTo(archiveFile)
-        }
-
         // Entscheidung unter der Sperre: zwei gleichzeitig fertige Teile duerfen
         // sich nicht gegenseitig als "noch ausstehend" sehen.
         val shouldExtract = completionMutex.withLock {
-            val self = dao.byId(id)
-            val active = listOf(
-                DownloadStatus.COLLECTED, DownloadStatus.QUEUED, DownloadStatus.RUNNING,
-                DownloadStatus.PAUSED, DownloadStatus.EXTRACTING
-            )
-            // Ausstehend: weitere Teile desselben Archivs - auch solche im selben
-            // Paket, deren Name noch unbekannt ist (Sofortstart: Name kommt erst
-            // mit dem Aufloesen)
-            val pending = dao.all().any { other ->
-                other.id != id && other.status in active && (
-                    Extractor.archiveBase(Extractor.repairName(other.fileName ?: "")) == base ||
-                        (other.fileName == null && other.packageId != null && other.packageId == self?.packageId)
-                    )
+            val all = dao.all()
+            val self = all.firstOrNull { it.id == id }
+            // Gleichnamiges Archiv eines anderen Pakets liegt bereits flach im
+            // App-Ordner: nicht ueberschreiben, sondern als normale Datei ablegen
+            val clash = archiveFile.isFile && temp.path != archiveFile.path && all.any { other ->
+                other.packageId != self?.packageId && other.fileName == fileName &&
+                    other.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING)
             }
+            if (clash) {
+                markCompleted(id, finish(temp, fileName), "Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt")
+                return@withLock false
+            }
+            // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
+            // Multipart-Teile zueinander finden
+            if (temp.path != archiveFile.path) {
+                archiveFile.delete()
+                temp.renameTo(archiveFile)
+            }
+            val pending = ArchiveSets.pendingParts(all, id, self?.packageId, base!!)
             if (pending || ExtractionRegistry.isActive(base!!)) {
-                markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
+                markCompleted(id, archiveFile.absolutePath, WAITING_NOTE)
                 false
             } else {
                 // Alle Teile des Sets zeigen "wird entpackt", nicht nur der zuletzt
                 // fertige - sonst wirkt der Zustand willkuerlich verteilt
-                dao.setExtractingSet(archiveSetIds(id, base!!))
+                dao.setExtractingSet(ArchiveSets.archiveSetIds(all, id, base!!))
                 true
             }
         }
         if (!shouldExtract) return@withContext
 
-        val primary = Extractor.findPrimaryVolume(downloadDir(), base)
-        if (primary == null) {
-            markCompleted(id, archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
-            return@withContext
-        }
-
-        // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
-        // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
-        launchExtraction(id, base!!, primary, archiveFile)
+        startExtraction(id, base!!, archiveFile)
     }
 
-    /** Alle Eintraege eines Archiv-Sets (fertig oder gerade fertig werdend), inklusive [id]. */
+    /**
+     * Set ist vollstaendig und bereits EXTRACTING: erstes Volume suchen und
+     * entpacken. Fehlt es, alle Teile des Sets zurueck auf fertig - nicht nur
+     * den ausloesenden, sonst bleiben die uebrigen dauerhaft EXTRACTING.
+     */
+    private suspend fun startExtraction(id: Long, base: String, archiveFile: File) {
+        val primary = Extractor.findPrimaryVolume(downloadDir(), base)
+        if (primary == null) {
+            dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
+            dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
+            return
+        }
+        // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
+        // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
+        launchExtraction(id, base, primary, archiveFile)
+    }
+
+    /**
+     * Fertige Archiv-Teile mit [WAITING_NOTE] im Paket erneut pruefen: sobald der
+     * letzte ausstehende Eintrag des Pakets einen Namen bekommt oder als
+     * Nicht-Archiv fertig wird, stoesst das sonst niemand mehr an.
+     */
+    private suspend fun retryWaitingSets(packageId: Long?) = withContext(NonCancellable) {
+        if (packageId == null) return@withContext
+        val ready = completionMutex.withLock {
+            val all = dao.all()
+            all.filter {
+                it.packageId == packageId && it.status == DownloadStatus.COMPLETED &&
+                    it.errorMessage == WAITING_NOTE
+            }.groupBy { Extractor.archiveBase(it.fileName ?: "") }
+                .mapNotNull { (base, parts) ->
+                    val self = parts.first()
+                    if (base == null || ArchiveSets.pendingParts(all, self.id, packageId, base) ||
+                        ExtractionRegistry.isActive(base)
+                    ) return@mapNotNull null
+                    dao.setExtractingSet(ArchiveSets.archiveSetIds(all, self.id, base))
+                    Triple(self.id, base, File(downloadDir(), self.fileName!!))
+                }
+        }
+        ready.forEach { (id, base, archiveFile) -> startExtraction(id, base, archiveFile) }
+    }
+
+    /** Siehe [ArchiveSets.archiveSetIds]: fertige/entpackende Teile des Sets im selben Paket, inklusive [id]. */
     private suspend fun archiveSetIds(id: Long, base: String): List<Long> =
-        (dao.all().filter {
-            it.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING, DownloadStatus.RUNNING) &&
-                Extractor.archiveBase(Extractor.repairName(it.fileName ?: "")) == base
-        }.map { it.id } + id).distinct()
+        ArchiveSets.archiveSetIds(dao.all(), id, base)
 
     private suspend fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
         val setIds = archiveSetIds(id, base)
@@ -680,7 +744,15 @@ class DownloadEngine(
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
             ?: return "Erstes Archiv-Teil fehlt"
         if (ExtractionRegistry.isActive(base)) return "Wird bereits entpackt"
-        dao.setExtractingSet(archiveSetIds(id, base))
+        completionMutex.withLock {
+            val all = dao.all()
+            // Laufende Teile gehoeren nicht ins Set: sie wuerden auf EXTRACTING
+            // gesetzt und nach dem Entpacken als "fertig" markiert, obwohl sie noch laden
+            if (ArchiveSets.pendingParts(all, id, item.packageId, base, ArchiveSets.LOADING)) {
+                return "Archiv unvollständig – weitere Teile werden noch geladen"
+            }
+            dao.setExtractingSet(ArchiveSets.archiveSetIds(all, id, base))
+        }
         launchExtraction(id, base, primary, File(downloadDir(), name))
         return null
     }
@@ -735,6 +807,8 @@ class DownloadEngine(
     private suspend fun extractAndExport(id: Long, base: String, primary: File, archiveFile: File) =
         withContext(NonCancellable) {
             extractLimiter.withPermit {
+                var finished = false
+                var failure: String? = null
                 try {
                     // Immer in einen Unterordner mit dem Paketnamen (wie im
                     // JDownloader); ohne Paket der Archivname
@@ -769,11 +843,20 @@ class DownloadEngine(
                     dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
                     // Alle Teile des Sets zurueck auf fertig, mit dem Zielordner
                     dao.completeExtractingSet(setIds, exportedPath, null)
+                    finished = true
                     if (app.settings.currentRemoveLinksAfterExtract()) {
                         removeExtractedEntries(id, base)
                     }
-                } catch (e: Exception) {
-                    dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, e.message)
+                } catch (e: Throwable) {
+                    // Auch Error (OutOfMemoryError, UnsatisfiedLinkError des nativen
+                    // 7-Zip): sonst bleibt das Set fuer immer EXTRACTING
+                    failure = e.message ?: e.javaClass.simpleName
+                } finally {
+                    if (!finished) {
+                        runCatching {
+                            dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, failure)
+                        }
+                    }
                 }
             }
         }
@@ -784,9 +867,11 @@ class DownloadEngine(
      * Pakete werden aufgeraeumt. Die entpackten Dateien bleiben natuerlich.
      */
     private suspend fun removeExtractedEntries(id: Long, base: String) {
-        dao.all()
+        val all = dao.all()
+        val packageId = all.firstOrNull { it.id == id }?.packageId
+        all
             .filter { it.id == id || it.status == DownloadStatus.COMPLETED }
-            .filter { Extractor.archiveBase(it.fileName ?: "") == base }
+            .filter { it.packageId == packageId && Extractor.archiveBase(it.fileName ?: "") == base }
             .forEach { dao.delete(it.id) }
         app.db.packageDao().deleteEmpty()
     }
@@ -808,10 +893,7 @@ class DownloadEngine(
     private suspend fun packageFolder(id: Long): String? {
         val packageId = dao.byId(id)?.packageId ?: return null
         val name = app.db.packageDao().byId(packageId)?.name ?: return null
-        return limitLength(
-            name.replace(Regex("""[/\\:*?"<>|]"""), "_").trim().trimStart('.').trimEnd('.'),
-            120
-        ).ifBlank { null }
+        return FileNames.clean(name)?.trimEnd('.')?.let { FileNames.limitLength(it, 120) }?.ifBlank { null }
     }
 
     private suspend fun exportDirectory(dir: File, base: String): String {
@@ -900,20 +982,6 @@ class DownloadEngine(
         }
     }
 
-    /**
-     * Ist [candidate] der bessere Dateiname? Ja, wenn bisher keiner bekannt
-     * ist, der bisherige keine Endung traegt oder erst der neue ein Archiv
-     * erkennen laesst.
-     */
-    private fun preferName(current: String?, candidate: String): Boolean {
-        if (current == null) return true
-        if (current == candidate) return false
-        val currentExt = current.substringAfterLast('.', "")
-        val hasExt = currentExt.isNotEmpty() && currentExt.length <= 10 && !currentExt.contains(' ')
-        if (!hasExt) return true
-        return Extractor.archiveBase(current) == null && Extractor.archiveBase(candidate) != null
-    }
-
     /** Neuen Dateinamen speichern und eine vorhandene Teildatei mit umbenennen. */
     private suspend fun adoptFileName(item: DownloadItem, name: String): DownloadItem {
         val old = tempFile(item)
@@ -921,56 +989,10 @@ class DownloadEngine(
         val renamed = tempFile(updated)
         if (old.path != renamed.path && old.exists()) old.renameTo(renamed)
         dao.setFileName(item.id, name)
+        // Mit bekanntem Namen blockiert dieser Eintrag ein wartendes Archiv-Set
+        // des Pakets vielleicht nicht mehr (z.B. readme.nfo statt part3)
+        retryWaitingSets(item.packageId)
         return updated
-    }
-
-    /** Nur der Content-Disposition-Teil von [fileNameFrom]; null ohne Header. */
-    private fun fileNameFromDisposition(cd: String): String? {
-        Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
-            runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }
-                .getOrNull()?.takeIf { it.isNotBlank() }?.let { return sanitizeFileName(it) }
-        }
-        Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)?.let { m ->
-            val raw = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
-            if (raw.isNotEmpty()) return sanitizeFileName(raw)
-        }
-        return null
-    }
-
-    private fun fileNameFrom(contentDisposition: String?, url: okhttp3.HttpUrl): String {
-        contentDisposition?.let { cd ->
-            // RFC 5987: nur filename*= ist URL-kodiert; ein rohes filename="C++.zip"
-            // darf nicht dekodiert werden ("C  .zip", "100%.rar" wuerde werfen)
-            Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
-                runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }
-                    .getOrNull()?.let { return sanitizeFileName(it) }
-            }
-            Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)?.let { m ->
-                val raw = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
-                if (raw.isNotEmpty()) return sanitizeFileName(raw)
-            }
-        }
-        // Endgueltige Adresse nach Weiterleitungen, Segmente bereits dekodiert
-        // ("My%20File.rar" -> "My File.rar")
-        return sanitizeFileName(url.pathSegments.lastOrNull { it.isNotBlank() } ?: "")
-    }
-
-    /** Server-gelieferte Namen bereinigen (Pfad-Traversal, verbotene Zeichen). */
-    private fun sanitizeFileName(name: String): String {
-        val clean = name.replace(Regex("""[/\\:*?"<>|]"""), "_")
-            .trim()
-            .trimStart('.')
-            .ifBlank { "download.bin" }
-        return limitLength(clean)
-    }
-
-    /** Dateisysteme erlauben 255 Byte; Endung erhalten, Basis kuerzen. */
-    private fun limitLength(name: String, maxBytes: Int = 200): String {
-        if (name.toByteArray().size <= maxBytes) return name
-        val ext = name.substringAfterLast('.', "").take(10)
-        var base = name.substringBeforeLast('.')
-        while (base.isNotEmpty() && (base + "." + ext).toByteArray().size > maxBytes) base = base.dropLast(1)
-        return if (ext.isEmpty()) base else "$base.$ext"
     }
 
     /**
@@ -1023,35 +1045,28 @@ class DownloadEngine(
                 // Export fehlgeschlagen -> Datei bleibt im App-Ordner
             }
         }
-        val dest = uniqueFile(downloadDir(), fileName)
+        // Liegt die Datei bereits unter ihrem Zielnamen im App-Ordner ("Erneut
+        // laden" mit vorhandener Datei), nicht in "name (2)" umbenennen
+        if (temp.path == File(downloadDir(), fileName).path) return temp.absolutePath
+        val dest = FileNames.uniqueFile(downloadDir(), fileName)
         if (temp.path != dest.path) {
             temp.renameTo(dest)
         }
         return dest.absolutePath
     }
 
-    /**
-     * Liefert einen freien Dateinamen: "film.mkv" -> "film (2).mkv".
-     * Vorher wurde eine bereits vorhandene Datei kommentarlos überschrieben.
-     */
-    private fun uniqueFile(dir: File, fileName: String): File {
-        val candidate = File(dir, fileName)
-        if (!candidate.exists()) return candidate
-        val base = fileName.substringBeforeLast('.', fileName)
-        val ext = fileName.substringAfterLast('.', "")
-        val suffix = if (ext.isEmpty()) "" else ".$ext"
-        var index = 2
-        while (index < 1000) {
-            val next = File(dir, "$base ($index)$suffix")
-            if (!next.exists()) return next
-            index++
-        }
-        return File(dir, "$base (${System.currentTimeMillis()})$suffix")
-    }
-
-    private companion object {
+    internal companion object {
         /** Maximale automatische Wiederholversuche je Download. */
         const val MAX_ATTEMPTS = 5
+
+        /** Hinweis an fertigen Archiv-Teilen, solange andere Teile noch laden. */
+        const val WAITING_NOTE = "Warte auf weitere Archiv-Teile"
+
+        /** Wartezeit vor dem [attempt]-ten Wiederholversuch: 10 s, 20 s, ... hoechstens 5 min. */
+        fun backoffMillis(attempt: Int): Long {
+            val base = 10_000L shl (attempt - 1).coerceAtMost(5)
+            return base.coerceAtMost(5 * 60_000L)
+        }
 
         /** Ab so viel neuem Fortschritt gilt ein Versuch als erfolgreich. */
         const val PROGRESS_RESET_BYTES = 4L * 1024 * 1024

@@ -165,28 +165,58 @@ object Extractor {
         progress: ProgressListener? = null
     ): String? {
         destDir.mkdirs()
+        // Jeder Versuch laeuft in ein eigenes Arbeitsverzeichnis: destDir ist der
+        // Paketordner und kann bereits Dateien anderer Archive enthalten, die ein
+        // Fehlversuch nicht mitloeschen darf. Erst bei Erfolg wandert der Inhalt
+        // nach destDir (gleiche Partition, daher renameTo).
+        val workDir = File(destDir, ".extract-" + (archiveBase(archive.name) ?: archive.name))
         val candidates = listOf<String?>(null) + passwords.filter { it.isNotBlank() }
         var lastError: Exception? = null
-        for (password in candidates) {
-            try {
-                val lower = archive.name.lowercase()
-                when {
-                    lower.endsWith(".zip") -> extractZip(archive, destDir, password, excludes, progress)
-                    lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
-                        extractSevenZip(archive, destDir, password, excludes, progress)
-                    lower.endsWith(".rar") -> extractRar(archive, destDir, password, excludes, progress)
-                    else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
+        try {
+            for (password in candidates) {
+                workDir.deleteRecursively()
+                workDir.mkdirs()
+                try {
+                    val lower = archive.name.lowercase()
+                    when {
+                        lower.endsWith(".zip") -> extractZip(archive, workDir, password, excludes, progress)
+                        lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
+                            extractSevenZip(archive, workDir, password, excludes, progress)
+                        lower.endsWith(".rar") -> extractRar(archive, workDir, password, excludes, progress)
+                        else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
+                    }
+                    workDir.listFiles()?.forEach { moveInto(it, File(destDir, it.name)) }
+                    return password
+                } catch (e: Exception) {
+                    lastError = e
                 }
-                return password
-            } catch (e: Exception) {
-                lastError = e
-                // Reste eines fehlgeschlagenen Versuchs entfernen
-                destDir.listFiles()?.forEach { it.deleteRecursively() }
             }
+        } finally {
+            // Nur die Reste des eigenen Versuchs entfernen, nie fremde Dateien in destDir
+            workDir.deleteRecursively()
         }
         throw IOException(
             "Entpacken fehlgeschlagen (Passwort nicht in der Liste?): ${lastError?.message}"
         )
+    }
+
+    /**
+     * Verschiebt [src] nach [dst]. Bestehende Ordner werden zusammengefuehrt,
+     * bestehende Dateien ersetzt; schlaegt renameTo fehl, wird kopiert.
+     */
+    private fun moveInto(src: File, dst: File) {
+        if (src.isDirectory && dst.isDirectory) {
+            src.listFiles()?.forEach { moveInto(it, File(dst, it.name)) }
+            src.delete()
+            return
+        }
+        if (dst.exists()) dst.deleteRecursively()
+        if (!src.renameTo(dst)) {
+            if (!src.copyRecursively(dst, overwrite = true)) {
+                throw IOException("Konnte ${src.name} nicht nach ${dst.parent} verschieben")
+            }
+            src.deleteRecursively()
+        }
     }
 
     private fun extractZip(

@@ -6,6 +6,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.GregorianCalendar
+
+/** Erwartete Epoche (Standardzeitzone, wie SimpleDateFormat sie im Parser verwendet). */
+private fun epoch(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0, second: Int = 0): Long =
+    GregorianCalendar(year, month, day, hour, minute, second).timeInMillis
 
 /** Kontingent-Erkennung auf der ddownload-Kontoseite in verschiedenen Layouts. */
 class DdownloadTrafficTest {
@@ -63,8 +69,9 @@ class DdownloadTrafficTest {
 
     @Test
     fun deutschesDatumWirdGelesen() {
-        assertTrue(ddl.parseExpire("2 Dezember 2030") > 0)
-        assertTrue(ddl.pageExpire("Aktiv bis 2 Dezember 2030") > 0)
+        val exp = epoch(2030, Calendar.DECEMBER, 2)
+        assertEquals(exp, ddl.parseExpire("2 Dezember 2030"))
+        assertEquals(exp, ddl.pageExpire("Aktiv bis 2 Dezember 2030"))
     }
 
     @Test
@@ -137,9 +144,9 @@ class DdownloadUltimatePageTest {
     @Test
     fun aktivBisWirdAlsAblaufdatumGelesen() {
         val expire = ddl.pageExpire("Account-Status Ultimate Aktiv bis 2 December 2026 Verfügbare Daten")
-        assertTrue(expire > 0)
+        assertEquals(epoch(2026, Calendar.DECEMBER, 2), expire)
         assertEquals(0L, ddl.pageExpire("Kein Datum hier"))
-        assertTrue(ddl.pageExpire("Premium expire: 05 January 2030") > 0)
+        assertEquals(epoch(2030, Calendar.JANUARY, 5), ddl.pageExpire("Premium expire: 05 January 2030"))
     }
 }
 
@@ -148,10 +155,12 @@ class DdownloadExpireTest {
 
     @Test
     fun verschiedeneDatumsformate() {
-        assertTrue(ddl.parseExpire("2030-01-05 12:00:00") > 0)
-        assertTrue(ddl.parseExpire("2030-01-05") > 0)
-        assertTrue(ddl.parseExpire("05 January 2030") > 0)
-        assertTrue(ddl.parseExpire("1893456000") > 0)
+        val jan5 = epoch(2030, Calendar.JANUARY, 5)
+        assertEquals(epoch(2030, Calendar.JANUARY, 5, 12), ddl.parseExpire("2030-01-05 12:00:00"))
+        assertEquals(jan5, ddl.parseExpire("2030-01-05"))
+        assertEquals(jan5, ddl.parseExpire("05 January 2030"))
+        assertEquals(1893456000000L, ddl.parseExpire("1893456000"))
+        assertEquals(1893456000000L, ddl.parseExpire("1893456000000"))
         assertEquals(0L, ddl.parseExpire(""))
         assertEquals(0L, ddl.parseExpire("null"))
         assertEquals(0L, ddl.parseExpire("irgendwann"))

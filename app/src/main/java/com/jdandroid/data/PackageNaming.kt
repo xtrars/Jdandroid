@@ -11,6 +11,17 @@ import java.util.Locale
  */
 object PackageNaming {
 
+    /**
+     * Sobald Dateinamen bekannt sind, wird ein automatisch benanntes Paket
+     * nach dem gemeinsamen Namensteil benannt - wie im JDownloader.
+     */
+    suspend fun refineAutoName(db: AppDatabase, packageId: Long?) {
+        val id = packageId ?: return
+        val names = db.downloadDao().byPackage(id).mapNotNull { it.fileName }
+        val name = commonName(names) ?: return
+        db.packageDao().refineAutoName(id, name)
+    }
+
     /** Gemeinsamer Namensteil mehrerer Dateinamen, oder null wenn zu kurz. */
     fun commonName(names: List<String>): String? {
         // Archiv-Endungen zuerst entfernen: sonst bliebe vom gemeinsamen

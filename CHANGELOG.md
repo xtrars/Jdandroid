@@ -23,6 +23,14 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 ## [Unveröffentlicht]
 
+_Noch nichts._
+
+## [0.0.5] – 2026-09-04
+
+Ergebnis der ersten Gesamtprüfung (drei Prüfberichte, 41 Funde, davon 32
+nach Verifizierung durch je zwei Skeptiker bestätigt und behoben) sowie der
+Open-Source-Grundausstattung des Repositories.
+
 ### Hinzugefügt
 
 - Projektdokumentation: README neu geschrieben (war seit 1.5.4 leer), Lizenz
@@ -37,9 +45,58 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
   der dazugehörige Prüf-Workflow unter `.claude/workflows/pruefung.js`.
 - Wöchentlicher CI-Lauf (montags 05:00 UTC) zusätzlich zu Push und Pull Request.
 
+- Neue Tests: Dateinamen (`FileNames`), Antwortklassifikation beim Download
+  (`ResponseKind`), Archiv-Set-Logik (`ArchiveSets`), Click'n'Load-Server
+  (Port frei wählbar), DLC-/CnL-Entschlüsselung, Fehlerklassifikation der
+  Hoster, WebLogin-Hostfilter, Paketgruppierung; Migrationstest 7→8 und
+  Kette bis 9. Insgesamt 158 Unit-Tests (vorher 85).
+
 ### Geändert
 
 - In `release/` bleiben nur noch die fünf neuesten APKs.
+- Einstellungen: Passwortliste und Ausschlussliste sind zusammenklappbar
+  (Kopfzeile mit Anzahl der Einträge).
+- Aufräumarbeiten aus der Prüfung: gemeinsames Paket `core` für Meldungen und
+  Größenformatierung (keine Abhängigkeit engine→ui mehr), Dateinamen-Logik in
+  `FileNames`, Archiv-Set-Logik in `ArchiveSets`, Paketaktionen als ein
+  Dienstbefehl statt je Eintrag, entprellter Netzwerk-Callback, toter Code
+  entfernt.
+
+### Behoben
+
+- Archive wurden doppelt entpackt: Der Dienst konnte sich als untätig beenden,
+  während das Entpacken noch lief; die nächste Dienst-Instanz reihte die
+  Einträge neu ein. Prozessweites Register laufender Entpackvorgänge, kein
+  Archiv wird zweimal gestartet.
+- Ein fehlgeschlagener Passwortversuch beim Entpacken löschte den gesamten
+  Paketordner samt Dateien anderer Archive. Jeder Versuch läuft jetzt in einem
+  eigenen Arbeitsordner, erst bei Erfolg wandern die Dateien in den
+  Paketordner.
+- „Entpacken“ aus dem Menü zog noch laufende Teile in das Set; fehlte das
+  erste Volume, blieben die übrigen Teile dauerhaft auf „Entpacken“; ein
+  wartendes Set („Warte auf weitere Archiv-Teile“) wurde nie erneut
+  angestoßen; Fehler aus der nativen RAR-Bibliothek ließen das Set hängen.
+- Pause oder Netzwechsel während des Abschlusses eines Downloads konnte den
+  Eintrag auf „Pausiert“ setzen, obwohl die Datei bereits verschoben war
+  (Neudownload und Duplikat).
+- Pause kappte die Verbindung erst nach dem Lese-Timeout.
+- ddownload: Serverfehler (5xx, 429) beim Auflösen galten als dauerhaft; der
+  Titel-Fallback schnitt Dateinamen am ersten Bindestrich ab; ein 200 mit
+  Dateiinhalt lieferte die Seitenadresse als Direktlink.
+- Rapidgator meldete sich bei jedem vorübergehenden Fehler neu an statt nur
+  bei abgelaufenem Token.
+- 1fichier: Fehlmeldungen wurden fünf Minuten zwischengespeichert; „Premium
+  required“ galt als vorübergehend.
+- Browser-Login: Cookies und WebStorage werden auch bei Abbrechen gelöscht,
+  der Hostfilter gilt auch für eingebettete Ressourcen.
+- „Erneut laden“ im App-Ordner-Modus benannte die Datei in „name (2)“ um;
+  Einträge gelöschter Pakete verschwanden aus der Liste; Schalter „Archiv
+  nach dem Entpacken löschen“ flackerte beim Öffnen.
+
+### Entfernt
+
+- Abschnitt „Letzter Absturz“ in den Einstellungen (der Absturzdialog beim
+  Start bleibt).
 
 ## [0.0.4] – 2026-09-04
 
@@ -433,6 +490,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.5]: https://github.com/xtrars/Jdandroid/commit/d03642a
 [0.0.4]: https://github.com/xtrars/Jdandroid/commit/80abe87
 [0.0.3]: https://github.com/xtrars/Jdandroid/commit/f84d79a
 [0.0.2]: https://github.com/xtrars/Jdandroid/commit/d6fb3c6

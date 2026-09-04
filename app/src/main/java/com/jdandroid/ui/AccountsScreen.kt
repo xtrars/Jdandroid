@@ -70,6 +70,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.jdandroid.core.AppMessages
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.Account
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.Hoster

@@ -1,6 +1,8 @@
 package com.jdandroid.container
 
 import android.util.Log
+import java.net.HttpURLConnection
+import java.net.URL
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoHTTPD.Method
 
@@ -16,7 +18,8 @@ data class CnlRequest(
 )
 
 /**
- * Lokaler Click'n'Load-2-Server auf Port 9666. Browser-Seiten mit
+ * Lokaler Click'n'Load-2-Server auf Port 9666 (Tests: [port] 0 = freier
+ * Port, siehe [NanoHTTPD.getListeningPort]). Browser-Seiten mit
  * "Click'n'Load"-Button senden die (verschlüsselten) Links hierher;
  * sie werden lokal entschlüsselt und über [onRequest] eingereiht.
  *
@@ -25,8 +28,9 @@ data class CnlRequest(
  */
 class ClickNLoadServer(
     private val hostname: String = LOOPBACK,
+    port: Int = PORT,
     private val onRequest: (CnlRequest) -> Unit
-) : NanoHTTPD(hostname, PORT) {
+) : NanoHTTPD(hostname, port) {
 
     override fun serve(session: IHTTPSession): Response {
         var outcome = "ok"
@@ -161,5 +165,22 @@ class ClickNLoadServer(
         private val ADD_PATHS = setOf(
             "/flashgot", "/flash/add", "/flash/addcrypted", "/flash/addcrypted2"
         )
+
+        /**
+         * Selbsttest aus den Einstellungen: fragt wie ein Browser /jdcheck.js
+         * auf Loopback ab und liefert eine Meldung fuer die Anzeige. Blockiert
+         * (Netzwerk), daher nicht auf dem Hauptthread aufrufen.
+         */
+        fun selfTest(port: Int = PORT): String = runCatching {
+            val connection = URL("http://$LOOPBACK:$port/jdcheck.js").openConnection() as HttpURLConnection
+            connection.connectTimeout = 3000
+            connection.readTimeout = 3000
+            try {
+                val code = connection.responseCode
+                if (code in 200..299) "Server antwortet (HTTP $code)." else "Server antwortet mit HTTP $code."
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrElse { "Server nicht erreichbar: ${it.message}" }
     }
 }

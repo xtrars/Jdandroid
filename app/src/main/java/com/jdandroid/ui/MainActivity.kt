@@ -45,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerFiles
+import com.jdandroid.core.AppMessages
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -249,7 +250,7 @@ fun MainScreen(
         AppMessages.events.collect { message ->
             AppMessages.markShown()
             showing?.cancel()
-            showing = launch { messageHost.showSnackbar(message) }
+            showing = launch { messageHost.showSnackbar(JdMessage(message.text, message.kind)) }
         }
     }
     var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }

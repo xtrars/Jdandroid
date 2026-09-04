@@ -3,6 +3,7 @@ package com.jdandroid.hoster
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainApiKey
 import com.jdandroid.data.plainCookies
+import com.jdandroid.engine.FileNames
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
@@ -36,9 +37,6 @@ class DdownloadHoster : Hoster {
     override val webLoginUrl = "https://ddownload.com/login.html"
 
     private val apiBase = "https://api-v2.ddownload.com/api"
-
-    /** Obergrenze fuer als Text gelesene Antworten (HTML-Seiten sind klein). */
-    private val MAX_TEXT_BYTES = 2L * 1024 * 1024
 
     private val siteBase = "https://ddownload.com"
 
@@ -182,7 +180,7 @@ class DdownloadHoster : Hoster {
             // Download-Weiterleitung, ist der Koerper die komplette Datei und
             // .string() sprengt den Heap (OutOfMemoryError).
             val text = if (isTextual(contentType)) {
-                runCatching { resp.peekBody(MAX_TEXT_BYTES).string() }.getOrDefault("")
+                runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("")
             } else {
                 ""
             }
@@ -487,7 +485,7 @@ class DdownloadHoster : Hoster {
         val (code, text) = Http.client.newCall(
             okhttp3.Request.Builder().url("$apiBase/$path?$query")
                 .header("User-Agent", browserUa).build()
-        ).execute().use { it.code to it.peekBody(MAX_TEXT_BYTES).string() }
+        ).execute().use { it.code to it.peekBody(Http.MAX_TEXT_BYTES).string() }
         // Cloudflare-/Fehlerseiten sind kein JSON: voruebergehend, nicht "Konto ungueltig"
         val json = runCatching { org.json.JSONObject(text) }.getOrElse {
             throw HosterException("ddownload-API: keine JSON-Antwort (HTTP $code)", permanent = false)
@@ -530,7 +528,7 @@ class DdownloadHoster : Hoster {
             // Konto mit "Direct Downloads": die Seite leitet sofort zur Datei
             // weiter; der Client ist ihr gefolgt, die Endadresse ist der Link
             if (page.isFile && page.finalUrl.toHttpUrlOrNull()?.host?.lowercase() !in siteHosts) {
-                return@withContext ResolvedLink(page.finalUrl, fileNameFromDisposition(page.contentDisposition))
+                return@withContext ResolvedLink(page.finalUrl, FileNames.fromDisposition(page.contentDisposition))
             }
             checkOffline(page.body)
             // Name von der Dateiseite merken: nach der Weiterleitungskette ist
@@ -586,7 +584,7 @@ class DdownloadHoster : Hoster {
                 }
                 throw HosterException(
                     "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint).",
-                    permanent = !limitReached
+                    permanent = resolveFailurePermanent(page.code, limitReached)
                 )
             }
             val fileName = pageName ?: pageFileName(page.body)
@@ -677,18 +675,6 @@ class DdownloadHoster : Hoster {
         return toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
     }
 
-    /** Dateiname aus Content-Disposition (nur einfache Formen). */
-    private fun fileNameFromDisposition(cd: String?): String? {
-        if (cd.isNullOrBlank()) return null
-        Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
-            runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }.getOrNull()
-                ?.takeIf { it.isNotBlank() }?.let { return it }
-        }
-        return Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)
-            ?.let { (it.groupValues[1].ifEmpty { it.groupValues[2] }).trim() }
-            ?.takeIf { it.isNotBlank() }
-    }
-
     /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
     private fun resolveViaApi(key: String, code: String): ResolvedLink {
         var fileName: String? = null
@@ -777,9 +763,13 @@ class DdownloadHoster : Hoster {
             .map { it.value.trimEnd('\\', '"', '\'', ')').replace("&amp;", "&") }
             .firstOrNull { isFileServerUrl(it) }
 
-    private fun parseDate(s: String): Long = runCatching {
-        SimpleDateFormat("d MMMM yyyy", Locale.US).parse(s.trim())?.time ?: 0L
-    }.getOrDefault(0L)
+    /**
+     * Kein Direktlink: dauerhaft nur ohne Limit-Hinweis und ohne Serverfehler.
+     * 5xx und 429 (Drosselung) sind voruebergehend; checkBlocked() faengt nur
+     * 403/503 ab, alles andere landete sonst endgueltig in FAILED.
+     */
+    internal fun resolveFailurePermanent(code: Int, limitReached: Boolean): Boolean =
+        !limitReached && code !in 500..599 && code != 429
 
     private fun toBytes(value: String, unit: String): Long {
         val n = value.toDoubleOrNull() ?: return -1

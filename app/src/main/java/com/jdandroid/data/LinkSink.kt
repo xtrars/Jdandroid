@@ -3,7 +3,6 @@ package com.jdandroid.data
 import android.content.Context
 import androidx.room.withTransaction
 import com.jdandroid.JdApp
-import com.jdandroid.engine.DownloadService
 import com.jdandroid.hoster.LinkParser
 
 /**
@@ -12,6 +11,14 @@ import com.jdandroid.hoster.LinkParser
  * und überspringt Duplikate.
  */
 object LinkSink {
+
+    /**
+     * Wird nach dem Einreihen mit Sofortstart aufgerufen, damit der
+     * Download-Dienst anlaeuft. Die Datenschicht kennt die Engine nicht;
+     * [com.jdandroid.JdApp] setzt den Aufruf beim Start.
+     */
+    @Volatile
+    var onQueued: (Context) -> Unit = {}
 
     /**
      * Liefert die Anzahl tatsächlich neu hinzugefügter Downloads. Alle Links
@@ -66,7 +73,7 @@ object LinkSink {
             inserted
         }
         if (ids.isEmpty()) return 0
-        if (autoStart) DownloadService.send(context, DownloadService.ACTION_PUMP)
+        if (autoStart) onQueued(context)
         else LinkChecker.schedule(app, ids)
         return ids.size
     }

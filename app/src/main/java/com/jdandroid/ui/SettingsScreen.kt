@@ -79,7 +79,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
     val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
-    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = false)
+    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = true)
     val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
     val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
     val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
@@ -332,16 +332,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     TextButton(onClick = {
                         cnlTest = "Teste …"
                         scope.launch {
-                            cnlTest = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val req = okhttp3.Request.Builder()
-                                        .url("http://127.0.0.1:${ClickNLoadServer.PORT}/jdcheck.js").build()
-                                    com.jdandroid.hoster.Http.client.newCall(req).execute().use { r ->
-                                        if (r.isSuccessful) "Server antwortet (HTTP ${r.code})."
-                                        else "Server antwortet mit HTTP ${r.code}."
-                                    }
-                                }.getOrElse { "Server nicht erreichbar: ${it.message}" }
-                            }
+                            cnlTest = withContext(Dispatchers.IO) { ClickNLoadServer.selfTest() }
                         }
                     }) { Text("Verbindung testen") }
                     cnlTest?.let {

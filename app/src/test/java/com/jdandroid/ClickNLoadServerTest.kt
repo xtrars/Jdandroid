@@ -2,6 +2,7 @@ package com.jdandroid
 
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlRequest
+import com.jdandroid.container.CnlStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -10,9 +11,11 @@ import org.junit.Before
 import org.junit.Test
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Base64
+import java.util.concurrent.CopyOnWriteArrayList
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -24,13 +27,15 @@ import javax.crypto.spec.SecretKeySpec
 class ClickNLoadServerTest {
 
     private lateinit var server: ClickNLoadServer
-    private val received = mutableListOf<CnlRequest>()
+    // Der Server-Thread schreibt hinein, der Testthread liest: thread-sicher halten
+    private val received = CopyOnWriteArrayList<CnlRequest>()
     private var port = 0
 
     @Before
     fun start() {
-        server = ClickNLoadServer { request -> received.add(request) }
-        // Testport statt 9666, damit der Test nicht mit einer laufenden App kollidiert
+        // Port 0 = freier Port statt 9666, damit der Test nicht mit einer
+        // laufenden App oder einem parallelen Testlauf kollidiert
+        server = ClickNLoadServer(port = 0) { request -> received.add(request) }
         server.start(5000, true)
         port = server.listeningPort
     }
@@ -38,6 +43,33 @@ class ClickNLoadServerTest {
     @After
     fun stop() {
         server.stop()
+    }
+
+    @Test
+    fun testserverBelegtFreienPortStatt9666() {
+        assertTrue("Port muss vergeben sein", port > 0)
+        assertTrue("Port darf nicht der feste App-Port sein", port != ClickNLoadServer.PORT)
+        // Ein zweiter Server (paralleler Testlauf) muss gleichzeitig starten koennen
+        val second = ClickNLoadServer(port = 0) { }
+        try {
+            second.start(5000, true)
+            assertTrue(second.listeningPort > 0)
+            assertTrue(second.listeningPort != port)
+            assertEquals("Server antwortet (HTTP 200).", ClickNLoadServer.selfTest(second.listeningPort))
+        } finally {
+            second.stop()
+        }
+    }
+
+    @Test
+    fun selbsttestErreichtLaufendenServer() {
+        assertEquals("Server antwortet (HTTP 200).", ClickNLoadServer.selfTest(port))
+    }
+
+    @Test
+    fun selbsttestMeldetFehlendenServer() {
+        val closed = java.net.ServerSocket(0).use { it.localPort }
+        assertTrue(ClickNLoadServer.selfTest(closed).startsWith("Server nicht erreichbar"))
     }
 
     private class Reply(val code: Int, val body: String, val headers: Map<String, List<String>>)
@@ -183,5 +215,78 @@ class ClickNLoadServerTest {
         // daher hier nur pruefen, dass der Server ueberhaupt einen Origin freigibt
         assertNotNull(reply.headers["access-control-allow-origin"])
         assertNotNull(reply.headers["access-control-allow-methods"])
+    }
+
+    @Test
+    fun dlcContainerLaeuftUeberDenDlcPfad() {
+        // /flash/addcrypted ohne jk = kompletter DLC-Container. Ein zu kurzer
+        // Container wird vor jedem Netzzugriff abgelehnt; die Statuszeile
+        // belegt, dass der DLC-Zweig (nicht CnL 2) gewaehlt wurde.
+        val reply = request("/flash/addcrypted", "crypted=${enc("QUJDREVGRw==")}")
+        assertEquals(400, reply.code)
+        assertTrue(reply.body.contains("failed"))
+        assertTrue(received.isEmpty())
+        val status = CnlStatus.lastRequest.value.orEmpty()
+        assertTrue("Statuszeile: $status", status.contains("/flash/addcrypted") && status.contains("DLC"))
+    }
+
+    @Test
+    fun zuGrosserKoerperWirdMit413Abgelehnt() {
+        // Der Server darf einen angekuendigten 3-MiB-Koerper gar nicht erst
+        // lesen (OOM-Schutz), sondern sofort mit 413 antworten.
+        val length = 3L * 1024 * 1024
+        assertTrue(length > ClickNLoadServer.MAX_BODY_BYTES)
+        val statusLine = Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = 5000
+            socket.getOutputStream().write(
+                ("POST /flash/addcrypted2 HTTP/1.1\r\n" +
+                    "Host: 127.0.0.1:$port\r\n" +
+                    "Content-Type: application/x-www-form-urlencoded\r\n" +
+                    "Content-Length: $length\r\n" +
+                    "Connection: close\r\n\r\n").toByteArray()
+            )
+            socket.getOutputStream().flush()
+            socket.getInputStream().bufferedReader().readText()
+        }
+        assertTrue("Antwort: $statusLine", statusLine.startsWith("HTTP/1.1 413"))
+        assertTrue(statusLine.contains("failed"))
+        assertTrue(received.isEmpty())
+    }
+
+    @Test
+    fun passwortlisteWirdAufMaximumGekappt() {
+        val passwords = (1..60).joinToString("\n") { "pw$it" }
+        val body = "crypted=${enc(encrypt("https://rapidgator.net/file/aaa111/x.rar"))}&jk=${enc(jk)}" +
+            "&passwords=${enc(passwords)}"
+        val reply = request("/flash/addcrypted2", body)
+
+        assertEquals(200, reply.code)
+        val req = received.single()
+        assertEquals(ClickNLoadServer.MAX_PASSWORDS, req.passwords.size)
+        assertEquals((1..ClickNLoadServer.MAX_PASSWORDS).map { "pw$it" }, req.passwords)
+    }
+
+    @Test
+    fun refererDientAlsQuelleWennSourceFehlt() {
+        val body = "crypted=${enc(encrypt("https://rapidgator.net/file/aaa111/x.rar"))}&jk=${enc(jk)}"
+        val reply = request(
+            "/flash/addcrypted2", body,
+            headers = mapOf("Referer" to "https://www.example.org/thread/42")
+        )
+        assertEquals(200, reply.code)
+        assertEquals("https://www.example.org/thread/42", received.single().source)
+    }
+
+    @Test
+    fun getMitUrlsParameterWirdUebernommen() {
+        // Aeltere Seiten schicken die Links als GET-Parameter statt im Formular
+        val urls = "https://1fichier.com/?abc123\nhttps://rg.to/file/dd44/y.zip"
+        val reply = request("/flash/add?urls=${enc(urls)}")
+        assertEquals(200, reply.code)
+        assertTrue(reply.body.contains("success"))
+        assertEquals(
+            listOf("https://1fichier.com/?abc123", "https://rg.to/file/dd44/y.zip"),
+            received.single().urls
+        )
     }
 }

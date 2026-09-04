@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
 import com.jdandroid.JdApp
+import com.jdandroid.engine.FileNames
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -36,11 +37,11 @@ object LinkChecker {
                         null
                     }
                     when (result?.online) {
-                        true -> dao.applyCheck(id, OnlineState.ONLINE, null, result.fileName?.let { sanitize(it) }, result.fileSize)
+                        true -> dao.applyCheck(id, OnlineState.ONLINE, null, result.fileName?.let { FileNames.sanitize(it) }, result.fileSize)
                         false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: "Datei offline", null, -1)
                         null -> dao.applyCheck(id, OnlineState.UNKNOWN, result?.note ?: "Prüfung nicht möglich", null, -1)
                     }
-                    if (result?.online == true) refinePackageName(app, item.packageId)
+                    if (result?.online == true) PackageNaming.refineAutoName(app.db, item.packageId)
                 }
             }
         }
@@ -56,13 +57,4 @@ object LinkChecker {
         }
     }
 
-    private suspend fun refinePackageName(app: JdApp, packageId: Long?) {
-        val id = packageId ?: return
-        val names = app.db.downloadDao().byPackage(id).mapNotNull { it.fileName }
-        val name = PackageNaming.commonName(names) ?: return
-        app.db.packageDao().refineAutoName(id, name)
-    }
-
-    private fun sanitize(name: String): String =
-        name.replace(Regex("""[/\\:*?"<>|]"""), "_").trim().trimStart('.').ifBlank { "download.bin" }
 }

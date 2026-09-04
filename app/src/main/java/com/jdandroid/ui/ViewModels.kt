@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.container.ContainerFiles
+import com.jdandroid.core.AppMessages
 import com.jdandroid.data.Account
 import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
@@ -50,6 +51,25 @@ data class DownloadGroup(
         .maxOfOrNull { it.extractProgress } ?: -1
 }
 
+/**
+ * Gruppiert Eintraege nach Paketen. Eintraege ohne Paket (aeltere Versionen)
+ * oder mit einem nicht mehr vorhandenen Paket landen unter "Ohne Paket" -
+ * sonst waeren sie in keiner Gruppe und damit unsichtbar.
+ */
+internal fun groupDownloads(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
+    val byPackage = items.groupBy { it.packageId }
+    val known = packages.mapNotNull { pkg ->
+        byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
+    }
+    val packageIds = packages.map { it.id }.toSet()
+    val loose = items.filter { it.packageId !in packageIds }
+    return if (loose.isEmpty()) known
+    else known + DownloadGroup(
+        DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
+        loose
+    )
+}
+
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val jdApp = app as JdApp
@@ -57,30 +77,16 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val packageDao = jdApp.db.packageDao()
 
-    private fun grouped(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
-        val byPackage = items.groupBy { it.packageId }
-        val known = packages.mapNotNull { pkg ->
-            byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
-        }
-        // Eintraege ohne Paket (aus aelteren Versionen) sammeln
-        val loose = byPackage[null].orEmpty()
-        return if (loose.isEmpty()) known
-        else known + DownloadGroup(
-            DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
-            loose
-        )
-    }
-
     /** Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im JDownloader. */
     val groups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
-            grouped(items.filter { it.status != DownloadStatus.COLLECTED }, packages)
+            groupDownloads(items.filter { it.status != DownloadStatus.COLLECTED }, packages)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Linksammler: noch nicht gestartete Links nach Paketen. */
     val collectorGroups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
-            grouped(items.filter { it.status == DownloadStatus.COLLECTED }, packages)
+            groupDownloads(items.filter { it.status == DownloadStatus.COLLECTED }, packages)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startCollectedPackage(packageId: Long) {
@@ -112,11 +118,18 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deletePackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.byPackage(packageId).forEach { item ->
-                if (item.status == DownloadStatus.COLLECTED) dao.delete(item.id)
-                else DownloadService.send(getApplication(), DownloadService.ACTION_DELETE, item.id)
+            // Linksammler-Eintraege haben nichts auf der Platte: direkt loeschen,
+            // ohne den Download-Dienst zu starten
+            val items = dao.byPackage(packageId)
+            items.filter { it.status == DownloadStatus.COLLECTED }.forEach { dao.delete(it.id) }
+            if (items.any { it.status != DownloadStatus.COLLECTED }) {
+                // Ein Aufruf fuer das ganze Paket: der Dienst loescht erst die
+                // Eintraege (Jobs, Dateien) und dann die Paketzeile - so bleiben
+                // keine verwaisten Eintraege zurueck
+                DownloadService.send(getApplication(), DownloadService.ACTION_DELETE_PACKAGE, packageId)
+            } else {
+                packageDao.delete(packageId)
             }
-            packageDao.delete(packageId)
         }
     }
 
@@ -129,13 +142,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun pausePackage(packageId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            dao.byPackage(packageId).forEach { item ->
-                DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE, item.id)
-            }
-        }
-    }
+    fun pausePackage(packageId: Long) =
+        DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE_PACKAGE, packageId)
 
     /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
     fun addLinks(

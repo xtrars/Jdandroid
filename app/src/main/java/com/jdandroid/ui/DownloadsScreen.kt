@@ -65,11 +65,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.engine.Extractor
 import com.jdandroid.hoster.HosterRegistry
-import java.util.Locale
 
 /** Ziffern mit fester Breite, damit Zahlen beim Aktualisieren nicht springen. */
 private const val TABULAR = "tnum"
@@ -93,22 +93,6 @@ fun ConfirmDeleteDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } }
     )
-}
-
-/**
- * Binaere Einheiten mit korrekter Beschriftung (1 MiB = 1.048.576 Byte),
- * wie im JDownloader. Vorher stand "MB" an einem 1024er-Wert.
- */
-fun formatBytes(bytes: Long): String {
-    if (bytes < 0) return "?"
-    val units = listOf("B", "KiB", "MiB", "GiB", "TiB")
-    var value = bytes.toDouble()
-    var unit = 0
-    while (value >= 1024 && unit < units.lastIndex) {
-        value /= 1024
-        unit++
-    }
-    return String.format(Locale.GERMANY, "%.1f %s", value, units[unit])
 }
 
 /** Filter der Download-Liste (V5). */

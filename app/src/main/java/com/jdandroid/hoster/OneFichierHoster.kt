@@ -62,7 +62,7 @@ class OneFichierHoster : Hoster {
             .build()
         val (code, text) = Http.client.newCall(request).execute().use { resp ->
             if (resp.body == null) throw HosterException("Leere Antwort von 1fichier")
-            // begrenzt lesen, siehe Http.get
+            // begrenzt lesen, siehe Http.MAX_TEXT_BYTES
             resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
         val json = runCatching { JSONObject(text) }.getOrNull()
@@ -82,21 +82,30 @@ class OneFichierHoster : Hoster {
             throw HosterException("1fichier: ${msg ?: "Zugriff blockiert (HTTP 403)"}", permanent = false)
         }
         if (json == null) throw HosterException("1fichier: unerwartete Antwort (HTTP $code)", permanent = false)
-        if (json.optString("status") == "KO") {
-            val m = msg ?: "Unbekannter Fehler"
-            if (m.contains("Not authenticated", true)) throw AuthException("1fichier: $m")
-            // Flood/Rate-Limit ist voruebergehend; fehlende/geloeschte Datei permanent
-            val transient = m.contains("Flood", true) || m.contains("try again", true)
-            val permanent = !transient && (
-                m.contains("not found", true) ||
-                    m.contains("deleted", true) ||
-                    m.contains("no such", true) ||
-                    m.contains("not allowed", true) ||
-                    m.contains("Resource not", true)
-            )
-            throw HosterException("1fichier: $m", permanent = permanent)
-        }
+        if (json.optString("status") == "KO") throw koFailure(msg)
         return json
+    }
+
+    /**
+     * Einordnung einer API-Antwort mit status=KO. Flood/Rate-Limit ist
+     * voruebergehend; fehlende/geloeschte Datei und fehlendes Premium/Access
+     * ("You must be a Premium/Access user") sind permanent - ein Free-Konto
+     * kommt auch nach fuenf Versuchen nicht durch.
+     */
+    internal fun koFailure(message: String?): HosterException {
+        val m = message?.ifBlank { null } ?: "Unbekannter Fehler"
+        if (m.contains("Not authenticated", true)) return AuthException("1fichier: $m")
+        val transient = m.contains("Flood", true) || m.contains("try again", true)
+        val permanent = !transient && (
+            m.contains("not found", true) ||
+                m.contains("deleted", true) ||
+                m.contains("no such", true) ||
+                m.contains("not allowed", true) ||
+                m.contains("Resource not", true) ||
+                m.contains("premium", true) ||
+                m.contains("must be", true)
+        )
+        return HosterException("1fichier: $m", permanent = permanent)
     }
 
     /**

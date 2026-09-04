@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.OnlineState
 import com.jdandroid.hoster.HosterRegistry

@@ -28,18 +28,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import com.jdandroid.core.MessageKind
 
 /**
- * Meldungen an den Nutzer ("DLC wird importiert", "3 Links übernommen",
- * Fehler beim Speichern eines Kontos) laufen ueber einen zentralen Kanal
- * und werden in der MainActivity ueber der Navigationsleiste angezeigt -
- * unabhaengig davon, welcher Tab gerade offen ist. Die Darstellung folgt
- * der App-Palette (im Dunkelmodus dunkel) statt der Standard-Snackbar.
+ * Darstellung der Meldungen aus [com.jdandroid.core.AppMessages] in der
+ * MainActivity ueber der Navigationsleiste - unabhaengig davon, welcher Tab
+ * gerade offen ist. Die Darstellung folgt der App-Palette (im Dunkelmodus
+ * dunkel) statt der Standard-Snackbar.
  */
-enum class MessageKind { INFO, PROGRESS, SUCCESS, ERROR }
-
 data class JdMessage(
     override val message: String,
     val kind: MessageKind = MessageKind.INFO,
@@ -51,25 +47,6 @@ data class JdMessage(
     },
     override val withDismissAction: Boolean = kind == MessageKind.ERROR
 ) : SnackbarVisuals
-
-object AppMessages {
-    // replay = 1: eine Meldung, die vor dem Aufbau der Oberflaeche entsteht
-    // (z.B. "keine DLC-Datei" beim Kaltstart per Intent), geht nicht verloren.
-    private val _events = MutableSharedFlow<JdMessage>(replay = 1, extraBufferCapacity = 16)
-    val events: SharedFlow<JdMessage> = _events
-
-    /** Nach der Anzeige aufrufen, damit die Meldung nicht erneut erscheint. */
-    fun markShown() = _events.resetReplayCache()
-
-    fun post(text: String, kind: MessageKind = MessageKind.INFO) {
-        _events.tryEmit(JdMessage(text, kind))
-    }
-
-    fun info(text: String) = post(text, MessageKind.INFO)
-    fun progress(text: String) = post(text, MessageKind.PROGRESS)
-    fun success(text: String) = post(text, MessageKind.SUCCESS)
-    fun error(text: String) = post(text, MessageKind.ERROR)
-}
 
 /** Anzeige der Meldungen: Karte in Flaechenfarbe mit Symbol je Art. */
 @Composable

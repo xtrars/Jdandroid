@@ -34,7 +34,7 @@ class RapidgatorHoster : Hoster {
 
     /**
      * API-Aufruf per POST mit Formular-Body: Zugangsdaten und Token gehoeren
-     * nicht in die URL (Proxy-/Server-Logs). Antwort begrenzt lesen wie Http.get.
+     * nicht in die URL (Proxy-/Server-Logs). Antwort begrenzt lesen (Http.MAX_TEXT_BYTES).
      */
     private fun post(url: String, form: Map<String, String>): String {
         val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
@@ -57,26 +57,38 @@ class RapidgatorHoster : Hoster {
     }
 
     /**
+     * Abgelaufene Session (401 ausserhalb des Logins): der einzige Fehler, bei
+     * dem ein erneuter Login sinnvoll ist. Alle anderen voruebergehenden Fehler
+     * (Sperren, 5xx) werden ohne Neuanmeldung weitergereicht, damit Loginzaehler
+     * und Parallel-Session-Limit nicht unnoetig belastet werden.
+     */
+    internal class TokenExpired(message: String) : HosterException(message, permanent = false)
+
+    /**
      * Fehler aus einer API-Antwort mit status != 200 werfen.
      * [loginCall]: 401 beim Login heisst falsches Passwort/2FA - permanent,
      * damit weder Engine noch Kontopruefung in eine Login-Schleife laufen.
-     * Bei anderen Aufrufen ist 401 ein abgelaufener Token und nach erneutem
-     * Login behebbar, daher nicht permanent.
+     * Bei anderen Aufrufen ist 401 ein abgelaufener Token ([TokenExpired]),
+     * nach erneutem Login behebbar, daher nicht permanent.
      */
-    private fun fail(json: JSONObject, loginCall: Boolean): Nothing {
-        val status = json.optInt("status")
-        val details = json.optString("details").ifBlank { "HTTP $status" }
+    private fun fail(json: JSONObject, loginCall: Boolean): Nothing =
+        throw failure(json.optInt("status"), json.optString("details"), loginCall)
+
+    /** Einordnung eines API-Fehlers; getrennt von JSON, damit sie auf der JVM testbar ist. */
+    internal fun failure(status: Int, details: String, loginCall: Boolean): HosterException {
+        val text = details.ifBlank { "HTTP $status" }
+        if (status == 401 && !loginCall) return TokenExpired("Rapidgator: $text")
         // Rapidgator meldet unter 403 auch Tageslimit, IP-Sperre und
         // Parallel-Limit - alles voruebergehend. Dauerhaft sind nur falsche
         // Zugangsdaten (401 beim Login), fehlende Datei (404) und fehlendes
         // Premium (402), sofern der Text nichts anderes sagt.
-        val transient = details.contains("traffic", true) ||
-            details.contains("limit", true) ||
-            details.contains("Denied by IP", true) ||
-            details.contains("Session", true) ||
+        val transient = text.contains("traffic", true) ||
+            text.contains("limit", true) ||
+            text.contains("Denied by IP", true) ||
+            text.contains("Session", true) ||
             status in 500..599
         val permanent = !transient && (status in listOf(402, 404) || (loginCall && status == 401))
-        throw HosterException("Rapidgator: $details", permanent = permanent)
+        return HosterException("Rapidgator: $text", permanent = permanent)
     }
 
     /** Logins pro Konto serialisieren: parallele Downloads sollen eine Session teilen. */
@@ -164,15 +176,17 @@ class RapidgatorHoster : Hoster {
             }
             try {
                 query(token)
-            } catch (e: HosterException) {
-                if (e.permanent) return@withContext LinkInfo(online = false, note = e.message)
-                // Token abgelaufen: einmal neu anmelden und die Pruefung wiederholen
+            } catch (e: TokenExpired) {
+                // Nur bei abgelaufenem Token einmal neu anmelden und die Pruefung
+                // wiederholen; Sperren und Serverfehler kosten keinen Login.
                 tokens.remove(account.id)
                 val fresh = runCatching { tokenFor(account) }
                     .getOrElse { return@withContext LinkInfo(online = null, note = it.message) }
                 runCatching { query(fresh) }.getOrElse {
                     LinkInfo(online = if (it is HosterException && it.permanent) false else null, note = it.message)
                 }
+            } catch (e: HosterException) {
+                LinkInfo(online = if (e.permanent) false else null, note = e.message)
             }
         }
 
@@ -201,17 +215,15 @@ class RapidgatorHoster : Hoster {
                     hash = info?.optString("hash")?.lowercase()?.takeIf { it.length == 32 }
                 )
             }
-            // Nur wenn file/download mit einem vorhandenen Token scheitert
-            // (Token abgelaufen), einmal neu anmelden. Schlaegt der Login selbst
-            // fehl, wird der Fehler direkt weitergereicht - kein Login-Loop.
+            // Nur wenn file/download mit einem vorhandenen Token an einer
+            // abgelaufenen Session scheitert, einmal neu anmelden. Sperren (403),
+            // Serverfehler und permanente Fehler gehen direkt weiter - kein
+            // Login-Loop, kein Login pro Sperr-/Serverfehler.
             val cached = tokens[account.id]
             if (cached != null) {
                 try {
                     return@withContext attempt(cached)
-                } catch (e: HosterException) {
-                    // Bei permanenten Fehlern (Datei offline, kein Premium) ist ein
-                    // erneuter Login sinnlos
-                    if (e.permanent) throw e
+                } catch (e: TokenExpired) {
                     tokens.remove(account.id)
                 }
             }
