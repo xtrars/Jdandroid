@@ -486,8 +486,9 @@ class DownloadEngine(
                 "${root.name ?: "Zielordner"}/$base"
             } else dir.absolutePath
         }
-        val export = app.settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
-        if (!export) return dir.absolutePath
+        // Direkter SDK_INT-Vergleich statt Hilfsvariable: Lint (AGP 8.13) erkennt
+        // den Versions-Guard sonst nicht und meldet NewApi fuer MediaStore.Downloads.
+        if (!app.settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return dir.absolutePath
         val resolver = context.contentResolver
         var allOk = true
         dir.walkTopDown().filter { it.isFile }.forEach { file ->
