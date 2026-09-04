@@ -103,4 +103,27 @@ class ExtractorTest {
             Extractor.archiveBase(Extractor.repairName("Download 9d099111 9f5e 4499 9d3a 2bc366e406cf part2 rar"))
         )
     }
+
+    @Test
+    fun ausschlussmusterWieImJDownloader() {
+        val ex = listOf("*.nfo", "*sample*", "proof/*")
+        assertTrue(Extractor.isExcluded("info.NFO", ex))
+        assertTrue(Extractor.isExcluded("Serie/Sample/s01e01.mkv", ex))
+        assertTrue(Extractor.isExcluded("proof/bild.jpg", ex))
+        assertFalse(Extractor.isExcluded("Serie/s01e01.mkv", ex))
+        assertFalse(Extractor.isExcluded("film.mkv", emptyList()))
+    }
+
+    @Test
+    fun ausgeschlosseneDateienWerdenNichtEntpackt() {
+        val src = tmp.newFolder("src-ex")
+        val film = File(src, "film.mkv").apply { writeText("video") }
+        val nfo = File(src, "info.nfo").apply { writeText("text") }
+        val zip = File(tmp.root, "ex.zip")
+        ZipFile(zip).apply { addFile(film); addFile(nfo) }
+        val dest = tmp.newFolder("out-ex")
+        Extractor.extract(zip, dest, emptyList(), listOf("*.nfo"))
+        assertTrue(File(dest, "film.mkv").exists())
+        assertFalse(File(dest, "info.nfo").exists())
+    }
 }

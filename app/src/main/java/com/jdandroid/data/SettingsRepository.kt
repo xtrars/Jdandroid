@@ -39,6 +39,7 @@ class SettingsRepository(private val context: Context) {
     private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
     private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
+    private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
     private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
     private val keyWifiOnly = booleanPreferencesKey("wifi_only")
@@ -66,6 +67,30 @@ class SettingsRepository(private val context: Context) {
     /** Passwortliste, ein Passwort pro Zeile. */
     val passwordList: Flow<String> =
         prefs.map { it[keyPasswords] ?: "" }
+
+    /** Vom Entpacken ausgeschlossene Dateien (Muster mit * und ?), eines pro Zeile. */
+    val extractExcludeList: Flow<String> =
+        prefs.map { it[keyExtractExcludes] ?: "" }
+
+    suspend fun currentExtractExcludes(): List<String> =
+        extractExcludeList.first().lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+    suspend fun addExtractExcludes(patterns: List<String>) {
+        val fresh = patterns.map { it.trim() }.filter { it.isNotEmpty() }
+        if (fresh.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val existing = (prefs[keyExtractExcludes] ?: "").lines().map { it.trim() }.filter { it.isNotEmpty() }
+            prefs[keyExtractExcludes] = (existing + fresh).distinct().joinToString("\n")
+        }
+    }
+
+    suspend fun removeExtractExclude(pattern: String) {
+        context.dataStore.edit { prefs ->
+            val remaining = (prefs[keyExtractExcludes] ?: "").lines()
+                .map { it.trim() }.filter { it.isNotEmpty() && it != pattern }
+            prefs[keyExtractExcludes] = remaining.joinToString("\n")
+        }
+    }
 
     /** Globales Download-Limit in KB/s, 0 = unbegrenzt. */
     val speedLimitKbps: Flow<Int> =

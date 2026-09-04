@@ -123,7 +123,38 @@ object Extractor {
      * alle Eintraege aus [passwords]. Liefert das verwendete Passwort (oder
      * null bei unverschluesseltem Archiv), wirft [IOException] wenn nichts passt.
      */
-    fun extract(archive: File, destDir: File, passwords: List<String>): String? {
+    /**
+     * Ausschlussmuster wie im JDownloader ("*.nfo", "*sample*", "proof/…"):
+     * * steht fuer beliebig viele Zeichen, ? fuer eines; Vergleich ohne
+     * Beachtung der Gross-/Kleinschreibung, gegen den Dateinamen und den
+     * vollstaendigen Pfad im Archiv.
+     */
+    fun isExcluded(entryPath: String, patterns: List<String>): Boolean {
+        if (patterns.isEmpty()) return false
+        val path = entryPath.replace('\\', '/').trimStart('/')
+        val name = path.substringAfterLast('/')
+        return patterns.any { pattern ->
+            val p = pattern.trim()
+            if (p.isEmpty()) return@any false
+            val regex = buildString {
+                for (c in p) {
+                    when (c) {
+                        '*' -> append(".*")
+                        '?' -> append('.')
+                        else -> append(Regex.escape(c.toString()))
+                    }
+                }
+            }.toRegex(RegexOption.IGNORE_CASE)
+            regex.matches(name) || regex.matches(path)
+        }
+    }
+
+    fun extract(
+        archive: File,
+        destDir: File,
+        passwords: List<String>,
+        excludes: List<String> = emptyList()
+    ): String? {
         destDir.mkdirs()
         val candidates = listOf<String?>(null) + passwords.filter { it.isNotBlank() }
         var lastError: Exception? = null
@@ -131,10 +162,10 @@ object Extractor {
             try {
                 val lower = archive.name.lowercase()
                 when {
-                    lower.endsWith(".zip") -> extractZip(archive, destDir, password)
+                    lower.endsWith(".zip") -> extractZip(archive, destDir, password, excludes)
                     lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
-                        extractSevenZip(archive, destDir, password)
-                    lower.endsWith(".rar") -> extractRar(archive, destDir, password)
+                        extractSevenZip(archive, destDir, password, excludes)
+                    lower.endsWith(".rar") -> extractRar(archive, destDir, password, excludes)
                     else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
                 }
                 return password
@@ -149,7 +180,7 @@ object Extractor {
         )
     }
 
-    private fun extractZip(archive: File, destDir: File, password: String?) {
+    private fun extractZip(archive: File, destDir: File, password: String?, excludes: List<String>) {
         val zip = ZipFile(archive)
         if (zip.isEncrypted) {
             if (password == null) throw ZipException("Passwort erforderlich")
@@ -158,7 +189,16 @@ object Extractor {
             // unverschluesselt wurde bereits im ersten Durchlauf probiert
             throw ZipException("Kein Passwort nötig")
         }
-        zip.extractAll(destDir.absolutePath)
+        if (excludes.isEmpty()) {
+            zip.extractAll(destDir.absolutePath)
+            return
+        }
+        for (header in zip.fileHeaders) {
+            if (header.isDirectory) continue
+            if (isExcluded(header.fileName, excludes)) continue
+            safeChild(destDir, header.fileName)
+            zip.extractFile(header, destDir.absolutePath)
+        }
     }
 
     /** Alle Volumes eines mehrteiligen 7z (.7z.001, .7z.002 ...) in Reihenfolge. */
@@ -174,7 +214,7 @@ object Extractor {
             ?: listOf(archive)
     }
 
-    private fun extractSevenZip(archive: File, destDir: File, password: String?) {
+    private fun extractSevenZip(archive: File, destDir: File, password: String?, excludes: List<String>) {
         val volumes = sevenZVolumes(archive)
         val builder = SevenZFile.builder()
         if (volumes.size > 1) {
@@ -187,6 +227,7 @@ object Extractor {
         builder.get().use { sevenZ ->
             while (true) {
                 val entry = sevenZ.nextEntry ?: break
+                if (isExcluded(entry.name, excludes)) continue
                 val out = safeChild(destDir, entry.name)
                 if (entry.isDirectory) {
                     out.mkdirs()
@@ -209,7 +250,7 @@ object Extractor {
      * RAR ueber das native 7-Zip-Binding: unterstuetzt RAR4 und RAR5,
      * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
      */
-    private fun extractRar(archive: File, destDir: File, password: String?) {
+    private fun extractRar(archive: File, destDir: File, password: String?, excludes: List<String>) {
         ensureSevenZip()
         val openCallback = RarOpenCallback(archive, password)
         RandomAccessFile(archive, "r").use { raf ->
@@ -219,6 +260,7 @@ object Extractor {
             try {
                 for (item in inArchive.simpleInterface.archiveItems) {
                     val path = item.path ?: continue
+                    if (isExcluded(path, excludes)) continue
                     val out = safeChild(destDir, path)
                     if (item.isFolder) {
                         out.mkdirs()

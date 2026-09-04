@@ -80,6 +80,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
     val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
     val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
+    val excludeText by settings.extractExcludeList.collectAsStateWithLifecycle(initialValue = "")
+    val excludes = remember(excludeText) {
+        excludeText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    }
     val passwordText by settings.passwordList.collectAsStateWithLifecycle(initialValue = "")
     val passwords = remember(passwordText) {
         passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -251,10 +255,33 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
             )
             Spacer(Modifier.height(12.dp))
-            PasswordListEditor(
-                passwords = passwords,
+            StringListEditor(
+                title = "Passwortliste",
+                description = "Beim Entpacken werden alle Passwörter der Reihe nach ausprobiert. " +
+                    "Passwörter aus Click'n'Load werden automatisch ergänzt.",
+                emptyText = "Noch keine Passwörter.",
+                fieldLabel = "Neues Passwort",
+                importTitle = "Passwörter einfügen",
+                importPlaceholder = "Ein Passwort pro Zeile",
+                removeDescription = "Passwort entfernen",
+                items = passwords,
                 onAdd = { list -> scope.launch { settings.addPasswords(list) } },
                 onRemove = { pw -> scope.launch { settings.removePassword(pw) } }
+            )
+            Spacer(Modifier.height(16.dp))
+            StringListEditor(
+                title = "Vom Entpacken ausschließen",
+                description = "Dateien im Archiv, die zu diesen Mustern passen, werden nicht " +
+                    "entpackt (wie im JDownloader). * steht für beliebige Zeichen, ? für " +
+                    "eines, z.B. *.nfo, *.sfv, *sample*, proof/*",
+                emptyText = "Keine Ausschlüsse – alles wird entpackt.",
+                fieldLabel = "Neues Muster",
+                importTitle = "Muster einfügen",
+                importPlaceholder = "Ein Muster pro Zeile",
+                removeDescription = "Muster entfernen",
+                items = excludes,
+                onAdd = { list -> scope.launch { settings.addExtractExcludes(list) } },
+                onRemove = { pattern -> scope.launch { settings.removeExtractExclude(pattern) } }
             )
 
             Spacer(Modifier.height(16.dp))
@@ -361,28 +388,32 @@ private fun displayTree(uri: String): String {
 }
 
 /**
- * Passwortliste als echte Liste (V4): ein Eintrag pro Zeile mit Loeschen,
- * neues Passwort per Feld, Sammel-Import fuer mehrere Zeilen.
+ * Textliste (Passwoerter, Ausschlussmuster): ein Eintrag pro Zeile mit
+ * Loeschen, neuer Eintrag per Feld, Sammel-Import fuer mehrere Zeilen.
  */
 @Composable
-private fun PasswordListEditor(
-    passwords: List<String>,
+private fun StringListEditor(
+    title: String,
+    description: String,
+    emptyText: String,
+    fieldLabel: String,
+    importTitle: String,
+    importPlaceholder: String,
+    removeDescription: String,
+    items: List<String>,
     onAdd: (List<String>) -> Unit,
     onRemove: (String) -> Unit
 ) {
+    val passwords = items
     var newPassword by rememberSaveable { mutableStateOf("") }
     var importOpen by rememberSaveable { mutableStateOf(false) }
 
-    Text("Passwortliste", style = MaterialTheme.typography.titleSmall)
-    Text(
-        "Beim Entpacken werden alle Passwörter der Reihe nach ausprobiert. " +
-            "Passwörter aus Click'n'Load werden automatisch ergänzt.",
-        style = MaterialTheme.typography.bodySmall
-    )
+    Text(title, style = MaterialTheme.typography.titleSmall)
+    Text(description, style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
     if (passwords.isEmpty()) {
         Text(
-            "Noch keine Passwörter.",
+            emptyText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -400,7 +431,7 @@ private fun PasswordListEditor(
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { onRemove(pw) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Passwort entfernen")
+                            Icon(Icons.Default.Delete, contentDescription = removeDescription)
                         }
                     }
                     if (index < passwords.lastIndex) HorizontalDivider()
@@ -413,7 +444,7 @@ private fun PasswordListEditor(
         OutlinedTextField(
             value = newPassword,
             onValueChange = { newPassword = it },
-            label = { Text("Neues Passwort") },
+            label = { Text(fieldLabel) },
             singleLine = true,
             // Wie die Browser-Adresszeile: keine Autokorrektur, kein
             // automatisches Leerzeichen nach einem Punkt.
@@ -434,7 +465,7 @@ private fun PasswordListEditor(
         var text by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { importOpen = false },
-            title = { Text("Passwörter einfügen") },
+            title = { Text(importTitle) },
             text = {
                 OutlinedTextField(
                     value = text,
@@ -444,7 +475,7 @@ private fun PasswordListEditor(
                         keyboardType = KeyboardType.Uri,
                         autoCorrectEnabled = false
                     ),
-                    placeholder = { Text("Ein Passwort pro Zeile") }
+                    placeholder = { Text(importPlaceholder) }
                 )
             },
             confirmButton = {

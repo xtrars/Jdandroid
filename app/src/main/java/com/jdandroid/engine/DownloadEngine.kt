@@ -705,9 +705,16 @@ class DownloadEngine(
         withContext(NonCancellable) {
             extractLimiter.withPermit {
                 try {
-                    val extractDir = File(downloadDir(), base)
-                    Extractor.extract(primary, extractDir, app.settings.currentPasswords())
-                    val exportedPath = exportDirectory(extractDir, base)
+                    // Immer in einen Unterordner mit dem Paketnamen (wie im
+                    // JDownloader); ohne Paket der Archivname
+                    val folder = packageFolder(id) ?: base
+                    val extractDir = File(downloadDir(), folder)
+                    Extractor.extract(
+                        primary, extractDir,
+                        app.settings.currentPasswords(),
+                        app.settings.currentExtractExcludes()
+                    )
+                    val exportedPath = exportDirectory(extractDir, folder)
                     if (app.settings.currentDeleteArchive()) {
                         downloadDir().listFiles()
                             ?.filter { Extractor.archiveBase(it.name) == base }
@@ -754,6 +761,16 @@ class DownloadEngine(
      * Exportiert alle entpackten Dateien in den oeffentlichen Download-Ordner
      * (Downloads/JDAndroid/<base>/...). Ohne Export bleiben sie im App-Ordner.
      */
+    /** Ordnername aus dem Paketnamen, dateisystemtauglich; null ohne Paket. */
+    private suspend fun packageFolder(id: Long): String? {
+        val packageId = dao.byId(id)?.packageId ?: return null
+        val name = app.db.packageDao().byId(packageId)?.name ?: return null
+        return limitLength(
+            name.replace(Regex("""[/\\:*?"<>|]"""), "_").trim().trimStart('.').trimEnd('.'),
+            120
+        ).ifBlank { null }
+    }
+
     private suspend fun exportDirectory(dir: File, base: String): String {
         // Eigener Zielordner (SAF) hat Vorrang vor Downloads/JDAndroid
         targetTree()?.let { root ->
