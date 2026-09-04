@@ -3,7 +3,7 @@
 Ein Download-Manager für Android im Stil des JDownloaders – mit Hoster-Plugins,
 Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Design.
 
-**Fertige APK:** [`release/JDAndroid-1.3.3.apk`](release/JDAndroid-1.3.3.apk)
+**Fertige APK:** [`release/JDAndroid-1.3.4.apk`](release/JDAndroid-1.3.4.apk)
 (signiert, direkt installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Unterstützte Hoster
@@ -38,7 +38,9 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
   Click'n'Load wird die Herkunfts-Webseite am Paket angezeigt
 - **Konten-Verwaltung**: Accounts pro Hoster hinterlegen und prüfen
   (Premium-Status, Ablaufdatum); **verbleibende Restmenge** als eigene Zeile
-  (Rapidgator, ddownload; 1fichier: unbegrenzt), im Konten-Tab jede Minute
+  mit Balken zum Kontingent (Rapidgator: Tageskontingent aus der API,
+  ddownload: Rest + Verbrauch bzw. 200 GB Tageskontingent; 1fichier:
+  unbegrenzt), im Konten-Tab jede Minute
   neu abgefragt und zusätzlich nach jedem fertigen Download
 - **Container-Import**: **DLC**-Dateien (über „Öffnen mit"/Teilen oder den
   Ordner-Knopf in der App) und **Click'n'Load 2** (lokaler Server auf Port

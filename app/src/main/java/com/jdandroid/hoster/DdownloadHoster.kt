@@ -41,6 +41,9 @@ class DdownloadHoster : Hoster {
     private val MAX_TEXT_BYTES = 2L * 1024 * 1024
 
     private val siteBase = "https://ddownload.com"
+
+    /** Tageskontingent von ddownload Premium laut Anbieter (200 GB). */
+    private val DAILY_QUOTA = 200L shl 30
     private val pattern =
         Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([A-Za-z0-9]{6,20})""")
 
@@ -234,11 +237,24 @@ class DdownloadHoster : Hoster {
         val trafficLeft = trafficMatch?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
         val unlimited = trafficMatch == null &&
             Regex("""[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*[Uu]nlimited""").containsMatchIn(html)
+        // Gesamt: "45.2 GB / 200 GB" bzw. "of 200 GB" auf der Kontoseite, sonst Tageskontingent
+        val totalFromPage = trafficMatch?.let { m ->
+            Regex("""(?:/|of|von)\s*([\d.]+)\s*(GB|MB|TB)""", RegexOption.IGNORE_CASE)
+                .find(html, m.range.last)?.takeIf { it.range.first - m.range.last < 80 }
+                ?.let { toBytes(it.groupValues[1], it.groupValues[2]) }
+        }
+        val trafficTotal = when {
+            unlimited -> -1L
+            totalFromPage != null && totalFromPage > 0 -> totalFromPage
+            premium && trafficLeft >= 0 -> maxOf(DAILY_QUOTA, trafficLeft)
+            else -> -1L
+        }
 
         AccountInfo(
             valid = true,
             premiumUntil = expire,
             trafficLeft = trafficLeft,
+            trafficTotal = trafficTotal,
             trafficUnlimited = unlimited,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
         )
@@ -258,10 +274,21 @@ class DdownloadHoster : Hoster {
         val unlimited = rawLeft.contains("unlimited", true)
         // Zahl in Byte; manche XFS-Installationen liefern MB - Werte unter 1e6 als MB werten
         val left = rawLeft.toDoubleOrNull()?.let { if (it in 1.0..1_000_000.0) (it * (1L shl 20)).toLong() else it.toLong() } ?: -1L
+        val rawUsed = result.opt("traffic_used")?.toString()?.trim().orEmpty()
+        val used = rawUsed.toDoubleOrNull()?.let { if (it in 1.0..1_000_000.0) (it * (1L shl 20)).toLong() else it.toLong() } ?: -1L
+        // Gesamtkontingent: Rest + Verbrauch, wenn die API beides liefert; sonst
+        // das Tageskontingent von ddownload Premium (200 GB laut Anbieter)
+        val total = when {
+            unlimited -> -1L
+            left >= 0 && used >= 0 -> left + used
+            premium && left >= 0 -> maxOf(DAILY_QUOTA, left)
+            else -> -1L
+        }
         return AccountInfo(
             valid = true,
             premiumUntil = expire,
             trafficLeft = if (unlimited) -1 else left,
+            trafficTotal = total,
             trafficUnlimited = unlimited,
             statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
         )
