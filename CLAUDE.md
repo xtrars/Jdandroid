@@ -8,8 +8,11 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 
 - Antworten auf Deutsch, knapp, mit dem Ergebnis zuerst.
 - Nach jeder fertigen Änderung: Version erhöhen, Release-APK bauen, APK in
-  `release/JDAndroid-<version>.apk` ablegen (alte APK aus dem Repo entfernen),
-  README-Link anpassen, committen, pushen und die APK per Datei senden.
+  `release/JDAndroid-<version>.apk` ablegen, README-Link anpassen, committen,
+  pushen und die APK per Datei senden.
+- In `release/` bleiben nur die fünf neuesten APKs; ältere werden mit
+  `git rm` entfernt (Reihenfolge nach Version, `versionCode` in
+  `app/build.gradle.kts` ist maßgeblich).
 - Versionsschema: `0.0.x`, solange die App nicht veröffentlicht ist.
   `versionCode` zählt trotzdem bei jedem Build hoch (sonst verweigert Android
   das Update).
@@ -73,5 +76,9 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 
 Der Nutzer wünscht eine regelmäßige Gesamtprüfung (Architektur, Fehler,
 Stand der Technik, Sinn und Erweiterbarkeit der Tests). Ablauf und
-Checkliste stehen in `docs/PRUEFUNG.md`. Funde werden direkt behoben,
-Tests ergänzt, danach Version/APK wie oben.
+Checkliste stehen in `docs/PRUEFUNG.md`. Die Prüfung ist als Workflow
+`.claude/workflows/pruefung.js` hinterlegt (Workflow-Tool, `name:
+"pruefung"`): sechs Blickwinkel finden, zwei Skeptiker je Fund
+verifizieren, bestätigte Funde werden datei­weise behoben, Tests ergänzt,
+zum Schluss Build und Tests. Eine Routine startet ihn jeden Montag 06:00
+UTC in einer frischen Sitzung. Nach dem Workflow: Version/APK wie oben.
