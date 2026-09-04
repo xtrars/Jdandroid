@@ -73,34 +73,40 @@ class DdownloadQuotaUnitTest {
     private val ddl = DdownloadHoster()
 
     @Test
-    fun kilobyteWerdenKorrektUmgerechnet() {
-        // 193 GiB in KB (so liefert es die API): 193 * 1024 * 1024
-        val raw = 193.0 * 1024 * 1024
-        assertEquals(193L shl 30, ddl.quotaToBytes(raw))
+    fun megabyteLautApiDoku() {
+        // Doku: 102400 = 100 GB
+        assertEquals(100L shl 30, ddl.quotaToBytes(102400.0))
     }
 
     @Test
-    fun byteWerteBleibenByte() {
-        // Waere der Wert schon in Byte (193 GiB), ergaebe KB 193 TiB -> unplausibel
-        val raw = (193L shl 30).toDouble()
-        assertEquals(193L shl 30, ddl.quotaToBytes(raw))
+    fun grosseKontingenteBleibenErhalten() {
+        // Ultimate: 197040 GB laut Kontoseite, in MB von der API
+        assertEquals(197040L shl 30, ddl.quotaToBytes(197040.0 * 1024))
     }
 }
 
-class DdownloadPlausibilityTest {
+class DdownloadUltimatePageTest {
     private val ddl = DdownloadHoster()
+    private val gb = 1L shl 30
+
+    private val html = """<div>Mein Konto - DDownload</div><div>Ultimate Premium account</div>
+        <div>Unbegrenzter Speicher</div><div>Account-Status</div><div>Ultimate</div>
+        <div>Aktiv bis 2 December 2026</div><div>Verfügbare Daten</div><div>197040 GB</div>
+        <a>Traffic kaufen</a><div>200 GB + Daten &euro;15.99</div>"""
 
     @Test
-    fun tebibyteWerdenAufGibibyteZurueckgefuehrt() {
-        val wrong = (193.9 * (1L shl 40)).toLong()
-        val fixed = ddl.plausibleQuota(wrong)
-        assertTrue("$fixed", fixed in (193L shl 30)..(195L shl 30))
+    fun verfuegbareDatenWerdenGelesen() {
+        val t = ddl.parseTraffic(html)
+        assertEquals(197040 * gb, t.left)
+        assertFalse(t.unlimited)
     }
 
     @Test
-    fun plausibleWerteBleibenUnveraendert() {
-        assertEquals(150L shl 30, ddl.plausibleQuota(150L shl 30))
-        assertEquals(0L, ddl.plausibleQuota(0L))
+    fun aktivBisWirdAlsAblaufdatumGelesen() {
+        val expire = ddl.pageExpire("Account-Status Ultimate Aktiv bis 2 December 2026 Verfügbare Daten")
+        assertTrue(expire > 0)
+        assertEquals(0L, ddl.pageExpire("Kein Datum hier"))
+        assertTrue(ddl.pageExpire("Premium expire: 05 January 2030") > 0)
     }
 }
 

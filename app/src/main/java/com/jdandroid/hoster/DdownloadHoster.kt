@@ -61,28 +61,12 @@ class DdownloadHoster : Hoster {
     }
 
     /**
-     * Einheit von premium_traffic_left: Die Doku nennt keine. In der Praxis
-     * liefert ddownload Kilobyte (als MB gerechnet erschienen 193 TiB statt
-     * 193 GiB). Absicherung: Ergibt KB einen Wert weit ueber dem Tages-
-     * kontingent, ist der Rohwert bereits in Byte.
+     * premium_traffic_left liefert die API in Megabyte (Doku: 102400 = 100 GB).
+     * Keine Plausibilitaetsgrenze mehr: Ultimate-Konten haben laut Kontoseite
+     * tatsaechlich Kontingente im Bereich von hunderten Terabyte.
      */
-    internal fun quotaToBytes(raw: Double): Long {
-        val asKb = raw * 1024
-        return if (asKb <= 4.0 * DAILY_QUOTA) asKb.toLong() else raw.toLong()
-    }
+    internal fun quotaToBytes(raw: Double): Long = (raw * (1L shl 20)).toLong()
 
-    /**
-     * Plausibilitaet: Ein Rest oberhalb des Vierfachen des Tageskontingents
-     * kann nur eine falsch beschriftete Einheit sein (KB als MB gelesen ergab
-     * 193,9 TiB statt 193,9 GiB). Dann so lange durch 1024 teilen, bis der
-     * Wert ins Kontingent passt.
-     */
-    internal fun plausibleQuota(bytes: Long): Long {
-        var v = bytes
-        var guard = 0
-        while (v > 4 * DAILY_QUOTA && guard++ < 4) v /= 1024
-        return v
-    }
     /**
      * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
      * dass laengere Pfade (z.B. /register.html) als Code gelesen werden.
@@ -273,24 +257,29 @@ class DdownloadHoster : Hoster {
         if (key != null) return@withContext checkViaApi(key)
 
         val (_, html) = sessionAndAccountPage(account)
-        val expire = Regex(
-            """[Pp]remium[^<:]*expire[^:<]*:?\s*(?:</?[^>]*>\s*)*([0-9]{1,2}\s+\w+\s+[0-9]{4})"""
-        ).find(html)?.groupValues?.get(1)?.let { parseDate(it) } ?: 0L
-        val premiumWord = Regex("""[Pp]remium""").containsMatchIn(html) &&
-            !Regex("""Account type[^<]*(?:</?[^>]*>\s*)*Free""", RegexOption.IGNORE_CASE)
-                .containsMatchIn(html)
+        val pageText = visibleText(html)
+        val expire = pageExpire(pageText)
+        // "Ultimate" nur als Kontostatus zaehlen - als Werbung ("Ultimate Key
+        // aktivieren") steht das Wort auch auf Free-Konten
+        val ultimate = Regex("""(?i)Account[- ]?(?:type|status)\s*:?\s*Ultimate\b|Ultimate Premium account""")
+            .containsMatchIn(pageText)
+        val freeAccount = Regex("""(?i)Account[- ]?(?:type|status)\s*:?\s*Free\b""").containsMatchIn(pageText)
+        val premiumWord = !freeAccount &&
+            (ultimate || Regex("""(?i)\bPremium\b""").containsMatchIn(pageText))
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
+        val tier = if (ultimate) "Ultimate" else "Premium"
 
         // Woran die Erkennung haengt, fuer die Diagnose festhalten
         run {
-            val text = visibleText(html)
-            val around = Regex("""(?i)account type|premium|expire""").findAll(text).take(6).joinToString(" | ") { m ->
-                text.substring((m.range.first - 60).coerceAtLeast(0), (m.range.last + 120).coerceAtMost(text.length))
-            }
+            val text = pageText
+            val around = Regex("""(?i)account[- ]?(?:type|status)|premium|ultimate|expire|aktiv bis|active until""")
+                .findAll(text).take(6).joinToString(" | ") { m ->
+                    text.substring((m.range.first - 60).coerceAtLeast(0), (m.range.last + 120).coerceAtMost(text.length))
+                }
             com.jdandroid.Diagnostics.sink?.invoke(
                 "ddownload_account_premium",
                 "ddownload-Kontoseite: Premium-Erkennung",
-                "expire=$expire premiumWort=$premiumWord premium=$premium\n$around"
+                "expire=$expire premiumWort=$premiumWord ultimate=$ultimate premium=$premium\n$around"
             )
         }
 
@@ -302,28 +291,24 @@ class DdownloadHoster : Hoster {
             runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
                 if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) {
                     val apiPremium = viaApi.statusText.startsWith("Premium")
-                    return@withContext if (premium && !apiPremium) {
+                    return@withContext if (premium) {
                         viaApi.copy(
                             premiumUntil = if (viaApi.premiumUntil > 0) viaApi.premiumUntil else expire,
-                            statusText = "Premium"
+                            statusText = if (apiPremium) viaApi.statusText.replaceFirst("Premium", tier) else tier
                         )
                     } else viaApi
                 }
             }
         }
 
-        val parsed = parseTraffic(html)
-        val traffic = parsed.copy(
-            left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
-            total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
-        )
+        val traffic = parseTraffic(html)
         // Erkannten Wert immer festhalten: so laesst sich eine falsche Einheit
         // anhand des Seitenausschnitts nachvollziehen
         com.jdandroid.Diagnostics.sink?.invoke(
             "ddownload_account_parse",
             "ddownload-Kontoseite: erkanntes Kontingent",
-            "rest=${parsed.left} (plausibel ${traffic.left}) gesamt=${parsed.total} unbegrenzt=${parsed.unlimited}\n" +
-                parsed.snippet.take(1200)
+            "rest=${traffic.left} gesamt=${traffic.total} unbegrenzt=${traffic.unlimited}\n" +
+                traffic.snippet.take(1200)
         )
         if (traffic.left < 0 && !traffic.unlimited) {
             // Nicht lesbar: Seitenausschnitt fuer die Diagnose ablegen (nur Text,
@@ -348,11 +333,21 @@ class DdownloadHoster : Hoster {
             trafficTotal = trafficTotal,
             trafficUnlimited = traffic.unlimited,
             statusText = buildString {
-                append(if (premium) "Premium" else "Free (Downloads nicht möglich)")
+                append(if (premium) tier else "Free (Downloads nicht möglich)")
                 if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar (Diagnose in Einstellungen)")
             }
         )
     }
+
+    /**
+     * Ablaufdatum von der Kontoseite: "Premium expire: 2 December 2026",
+     * "Aktiv bis 2 December 2026", "Active until 02 Dec 2026"; 0 = unbekannt.
+     */
+    internal fun pageExpire(text: String): Long =
+        Regex("""(?i)(?:expires?|aktiv bis|active until|g[üu]ltig bis|valid until)\s*:?\s*([0-9]{1,2}\s+[A-Za-zÄÖÜäöü]+\s+[0-9]{4})""")
+            .findAll(text)
+            .map { parseExpire(it.groupValues[1]) }
+            .firstOrNull { it > 0 } ?: 0L
 
     /** Ergebnis der Kontingent-Suche auf der Kontoseite. */
     internal data class TrafficParse(
@@ -374,7 +369,8 @@ class DdownloadHoster : Hoster {
     /**
      * Kontingent aus der Kontoseite lesen, tolerant gegen verschiedene Layouts:
      * "Traffic available: 120.5 GB", "Premium traffic left 120,5 GB / 200 GB",
-     * "120.5 GB of 200 GB traffic", "Verfügbarer Traffic 120 GB", "unlimited".
+     * "120.5 GB of 200 GB traffic", "Verfügbarer Traffic 120 GB",
+     * "Verfügbare Daten 197040 GB" (Ultimate), "unlimited".
      */
     internal fun parseTraffic(html: String): TrafficParse {
         val text = visibleText(html)
@@ -391,7 +387,7 @@ class DdownloadHoster : Hoster {
         var unlimited = false
 
         // 1) Wort vor Zahl: "Traffic available: 120.5 GB", "Premium traffic left 120 GB"
-        val after = Regex("""(?i)traffic[^0-9]{0,60}?$size""").find(text)
+        val after = Regex("""(?i)(?:traffic|verf[üu]gbare?r?\s+daten|available\s+data)[^0-9]{0,60}?$size""").find(text)
         // 2) Zahl vor Wort: "120.5 GB traffic left"
         val before = Regex("""(?i)$size[^0-9]{0,40}?traffic""").find(text)
         val hit = listOfNotNull(after, before).minByOrNull { it.range.first }
@@ -439,7 +435,7 @@ class DdownloadHoster : Hoster {
             (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
             unlimited -> -1L
-            premiumLeft != null -> plausibleQuota(quotaToBytes(premiumLeft))
+            premiumLeft != null -> quotaToBytes(premiumLeft)
             else -> {
                 // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
