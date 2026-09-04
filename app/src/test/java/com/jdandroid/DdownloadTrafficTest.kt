@@ -68,3 +68,21 @@ class DdownloadTrafficTest {
         assertNull(ddl.apiKeyFromPage("""<div>API documentation</div><input value="short">"""))
     }
 }
+
+class DdownloadQuotaUnitTest {
+    private val ddl = DdownloadHoster()
+
+    @Test
+    fun kilobyteWerdenKorrektUmgerechnet() {
+        // 193 GiB in KB (so liefert es die API): 193 * 1024 * 1024
+        val raw = 193.0 * 1024 * 1024
+        assertEquals(193L shl 30, ddl.quotaToBytes(raw))
+    }
+
+    @Test
+    fun byteWerteBleibenByte() {
+        // Waere der Wert schon in Byte (193 GiB), ergaebe KB 193 TiB -> unplausibel
+        val raw = (193L shl 30).toDouble()
+        assertEquals(193L shl 30, ddl.quotaToBytes(raw))
+    }
+}

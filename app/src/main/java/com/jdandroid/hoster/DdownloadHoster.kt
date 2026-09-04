@@ -44,6 +44,17 @@ class DdownloadHoster : Hoster {
 
     /** Tageskontingent von ddownload Premium laut Anbieter (200 GB). */
     private val DAILY_QUOTA = 200L shl 30
+
+    /**
+     * Einheit von premium_traffic_left: Die Doku nennt keine. In der Praxis
+     * liefert ddownload Kilobyte (als MB gerechnet erschienen 193 TiB statt
+     * 193 GiB). Absicherung: Ergibt KB einen Wert weit ueber dem Tages-
+     * kontingent, ist der Rohwert bereits in Byte.
+     */
+    internal fun quotaToBytes(raw: Double): Long {
+        val asKb = raw * 1024
+        return if (asKb <= 4.0 * DAILY_QUOTA) asKb.toLong() else raw.toLong()
+    }
     private val pattern =
         Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([A-Za-z0-9]{6,20})""")
 
@@ -344,14 +355,21 @@ class DdownloadHoster : Hoster {
         // betreffen den Free-Traffic und sind fuer Premium irrelevant.
         val rawPremiumLeft = result.opt("premium_traffic_left")?.toString()?.trim().orEmpty()
         val unlimited = rawPremiumLeft.contains("unlimited", true) || rawPremiumLeft == "inf"
-        val premiumLeftMb = rawPremiumLeft.toDoubleOrNull()
+        val premiumLeft = rawPremiumLeft.toDoubleOrNull()
+        // Rohwert fuer die Diagnose festhalten (nur die Zahl, kein Schluessel)
+        com.jdandroid.Diagnostics.sink?.invoke(
+            "ddownload_api",
+            "ddownload-API: Rohwerte der Kontoabfrage",
+            "premium_traffic_left=$rawPremiumLeft traffic_left=${result.opt("traffic_left")} " +
+                "traffic_used=${result.opt("traffic_used")} premium_expire=${result.opt("premium_expire")}"
+        )
         val left = when {
             unlimited -> -1L
-            premiumLeftMb != null -> (premiumLeftMb * (1L shl 20)).toLong()
+            premiumLeft != null -> quotaToBytes(premiumLeft)
             else -> {
-                // Aeltere API ohne premium_traffic_left: traffic_left (MB) als Notnagel
+                // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
-                    ?.let { (it * (1L shl 20)).toLong() } ?: -1L
+                    ?.let { quotaToBytes(it) } ?: -1L
             }
         }
         val total = when {

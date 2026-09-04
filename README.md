@@ -3,7 +3,7 @@
 Ein Download-Manager für Android im Stil des JDownloaders – mit Hoster-Plugins,
 Premium-Account-Verwaltung, automatischem Entpacken und modernem Material-3-Design.
 
-**Fertige APK:** [`release/JDAndroid-1.4.5.apk`](release/JDAndroid-1.4.5.apk)
+**Fertige APK:** [`release/JDAndroid-1.4.6.apk`](release/JDAndroid-1.4.6.apk)
 (signiert, direkt installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Unterstützte Hoster
@@ -39,7 +39,7 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
 - **Konten-Verwaltung**: Accounts pro Hoster hinterlegen und prüfen
   (Premium-Status, Ablaufdatum); **verbleibende Restmenge** als eigene Zeile
   mit Balken zum Kontingent (Rapidgator: `traffic.left/total` in Byte,
-  ddownload: `premium_traffic_left` in MB gegen 200 GB Tageskontingent;
+  ddownload: `premium_traffic_left` (Kilobyte) gegen 200 GB Tageskontingent;
   1fichier: unbegrenzt), im Konten-Tab jede Minute
   neu abgefragt und zusätzlich nach jedem fertigen Download
 - **Container-Import**: **DLC**-Dateien (über „Öffnen mit"/Teilen oder den

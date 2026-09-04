@@ -15,8 +15,8 @@ android {
         targetSdk = 35
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
-        versionCode = 14
-        versionName = "1.4.5"
+        versionCode = 15
+        versionName = "1.4.6"
     }
 
     // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
