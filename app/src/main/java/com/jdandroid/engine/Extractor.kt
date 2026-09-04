@@ -121,8 +121,8 @@ object Extractor {
         destDir: File,
         passwords: List<String>,
         excludes: List<String> = emptyList(),
-        progress: ProgressListener? = null,
-        flat: Boolean = false
+        flat: Boolean = false,
+        progress: ProgressListener? = null
     ): String? {
         destDir.mkdirs()
         // Jeder Versuch laeuft in ein eigenes Arbeitsverzeichnis: destDir ist der

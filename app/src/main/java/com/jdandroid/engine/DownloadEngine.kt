@@ -957,8 +957,8 @@ class DownloadEngine(
                         primary, extractDir,
                         app.settings.currentPasswords(),
                         app.settings.currentExtractExcludes(),
-                        listener,
-                        flat = app.settings.currentFlatExtract()
+                        flat = app.settings.currentFlatExtract(),
+                        progress = listener
                     )
                     val exportedPath = exportDirectory(extractDir, folder)
                     if (app.settings.currentDeleteArchive()) {
