@@ -1,7 +1,8 @@
 package com.jdandroid.data
 
 import com.jdandroid.JdApp
-import com.jdandroid.engine.FileNames
+import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.FileNames
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -37,9 +38,12 @@ object LinkChecker {
                         null
                     }
                     when (result?.online) {
-                        true -> dao.applyCheck(id, OnlineState.ONLINE, null, result.fileName?.let { FileNames.sanitize(it) }, result.fileSize)
-                        false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: "Datei offline", null, -1)
-                        null -> dao.applyCheck(id, OnlineState.UNKNOWN, result?.note ?: "Prüfung nicht möglich", null, -1)
+                        true -> {
+                            val name = result.fileName?.let { FileNames.sanitize(it) }
+                            dao.applyCheck(id, OnlineState.ONLINE, null, name, ArchiveNames.archiveKey(name), result.fileSize)
+                        }
+                        false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: "Datei offline", null, null, -1)
+                        null -> dao.applyCheck(id, OnlineState.UNKNOWN, result?.note ?: "Prüfung nicht möglich", null, null, -1)
                     }
                     if (result?.online == true) PackageNaming.refineAutoName(app.db, item.packageId)
                 }

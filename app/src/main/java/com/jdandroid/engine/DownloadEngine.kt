@@ -9,9 +9,14 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.JdApp
+import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.FileNames
+import com.jdandroid.core.LiveProgress
+import com.jdandroid.core.ProgressBus
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
+import com.jdandroid.data.renameFile
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
@@ -35,8 +40,13 @@ import java.io.IOException
 
 /**
  * Fuehrt die eigentlichen Downloads aus: Link aufloesen, Datei mit
- * Range-Resume herunterladen, Fortschritt in die DB schreiben und
+ * Range-Resume herunterladen, Fortschritt ueber den [ProgressBus] melden und
  * fertige Dateien optional in den oeffentlichen Download-Ordner exportieren.
+ *
+ * In die Datenbank gehen nur Zustandswechsel (Start, Pause, Fehler,
+ * Abschluss, Entpack-Start/-Ende, jeweils mit dem letzten Bytestand) und
+ * eine Sicherung des Bytestands hoechstens alle [SAVE_MS]; Live-Werte
+ * (Bytes, Geschwindigkeit, Entpack-Prozent) liegen nur im Bus.
  */
 class DownloadEngine(
     private val context: Context,
@@ -50,9 +60,6 @@ class DownloadEngine(
     // ConcurrentHashMap: size() wird vom Service-Thread ohne Mutex gelesen
     private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
     private val mutex = Mutex()
-
-    /** Geglaettete Geschwindigkeit je laufendem Download (Bytes/s). */
-    private val speeds = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
     /** Letzte Benachrichtigung des Service, um Aktualisierungen zu drosseln. */
     @Volatile
@@ -100,7 +107,18 @@ class DownloadEngine(
     }
 
     /** Summe der aktuellen Geschwindigkeiten, fuer die Benachrichtigung. */
-    val totalSpeedBps: Long get() = speeds.values.sum()
+    val totalSpeedBps: Long get() = ProgressBus.totalSpeedBps()
+
+    /**
+     * Geladene Bytes aller offenen Eintraege fuer die Benachrichtigung: fuer
+     * laufende Downloads der Live-Stand aus dem Bus, fuer die uebrigen die
+     * (bei Pause/Fehler gesicherte) Datenbank.
+     */
+    suspend fun openDownloadedBytes(): Long {
+        val live = ProgressBus.state.value
+        val liveBytes = live.values.sumOf { it.downloadedBytes.coerceAtLeast(0) }
+        return dao.openDownloadedBytesExcept(live.keys.toList() + listOf(-1L)) + liveBytes
+    }
 
     /** Service hoechstens einmal pro Sekunde ueber Fortschritt informieren. */
     private fun notifyProgress() {
@@ -204,6 +222,7 @@ class DownloadEngine(
                 copy
             }
             running.values.forEach { it.cancel() }
+            ProgressBus.removeAll(running.keys)
             // Unter der Abschluss-Sperre: ein Job im NonCancellable-Abschluss
             // (Datei wird gerade verschoben) darf nicht mehr zurueckgestuft werden
             completionMutex.withLock { running.keys.forEach { dao.requeueIfRunning(it) } }
@@ -214,7 +233,9 @@ class DownloadEngine(
     }
 
     suspend fun pause(id: Long) {
-        mutex.withLock { jobs.remove(id) }?.cancel()
+        // Bus nur fuer den abgebrochenen Job leeren: ein Eintrag, der gerade
+        // entpackt wird, behaelt seinen Prozentwert (pauseIfActive greift dort nicht)
+        mutex.withLock { jobs.remove(id) }?.let { it.cancel(); ProgressBus.remove(id) }
         // Nur RUNNING/QUEUED pausieren - ein Eintrag, der gerade fertig wird
         // oder entpackt, bleibt unberuehrt (sonst Neudownload beim Fortsetzen).
         // Unter der Abschluss-Sperre, damit ein laufender Abschluss zu Ende kommt
@@ -224,16 +245,18 @@ class DownloadEngine(
 
     suspend fun cancelAndDelete(id: Long) {
         mutex.withLock { jobs.remove(id) }?.cancel()
+        ProgressBus.remove(id)
         val item = dao.byId(id)
         dao.delete(id)
         item?.let {
             tempFile(it).delete()
             // Archivteile im App-Ordner mit entfernen, wenn kein anderer Eintrag
-            // dasselbe Archiv referenziert - sonst bleiben sie unsichtbar liegen
-            val base = it.fileName?.let(Extractor::archiveBase)
-            if (base != null && dao.all().none { o -> Extractor.archiveBase(o.fileName ?: "") == base }) {
+            // (auch keines anderen Pakets - der Ordner ist flach) dasselbe
+            // Archiv referenziert; sonst bleiben sie unsichtbar liegen
+            val key = it.archiveKey
+            if (key != null && dao.countByArchiveKey(key) == 0) {
                 downloadDir().listFiles()
-                    ?.filter { f -> f.isFile && Extractor.archiveBase(f.name) == base }
+                    ?.filter { f -> f.isFile && ArchiveNames.archiveBase(f.name) == key }
                     ?.forEach { f -> f.delete() }
             }
         }
@@ -265,6 +288,7 @@ class DownloadEngine(
             copy
         }
         running.values.forEach { it.cancel() }
+        ProgressBus.removeAll(running.keys)
         // Entpackende Eintraege bleiben EXTRACTING (laufen unter NonCancellable weiter)
         completionMutex.withLock { running.keys.forEach { dao.pauseIfActive(it) } }
         onStateChanged()
@@ -322,10 +346,9 @@ class DownloadEngine(
         } finally {
             // Auch bei Abbruch zuverlaessig austragen: withLock wuerde in einer
             // abgebrochenen Coroutine bei Konkurrenz sofort werfen
-            withContext(NonCancellable) {
-                speeds.remove(id)
-                mutex.withLock { jobs.remove(id) }
-            }
+            // Die Live-Werte der Uebertragung raeumt transfer() selbst weg:
+            // nach dem Abschluss gehoert der Bus-Eintrag ggf. dem Entpacken
+            withContext(NonCancellable) { mutex.withLock { jobs.remove(id) } }
             scope.launch { pump() }
         }
     }
@@ -415,7 +438,7 @@ class DownloadEngine(
         ) {
             // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig.
             ResponseKind.AlreadyComplete -> {
-                dao.updateProgress(item.id, offset, offset, 0)
+                dao.saveProgress(item.id, offset, offset)
                 return true
             }
             // Teildatei zu lang (z.B. Fremdinhalt): muss neu geladen werden
@@ -472,50 +495,63 @@ class DownloadEngine(
 
         var written = offset
         val startedAt = System.currentTimeMillis()
-        var lastDbWrite = startedAt
+        var lastSave = startedAt
         var attemptsReset = false
+        // Start des Ladens: Bytestand und (jetzt bekannte) Groesse einmal
+        // sichern - der einzige Zustandswechsel vor dem Ende der Uebertragung
+        dao.saveProgress(item.id, written, total)
         // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
         // der Rohwert einzelner Messintervalle springt stark und liess die
-        // Anzeige flackern. In die DB (und damit in die UI) geht der Wert
-        // nur alle DB_WRITE_MS.
+        // Anzeige flackern. Bytes und Geschwindigkeit gehen alle SAMPLE_MS in
+        // den ProgressBus (nicht in die Datenbank); gesichert wird der
+        // Bytestand hoechstens alle SAVE_MS und beim Verlassen der Schleife.
         val samples = ArrayDeque<Pair<Long, Long>>()
         samples.addLast(startedAt to written)
-        body.byteStream().use { input ->
-            java.io.FileOutputStream(target, offset > 0).use { out ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    out.write(buffer, 0, read)
-                    written += read
-                    limiter.throttle(read)
-                    if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
-                        // Echter Fortschritt: ein wackliges Netz darf einen
-                        // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
-                        attemptsReset = true
-                        dao.resetAttempts(item.id)
-                    }
-                    val now = System.currentTimeMillis()
-                    if (now - samples.last().first >= SAMPLE_MS) {
-                        samples.addLast(now to written)
-                        while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
-                            samples.removeFirst()
+        try {
+            body.byteStream().use { input ->
+                java.io.FileOutputStream(target, offset > 0).use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        written += read
+                        limiter.throttle(read)
+                        if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
+                            // Echter Fortschritt: ein wackliges Netz darf einen
+                            // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
+                            attemptsReset = true
+                            dao.resetAttempts(item.id)
                         }
-                        val (t0, b0) = samples.first()
-                        val speed = if (now > t0) (written - b0) * 1000 / (now - t0) else 0L
-                        speeds[item.id] = speed
-                        if (now - lastDbWrite >= DB_WRITE_MS) {
-                            dao.updateProgress(item.id, written, total, speed)
-                            lastDbWrite = now
+                        val now = System.currentTimeMillis()
+                        if (now - samples.last().first >= SAMPLE_MS) {
+                            samples.addLast(now to written)
+                            while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
+                                samples.removeFirst()
+                            }
+                            val (t0, b0) = samples.first()
+                            val speed = if (now > t0) (written - b0) * 1000 / (now - t0) else 0L
+                            ProgressBus.update(item.id, LiveProgress(written, speed), now)
                             notifyProgress()
+                            if (now - lastSave >= SAVE_MS) {
+                                dao.saveProgress(item.id, written, total)
+                                lastSave = now
+                            }
                         }
+                        kotlinx.coroutines.yield()
                     }
-                    kotlinx.coroutines.yield()
                 }
             }
+        } finally {
+            // Letzten Bytestand auch bei Abbruch/Fehler sichern (Pause, Netz weg):
+            // Fortsetzen nutzt zwar die .part-Groesse, die Liste soll aber
+            // nicht auf den Stand von vor 30 s zurueckspringen. Danach die
+            // Live-Werte weg: ab jetzt gilt wieder der Datenbankstand
+            withContext(NonCancellable) {
+                dao.saveProgress(item.id, written, total)
+                ProgressBus.remove(item.id)
+            }
         }
-        speeds.remove(item.id)
-        dao.updateProgress(item.id, written, total, 0)
         if (total > 0 && written < total) {
             throw IOException("Download unvollständig ($written von $total Bytes)")
         }
@@ -532,14 +568,14 @@ class DownloadEngine(
      */
     private suspend fun completeDownload(id: Long, temp: File, originalName: String) = withContext(NonCancellable) {
         var fileName = originalName
-        var base = Extractor.archiveBase(fileName)
+        var base = ArchiveNames.archiveBase(fileName)
         if (base == null) {
             // "name part1 rar" (Hoster hat Punkte durch Leerzeichen ersetzt)
-            val repaired = Extractor.repairName(fileName)
-            if (Extractor.archiveBase(repaired) != null) {
+            val repaired = ArchiveNames.repairName(fileName)
+            if (ArchiveNames.archiveBase(repaired) != null) {
                 fileName = repaired
-                dao.setFileName(id, fileName)
-                base = Extractor.archiveBase(fileName)
+                dao.renameFile(id, fileName)
+                base = ArchiveNames.archiveBase(fileName)
             }
         }
         if (base == null) {
@@ -547,8 +583,8 @@ class DownloadEngine(
             // fehlender Name vom Hoster): Endung anhand der Magic Bytes ergaenzen
             Extractor.sniffExtension(temp)?.let { ext ->
                 fileName = "$fileName.$ext"
-                dao.setFileName(id, fileName)
-                base = Extractor.archiveBase(fileName)
+                dao.renameFile(id, fileName)
+                base = ArchiveNames.archiveBase(fileName)
             }
         }
         val autoExtract = app.settings.currentAutoExtract()
@@ -571,17 +607,14 @@ class DownloadEngine(
         // Entscheidung unter der Sperre: zwei gleichzeitig fertige Teile duerfen
         // sich nicht gegenseitig als "noch ausstehend" sehen.
         val shouldExtract = completionMutex.withLock {
-            val all = dao.all()
-            val self = all.firstOrNull { it.id == id }
+            val packageId = dao.byId(id)?.packageId
             // Gleichnamiges Archiv eines anderen Pakets liegt bereits flach im
             // App-Ordner: nicht ueberschreiben, sondern als normale Datei ablegen
-            val clash = archiveFile.isFile && temp.path != archiveFile.path && all.any { other ->
-                other.packageId != self?.packageId && other.fileName == fileName &&
-                    other.status in listOf(DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING)
-            }
+            val clash = archiveFile.isFile && temp.path != archiveFile.path &&
+                dao.countSameNameElsewhere(fileName, packageId) > 0
             if (clash) {
                 markCompleted(id, finish(temp, fileName), "Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt")
-                return@withLock false
+                return@withLock null
             }
             // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
             // Multipart-Teile zueinander finden
@@ -589,37 +622,40 @@ class DownloadEngine(
                 archiveFile.delete()
                 temp.renameTo(archiveFile)
             }
-            val pending = ArchiveSets.pendingParts(all, id, self?.packageId, base!!)
+            val pending = dao.pendingActiveParts(packageId, base!!, id) > 0
             if (pending || ExtractionRegistry.isActive(base!!)) {
                 markCompleted(id, archiveFile.absolutePath, WAITING_NOTE)
-                false
+                null
             } else {
                 // Alle Teile des Sets zeigen "wird entpackt", nicht nur der zuletzt
                 // fertige - sonst wirkt der Zustand willkuerlich verteilt
-                dao.setExtractingSet(ArchiveSets.archiveSetIds(all, id, base!!))
-                true
+                dao.setExtractingSet(dao.archiveSetIds(packageId, base!!, id))
+                ArchiveSet(id, packageId, base!!)
             }
         }
-        if (!shouldExtract) return@withContext
+        if (shouldExtract == null) return@withContext
 
-        startExtraction(id, base!!, archiveFile)
+        startExtraction(shouldExtract, archiveFile)
     }
+
+    /** Ein Archiv-Set: ausloesender Eintrag, sein Paket und der Archivschluessel. */
+    private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String)
 
     /**
      * Set ist vollstaendig und bereits EXTRACTING: erstes Volume suchen und
      * entpacken. Fehlt es, alle Teile des Sets zurueck auf fertig - nicht nur
      * den ausloesenden, sonst bleiben die uebrigen dauerhaft EXTRACTING.
      */
-    private suspend fun startExtraction(id: Long, base: String, archiveFile: File) {
-        val primary = Extractor.findPrimaryVolume(downloadDir(), base)
+    private suspend fun startExtraction(set: ArchiveSet, archiveFile: File) {
+        val primary = Extractor.findPrimaryVolume(downloadDir(), set.base)
         if (primary == null) {
-            dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
-            dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
+            dao.byId(set.id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
+            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
             return
         }
         // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
         // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
-        launchExtraction(id, base, primary, archiveFile)
+        launchExtraction(set, primary, archiveFile)
     }
 
     /**
@@ -630,39 +666,35 @@ class DownloadEngine(
     private suspend fun retryWaitingSets(packageId: Long?) = withContext(NonCancellable) {
         if (packageId == null) return@withContext
         val ready = completionMutex.withLock {
-            val all = dao.all()
-            all.filter {
-                it.packageId == packageId && it.status == DownloadStatus.COMPLETED &&
-                    it.errorMessage == WAITING_NOTE
-            }.groupBy { Extractor.archiveBase(it.fileName ?: "") }
+            dao.waitingParts(packageId, WAITING_NOTE).groupBy { it.archiveKey!! }
                 .mapNotNull { (base, parts) ->
                     val self = parts.first()
-                    if (base == null || ArchiveSets.pendingParts(all, self.id, packageId, base) ||
-                        ExtractionRegistry.isActive(base)
-                    ) return@mapNotNull null
-                    dao.setExtractingSet(ArchiveSets.archiveSetIds(all, self.id, base))
-                    Triple(self.id, base, File(downloadDir(), self.fileName!!))
+                    if (dao.pendingActiveParts(packageId, base, self.id) > 0 || ExtractionRegistry.isActive(base)) {
+                        return@mapNotNull null
+                    }
+                    dao.setExtractingSet(dao.archiveSetIds(packageId, base, self.id))
+                    ArchiveSet(self.id, packageId, base) to File(downloadDir(), self.fileName!!)
                 }
         }
-        ready.forEach { (id, base, archiveFile) -> startExtraction(id, base, archiveFile) }
+        ready.forEach { (set, archiveFile) -> startExtraction(set, archiveFile) }
     }
 
-    /** Siehe [ArchiveSets.archiveSetIds]: fertige/entpackende Teile des Sets im selben Paket, inklusive [id]. */
-    private suspend fun archiveSetIds(id: Long, base: String): List<Long> =
-        ArchiveSets.archiveSetIds(dao.all(), id, base)
+    /** Siehe [com.jdandroid.data.ArchiveSets.SET_IDS]: fertige/entpackende Teile des Sets, inklusive Ausloeser. */
+    private suspend fun archiveSetIds(set: ArchiveSet): List<Long> =
+        dao.archiveSetIds(set.packageId, set.base, set.id)
 
-    private suspend fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
-        val setIds = archiveSetIds(id, base)
+    private suspend fun launchExtraction(set: ArchiveSet, primary: File, archiveFile: File) {
+        val setIds = archiveSetIds(set)
         // Laeuft dieses Archiv bereits (z.B. aus einer frueheren Dienst-Instanz),
         // nicht ein zweites Mal entpacken; die laufende Instanz schliesst das Set ab
-        if (!ExtractionRegistry.start(base, setIds)) return
+        if (!ExtractionRegistry.start(set.base, setIds)) return
         extracting.incrementAndGet()
         onStateChanged()
         scope.launch {
             try {
-                extractAndExport(id, base, primary, archiveFile)
+                extractAndExport(set, setIds, primary, archiveFile)
             } finally {
-                ExtractionRegistry.finish(base, setIds)
+                ExtractionRegistry.finish(set.base, setIds)
                 extracting.decrementAndGet()
                 onStateChanged()
                 scope.launch { pump() }
@@ -696,27 +728,24 @@ class DownloadEngine(
         if (item.status == DownloadStatus.EXTRACTING) return "Wird bereits entpackt"
         if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
         var name = item.fileName ?: return "Dateiname unbekannt"
-        var base = Extractor.archiveBase(name)
+        var base = ArchiveNames.archiveBase(name)
         if (base == null) {
             // Namen wie "name part1 rar": alle Teile des Sets umbenennen (Datei
             // im App-Ordner bzw. aus dem Zielordner zurueckgeholt) und in der
-            // Datenbank korrigieren
-            val repaired = Extractor.repairName(name)
-            val repairedBase = Extractor.archiveBase(repaired)
+            // Datenbank korrigieren. archiveKey ist bereits aus dem reparierten
+            // Namen berechnet, findet also auch diese Teile.
+            val repaired = ArchiveNames.repairName(name)
+            val repairedBase = ArchiveNames.archiveBase(repaired)
             if (repairedBase != null) {
-                val parts = dao.all().filter {
-                    it.status == DownloadStatus.COMPLETED &&
-                        Extractor.archiveBase(Extractor.repairName(it.fileName ?: "")) == repairedBase
-                }
-                for (part in parts) {
+                for (part in dao.completedParts(item.packageId, repairedBase)) {
                     val oldName = part.fileName ?: continue
-                    val newName = Extractor.repairName(oldName)
+                    val newName = ArchiveNames.repairName(oldName)
                     val local = File(downloadDir(), newName)
                     if (!local.isFile) {
                         val oldLocal = File(downloadDir(), oldName)
                         if (oldLocal.isFile) oldLocal.renameTo(local) else restoreArchive(part, local)
                     }
-                    dao.setFileName(part.id, newName)
+                    if (newName != oldName) dao.renameFile(part.id, newName)
                 }
                 name = repaired
                 base = repairedBase
@@ -730,13 +759,10 @@ class DownloadEngine(
             val renamed = File(downloadDir(), "$name.$ext")
             local.renameTo(renamed)
             name = renamed.name
-            dao.setFileName(id, name)
-            base = Extractor.archiveBase(name) ?: return "Kein Archiv: $name"
+            dao.renameFile(id, name)
+            base = ArchiveNames.archiveBase(name) ?: return "Kein Archiv: $name"
         }
-        val set = dao.all().filter {
-            it.status == DownloadStatus.COMPLETED && Extractor.archiveBase(it.fileName ?: "") == base
-        }
-        for (part in set) {
+        for (part in dao.completedParts(item.packageId, base)) {
             val partName = part.fileName ?: continue
             val local = File(downloadDir(), partName)
             if (!local.isFile && !restoreArchive(part, local)) {
@@ -746,16 +772,16 @@ class DownloadEngine(
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
             ?: return "Erstes Archiv-Teil fehlt"
         if (ExtractionRegistry.isActive(base)) return "Wird bereits entpackt"
+        val set = ArchiveSet(id, item.packageId, base)
         completionMutex.withLock {
-            val all = dao.all()
             // Laufende Teile gehoeren nicht ins Set: sie wuerden auf EXTRACTING
             // gesetzt und nach dem Entpacken als "fertig" markiert, obwohl sie noch laden
-            if (ArchiveSets.pendingParts(all, id, item.packageId, base, ArchiveSets.LOADING)) {
+            if (dao.pendingLoadingParts(item.packageId, base, id) > 0) {
                 return "Archiv unvollständig – weitere Teile werden noch geladen"
             }
-            dao.setExtractingSet(ArchiveSets.archiveSetIds(all, id, base))
+            dao.setExtractingSet(archiveSetIds(set))
         }
-        launchExtraction(id, base, primary, File(downloadDir(), name))
+        launchExtraction(set, primary, File(downloadDir(), name))
         return null
     }
 
@@ -805,30 +831,32 @@ class DownloadEngine(
         false
     }
 
-    /** Entpacken, exportieren, Set aktualisieren - immer nur eines gleichzeitig, nicht abbrechbar. */
-    private suspend fun extractAndExport(id: Long, base: String, primary: File, archiveFile: File) =
+    /**
+     * Entpacken, exportieren, Set aktualisieren - immer nur eines gleichzeitig,
+     * nicht abbrechbar. [setIds] sind die beim Start erfassten Kennungen des
+     * Sets; sie gelten bis zum Ende, auch wenn Zeilen zwischendurch
+     * verschwinden ("Links nach dem Entpacken entfernen", Loeschen durch den
+     * Nutzer) - eine erneute Abfrage faende sie nicht mehr, und ihre
+     * Bus-Eintraege blieben liegen.
+     */
+    private suspend fun extractAndExport(set: ArchiveSet, setIds: List<Long>, primary: File, archiveFile: File) =
         withContext(NonCancellable) {
+            val (id, packageId, base) = set
             extractLimiter.withPermit {
                 var finished = false
                 var failure: String? = null
                 try {
                     // Immer in einen Unterordner mit dem Paketnamen (wie im
                     // JDownloader); ohne Paket der Archivname
-                    val folder = packageFolder(id) ?: base
+                    val folder = packageFolder(packageId) ?: base
                     val extractDir = File(downloadDir(), folder)
-                    val setIds = archiveSetIds(id, base)
-                    // Fortschritt in Prozent fuer alle Teile, hoechstens jede Sekunde
-                    var lastWrite = 0L
-                    var lastPercent = -1
+                    // Fortschritt in Prozent fuer alle Teile - nur in den Bus,
+                    // der je Eintrag drosselt; die Datenbank sieht nur Start und Ende
                     val listener = Extractor.ProgressListener { done, total ->
                         if (total <= 0) return@ProgressListener
                         val percent = (done * 100 / total).toInt().coerceIn(0, 100)
                         val now = System.currentTimeMillis()
-                        if (percent != lastPercent && (now - lastWrite >= 1000 || percent == 100)) {
-                            lastWrite = now
-                            lastPercent = percent
-                            scope.launch { dao.setExtractProgress(setIds, percent) }
-                        }
+                        setIds.forEach { ProgressBus.update(it, LiveProgress(extractPercent = percent), now) }
                     }
                     Extractor.extract(
                         primary, extractDir,
@@ -839,7 +867,7 @@ class DownloadEngine(
                     val exportedPath = exportDirectory(extractDir, folder)
                     if (app.settings.currentDeleteArchive()) {
                         downloadDir().listFiles()
-                            ?.filter { Extractor.archiveBase(it.name) == base }
+                            ?.filter { ArchiveNames.archiveBase(it.name) == base }
                             ?.forEach { it.delete() }
                     }
                     dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
@@ -847,7 +875,7 @@ class DownloadEngine(
                     dao.completeExtractingSet(setIds, exportedPath, null)
                     finished = true
                     if (app.settings.currentRemoveLinksAfterExtract()) {
-                        removeExtractedEntries(id, base)
+                        removeExtractedEntries(set)
                     }
                 } catch (e: Throwable) {
                     // Auch Error (OutOfMemoryError, UnsatisfiedLinkError des nativen
@@ -855,10 +883,9 @@ class DownloadEngine(
                     failure = e.message ?: e.javaClass.simpleName
                 } finally {
                     if (!finished) {
-                        runCatching {
-                            dao.completeExtractingSet(archiveSetIds(id, base), archiveFile.absolutePath, failure)
-                        }
+                        runCatching { dao.completeExtractingSet(setIds, archiveFile.absolutePath, failure) }
                     }
+                    runCatching { ProgressBus.removeAll(setIds) }
                 }
             }
         }
@@ -868,13 +895,8 @@ class DownloadEngine(
      * Eintraege dieses Archivs (alle Teile) verschwinden aus der Liste, leere
      * Pakete werden aufgeraeumt. Die entpackten Dateien bleiben natuerlich.
      */
-    private suspend fun removeExtractedEntries(id: Long, base: String) {
-        val all = dao.all()
-        val packageId = all.firstOrNull { it.id == id }?.packageId
-        all
-            .filter { it.id == id || it.status == DownloadStatus.COMPLETED }
-            .filter { it.packageId == packageId && Extractor.archiveBase(it.fileName ?: "") == base }
-            .forEach { dao.delete(it.id) }
+    private suspend fun removeExtractedEntries(set: ArchiveSet) {
+        dao.deleteExtractedSet(set.packageId, set.base, set.id)
         app.db.packageDao().deleteEmpty()
     }
 
@@ -892,9 +914,8 @@ class DownloadEngine(
      * (Downloads/JDAndroid/<base>/...). Ohne Export bleiben sie im App-Ordner.
      */
     /** Ordnername aus dem Paketnamen, dateisystemtauglich; null ohne Paket. */
-    private suspend fun packageFolder(id: Long): String? {
-        val packageId = dao.byId(id)?.packageId ?: return null
-        val name = app.db.packageDao().byId(packageId)?.name ?: return null
+    private suspend fun packageFolder(packageId: Long?): String? {
+        val name = app.db.packageDao().byId(packageId ?: return null)?.name ?: return null
         return FileNames.clean(name)?.trimEnd('.')?.let { FileNames.limitLength(it, 120) }?.ifBlank { null }
     }
 
@@ -990,7 +1011,7 @@ class DownloadEngine(
         val updated = item.copy(fileName = name)
         val renamed = tempFile(updated)
         if (old.path != renamed.path && old.exists()) old.renameTo(renamed)
-        dao.setFileName(item.id, name)
+        dao.renameFile(item.id, name)
         // Mit bekanntem Namen blockiert dieser Eintrag ein wartendes Archiv-Set
         // des Pakets vielleicht nicht mehr (z.B. readme.nfo statt part3)
         retryWaitingSets(item.packageId)
@@ -1079,8 +1100,8 @@ class DownloadEngine(
         /** Fenster des gleitenden Durchschnitts. */
         const val SPEED_WINDOW_MS = 5_000L
 
-        /** Abstand der Fortschritts-Schreibvorgaenge in die Datenbank. */
-        const val DB_WRITE_MS = 2_000L
+        /** Hoechstens so oft wird der Bytestand waehrend des Ladens in die Datenbank gesichert. */
+        const val SAVE_MS = 30_000L
 
         /** Mindestabstand der Benachrichtigungs-Aktualisierung. */
         const val NOTIFY_MS = 1_000L

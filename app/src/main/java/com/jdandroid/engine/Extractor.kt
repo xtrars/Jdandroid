@@ -1,5 +1,6 @@
 package com.jdandroid.engine
 
+import com.jdandroid.core.ArchiveNames
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.sf.sevenzipjbinding.ExtractOperationResult
@@ -52,38 +53,8 @@ object Extractor {
         }
     }
 
-    private val knownExtensions = setOf(
-        "rar", "zip", "7z", "mkv", "mp4", "avi", "mov", "wmv", "iso", "img", "bin",
-        "exe", "msi", "apk", "pdf", "epub", "mp3", "flac", "m4a", "txt", "nfo",
-        "srt", "sfv", "par2", "tar", "gz", "bz2", "xz", "ts", "m2ts", "wav", "ogg"
-    )
-
-    /**
-     * Namen reparieren, bei denen der Hoster Punkte und Bindestriche durch
-     * Leerzeichen ersetzt hat ("Download name part1 rar" statt
-     * "name.part1.rar"): ohne Endung erkennt die App weder Archiv noch
-     * Zusammengehoerigkeit der Teile. Nur Namen ohne Punkt, deren letztes
-     * Wort eine bekannte Endung ist; ein "Download "-Praefix faellt weg.
-     */
-    fun repairName(name: String): String {
-        if (name.contains('.')) return name
-        val tokens = name.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
-        if (tokens.size < 2) return name
-        var words = tokens
-        var ext = words.last().lowercase()
-        // "name 7z 001" -> name.7z.001
-        if (Regex("""^\d{3}$""").matches(ext) && words.size >= 3 && words[words.size - 2].equals("7z", true)) {
-            words = words.dropLast(2)
-            ext = "7z.$ext"
-        } else if (ext in knownExtensions || Regex("""^[rz]\d{2}$""").matches(ext)) {
-            words = words.dropLast(1)
-        } else {
-            return name
-        }
-        if (words.size > 1 && words.first().equals("Download", true)) words = words.drop(1)
-        if (words.isEmpty()) return name
-        return words.joinToString(".") + "." + ext
-    }
+    /** Siehe [ArchiveNames.repairName]. */
+    fun repairName(name: String): String = ArchiveNames.repairName(name)
 
     /** Archivformat anhand der ersten Bytes: "rar", "zip", "7z" oder null. */
     fun sniffExtension(file: File): String? {
@@ -106,20 +77,8 @@ object Extractor {
         return archiveExtensions.any { lower.endsWith(it) }
     }
 
-    /**
-     * Weitere Teile eines Multipart-Archivs (part2, .r00, .z01 …) nicht selbst
-     * entpacken – das erledigt der erste Teil mit.
-     */
-    fun isSecondaryVolume(fileName: String): Boolean {
-        val lower = fileName.lowercase()
-        Regex("""\.part(\d+)\.rar$""").find(lower)?.let {
-            return (it.groupValues[1].toIntOrNull() ?: 1) > 1
-        }
-        Regex("""\.7z\.(\d+)$""").find(lower)?.let {
-            return (it.groupValues[1].toIntOrNull() ?: 1) > 1
-        }
-        return Regex("""\.[rz]\d{2}$""").containsMatchIn(lower)
-    }
+    /** Siehe [ArchiveNames.isSecondaryVolume]. */
+    fun isSecondaryVolume(fileName: String): Boolean = ArchiveNames.isSecondaryVolume(fileName)
 
     /**
      * Entpackt [archive] nach [destDir]. Probiert erst ohne Passwort, dann
@@ -390,18 +349,8 @@ object Extractor {
         }
     }
 
-    /**
-     * Gemeinsamer Basisname aller Teile eines Archivs, z.B.
-     * "film.part2.rar" -> "film". Null, wenn kein Archiv.
-     */
-    fun archiveBase(fileName: String): String? {
-        val lower = fileName.lowercase()
-        Regex("""^(.*?)\.part\d+\.rar$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.7z\.\d+$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.(rar|zip|7z)$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.[rz]\d{2}$""").find(lower)?.let { return it.groupValues[1] }
-        return null
-    }
+    /** Siehe [ArchiveNames.archiveBase]. */
+    fun archiveBase(fileName: String): String? = ArchiveNames.archiveBase(fileName)
 
     /** Erstes/primaeres Volume eines Archivs im Verzeichnis finden. */
     fun findPrimaryVolume(dir: File, base: String): File? =

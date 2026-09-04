@@ -65,6 +65,8 @@ object LinkSink {
                     source = source?.let { displaySource(it) }
                 )
             )
+            // Ohne Dateinamen auch ohne archiveKey; beides kommt gemeinsam mit
+            // der Linkpruefung bzw. dem Aufloesen (DownloadDao.setFileName)
             val inserted = links.mapNotNull { (url, hoster) ->
                 dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId, status = status))
                     .takeIf { it > 0 }

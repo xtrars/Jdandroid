@@ -19,6 +19,8 @@ und ist in fünf Pakete gegliedert, die jeweils eine Schicht bilden:
 com.jdandroid
 ├── JdApp.kt              Application: Datenbank, Einstellungen, Benachrichtigungskanäle
 ├── CrashReporter.kt      unbehandelte Ausnahmen → Datei → Einstellungen „Letzter Absturz“
+├── core/                 reine Logik ohne Android: ArchiveNames, FileNames, ProgressBus,
+│                         Format, Messages
 ├── ui/                   Compose-Oberfläche, ViewModels, Theme, Meldungen
 ├── data/                 Room (Db.kt), DataStore (SettingsRepository), Secrets,
 │                         LinkSink, LinkChecker, AccountRefresher, PackageNaming
@@ -28,7 +30,8 @@ com.jdandroid
 └── container/            ClickNLoadServer, ContainerDecrypter, ContainerFiles, CnlStatus
 ```
 
-Abhängigkeitsrichtung: `ui` kennt `data`, `engine` (nur über Intents an den
+Abhängigkeitsrichtung: `core` kennt keine andere Schicht und darf von allen
+genutzt werden. `ui` kennt `data`, `engine` (nur über Intents an den
 Dienst) und `hoster` (Registry für Kontodialoge). `engine` kennt `data`,
 `hoster` und `container`. `container` kennt `hoster` nur für den
 OkHttp-Client des DLC-Dienstes. `hoster` kennt `data` nur für die
@@ -161,7 +164,8 @@ DownloadEngine.run(id)  → Hoster.resolve() → direkte URL, Name, Größe, Pr�
         │
         ▼
 DownloadEngine.download()  → OkHttp mit Range-Resume in <id>-<name>.part
-        │                      Fortschritt/Geschwindigkeit alle 2 s in die DB
+        │                      Bytes/Geschwindigkeit alle 500 ms in den ProgressBus,
+        │                      Bytestand höchstens alle 30 s in die DB
         ▼
 verifyHash()  (MD5/SHA-1, wenn der Hoster eine lieferte)
         │
@@ -255,8 +259,23 @@ unter einem `Mutex`. Kernpunkte:
   den Link neu auflöst.
 - **Speicherplatz** wird vor dem Download geprüft, nicht erst nach Minuten
   per IO-Fehler.
-- **Geschwindigkeit** als gleitender 5-Sekunden-Durchschnitt; Fortschritt
-  alle 2 s in die Datenbank, Benachrichtigung höchstens jede Sekunde.
+- **Fortschritt läuft über den `core/ProgressBus`**, nicht über Room: ein
+  prozessweiter `StateFlow<Map<Long, LiveProgress>>` (Bytes, Geschwindigkeit
+  als gleitender 5-Sekunden-Durchschnitt, Entpack-Prozent), höchstens alle
+  500 ms je Eintrag. Vorher schrieb die Engine alle 2 s in die Datenbank;
+  jede Schreibung invalidierte die ganze Tabelle und die Oberfläche
+  gruppierte die Liste neu. In die Datenbank gehen nur Zustandswechsel
+  (Start, Pause, Fehler, Abschluss, Entpack-Start/-Ende, jeweils mit dem
+  letzten Bytestand) und eine Sicherung des Bytestands höchstens alle 30 s;
+  beim Verlassen der Übertragung (auch bei Abbruch) wird der letzte Stand
+  gesichert. Bei Pause, Abschluss oder Fehler verschwindet der Eintrag aus
+  dem Bus, dann gilt wieder der Datenbankwert. Fortsetzen nach einem Absturz
+  braucht den Bus nicht: es nutzt die Größe der `.part`-Datei. Das
+  `DownloadViewModel` kombiniert Room-Flow und Bus (`combine`), legt die
+  Live-Werte per `copy()` über die Einträge (`overlayProgress`) und gruppiert
+  auf `Dispatchers.Default`. Die Benachrichtigung rechnet laufende Einträge
+  aus dem Bus, die übrigen aus der Datenbank (`openDownloadedBytes`),
+  höchstens jede Sekunde.
   `SpeedLimiter` verteilt ein globales Kontingent in 1-Sekunden-Fenstern und
   wartet außerhalb des Locks, sonst würde das Limit alle Downloads
   serialisieren.
@@ -274,9 +293,10 @@ unter einem `Mutex`. Kernpunkte:
 - **Nachträgliches Entpacken** (`extractNow`) holt Archivteile bei Bedarf aus
   dem Zielordner oder dem MediaStore zurück in den App-Ordner.
 
-`Extractor` erkennt Archive an der Endung (`archiveBase()`), repariert von
-ddownload zerstückelte Namen (`repairName()`, „name part1 rar“) und Namen ohne
-Endung über Magic Bytes (`sniffExtension()`). Formate: ZIP über zip4j (Datei
+`core/ArchiveNames` erkennt Archive an der Endung (`archiveBase()`) und
+repariert von ddownload zerstückelte Namen (`repairName()`, „name part1 rar“);
+`Extractor` delegiert dorthin und ergänzt Namen ohne Endung über Magic Bytes
+(`sniffExtension()`). Formate: ZIP über zip4j (Datei
 für Datei, damit Ausschlussmuster greifen), 7z über commons-compress (auch
 `.7z.001`-Volumes), RAR4/RAR5 über 7-Zip-JBinding (native `.so`, wird mit
 `System.loadLibrary("7-Zip-JBinding")` und `SevenZip.initLoadedLibraries()`
@@ -293,7 +313,7 @@ Archiveinträgen.
 | Tabelle | Entity | Inhalt |
 |---|---|---|
 | `packages` | `DownloadPackage` | Name, `autoNamed` (darf aus Dateinamen verfeinert werden), `source` (Herkunft bei Click'n'Load), `addedAt` |
-| `downloads` | `DownloadItem` | URL (eindeutiger Index), `hosterId`, `packageId`, Name, Größe, Fortschritt, Geschwindigkeit, `status`, Fehlertext, `localPath`, `attempts`, `retryAt`, `online`, `extractProgress` |
+| `downloads` | `DownloadItem` | URL (eindeutiger Index), `hosterId`, `packageId`, Name, `archiveKey` (Basisname des Archivs, indiziert), Größe, Fortschritt, Geschwindigkeit, `status`, Fehlertext, `localPath`, `attempts`, `retryAt`, `online`, `extractProgress` |
 | `accounts` | `Account` | `hosterId`, Benutzername, Passwort/API-Key/Cookies (verschlüsselt), `premiumUntil`, `trafficLeft`, `trafficTotal`, `trafficUnlimited`, `valid`, `lastChecked`, `statusText` |
 
 Migrationen stehen in `Db.kt` als `ALL_MIGRATIONS` und sind bewusst echte
@@ -310,7 +330,8 @@ Datenbank neu aufgebaut.
 | 5→6 | `downloads.online` (Linksammler) | 1.2.0 |
 | 6→7 | `accounts.trafficTotal`, `trafficUnlimited` | 1.3.0 |
 | 7→8 | Duplikate bereinigen, eindeutiger Index auf `downloads.url` | 1.5.0 |
-| 8→9 | `downloads.extractProgress` | 0.0.4 |
+| 8→9 | `downloads.extractProgress` (seit dem ProgressBus nur noch Start 0 / Ende -1, Spalte bleibt aus Kompatibilität) | 0.0.4 |
+| 9→10 | `downloads.archiveKey` (indiziert, aus `fileName` nachgefüllt) | 0.0.8 |
 
 Der instrumentierte `MigrationTest` (`app/src/androidTest/`) prüft die
 Migrationen ab Version 5 gegen die exportierten Schemata mit
@@ -325,6 +346,18 @@ Die DAOs sind so geschnitten, dass die Engine gezielte, bedingte Updates
 ausführt (`nextQueued` schließt laufende Kennungen aus, `setExtractingSet`
 und `completeExtractingSet` arbeiten auf ganzen Archiv-Sets). `Flow`-Abfragen
 (`observeAll`) speisen die Oberfläche.
+
+Die Zugehörigkeit zu einem Archiv-Set steht in der Spalte `archiveKey`
+(`core/ArchiveNames.archiveKey()`: Basisname nach Reparatur des Namens,
+„film part2 rar“ → „film“). Sie wird überall mitgeschrieben, wo der Dateiname
+gesetzt wird (`DownloadDao.renameFile`, `applyCheck`). Die Set-Abfragen
+(ausstehende Teile, Kennungen eines Sets, Löschen nach dem Entpacken) liegen
+als SQL-Konstanten in `data/ArchiveSets.kt`, sind auf ein Paket begrenzt und
+werden im JVM-Test `ArchiveSetsTest` gegen eine echte SQLite-Datenbank mit dem
+exportierten Schema geprüft (Basis `SchemaDbTest`, immer die höchste `N.json`).
+Weitere DAO-Abfragen mit eigener Logik (`applyCheck`, „Alle fortsetzen“,
+Bytesumme ohne Live-Einträge) stehen in `data/DownloadQueries.kt` und werden
+in `DownloadQueriesTest` genauso geprüft.
 
 ## Click'n'Load-Server
 

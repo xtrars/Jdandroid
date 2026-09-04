@@ -269,7 +269,7 @@ class DownloadService : Service() {
                 if (cnlActive) append(" · CnL an")
             }
         }
-        val done = dao.openDownloadedBytes()
+        val done = engine.openDownloadedBytes()
         val total = dao.openTotalBytes()
         val progress = if (active > 0 && total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else -1
         val paused = dao.pausedCount()

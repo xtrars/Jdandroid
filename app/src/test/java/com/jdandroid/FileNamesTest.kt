@@ -1,7 +1,7 @@
 package com.jdandroid
 
 import com.jdandroid.engine.DownloadEngine
-import com.jdandroid.engine.FileNames
+import com.jdandroid.core.FileNames
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -13,6 +13,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Update
+import com.jdandroid.core.ArchiveNames
 import kotlinx.coroutines.flow.Flow
 
 /** COLLECTED = liegt im Linksammler und wurde noch nicht gestartet (wie im JDownloader). */
@@ -38,13 +39,22 @@ data class DownloadPackage(
     val addedAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "downloads", indices = [Index(value = ["url"], unique = true)])
+@Entity(
+    tableName = "downloads",
+    indices = [Index(value = ["url"], unique = true), Index(value = ["archiveKey"])]
+)
 data class DownloadItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
     val hosterId: String,
     val packageId: Long? = null,
     val fileName: String? = null,
+    /**
+     * Basisname des Archivs ([ArchiveNames.archiveKey] aus [fileName]),
+     * null = kein Archiv oder Name unbekannt. Wird ueberall mitgeschrieben,
+     * wo der Name gesetzt wird; Archiv-Sets werden darueber abgefragt.
+     */
+    val archiveKey: String? = null,
     val fileSize: Long = -1,
     val downloadedBytes: Long = 0,
     val speedBps: Long = 0,
@@ -57,7 +67,12 @@ data class DownloadItem(
     val retryAt: Long = 0,
     /** Online-Pruefung (siehe [OnlineState]); Hinweis dazu in [errorMessage]. */
     val online: Int = OnlineState.UNKNOWN,
-    /** Fortschritt des Entpackens in Prozent (Status EXTRACTING), -1 = unbekannt. */
+    /**
+     * Fortschritt des Entpackens in Prozent, -1 = unbekannt. Bleibt aus
+     * Kompatibilitaet bestehen und wird nur noch bei Entpack-Start (0) und
+     * -Ende (-1) geschrieben; der laufende Wert kommt aus dem
+     * [com.jdandroid.core.ProgressBus].
+     */
     val extractProgress: Int = -1,
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -114,12 +129,14 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
     suspend fun pausedCount(): Int
 
-    /** Summen fuer die Fortschrittsanzeige in der Benachrichtigung. */
-    @Query(
-        "SELECT COALESCE(SUM(downloadedBytes), 0) FROM downloads " +
-            "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED')"
-    )
-    suspend fun openDownloadedBytes(): Long
+    /**
+     * Summen fuer die Fortschrittsanzeige in der Benachrichtigung. [except]
+     * sind die Eintraege mit Live-Stand im ProgressBus; ihr Datenbankwert
+     * ist bis zu 30 s alt und wird von der Engine durch den Live-Wert ersetzt
+     * (siehe [DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT]).
+     */
+    @Query(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT)
+    suspend fun openDownloadedBytesExcept(except: List<Long>): Long
 
     @Query(
         "SELECT COALESCE(SUM(fileSize), 0) FROM downloads " +
@@ -150,14 +167,11 @@ interface DownloadDao {
     @Query("UPDATE downloads SET online = :online WHERE id = :id AND status = 'COLLECTED'")
     suspend fun setOnline(id: Long, online: Int)
 
-    /** Ergebnis der Online-Pruefung eintragen (Name/Groesse nur, wenn bekannt). */
-    @Query(
-        "UPDATE downloads SET online = :online, errorMessage = :note, " +
-            "fileName = COALESCE(:fileName, fileName), " +
-            "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END " +
-            "WHERE id = :id AND status = 'COLLECTED'"
+    /** Ergebnis der Online-Pruefung eintragen (siehe [DownloadQueries.APPLY_CHECK]). */
+    @Query(DownloadQueries.APPLY_CHECK)
+    suspend fun applyCheck(
+        id: Long, online: Int, note: String?, fileName: String?, archiveKey: String?, fileSize: Long
     )
-    suspend fun applyCheck(id: Long, online: Int, note: String?, fileName: String?, fileSize: Long)
 
     @Query("DELETE FROM downloads WHERE status = 'COLLECTED' AND online = 2")
     suspend fun deleteOfflineCollected()
@@ -175,8 +189,13 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = :status, errorMessage = :error WHERE id = :id")
     suspend fun setStatus(id: Long, status: DownloadStatus, error: String? = null)
 
-    @Query("UPDATE downloads SET downloadedBytes = :bytes, fileSize = :total, speedBps = :speed WHERE id = :id")
-    suspend fun updateProgress(id: Long, bytes: Long, total: Long, speed: Long)
+    /**
+     * Bytestand sichern: beim Start der Uebertragung, hoechstens alle 30 s und
+     * beim Verlassen der Uebertragung. Geschwindigkeit wird hier nicht
+     * geschrieben - sie ist ein Live-Wert des ProgressBus.
+     */
+    @Query("UPDATE downloads SET downloadedBytes = :bytes, fileSize = :total WHERE id = :id")
+    suspend fun saveProgress(id: Long, bytes: Long, total: Long)
 
     /** Nach Prozess-Ende: laufende und entpackende Eintraege wieder einreihen. */
     @Query(
@@ -198,9 +217,6 @@ interface DownloadDao {
             "WHERE id IN (:ids) AND status IN ('COMPLETED', 'EXTRACTING', 'RUNNING')"
     )
     suspend fun setExtractingSet(ids: List<Long>)
-
-    @Query("UPDATE downloads SET extractProgress = :percent WHERE id IN (:ids) AND status = 'EXTRACTING'")
-    suspend fun setExtractProgress(ids: List<Long>, percent: Int)
 
     /** Entpacken beendet: alle Teile des Sets zurueck auf fertig, mit Zielpfad bzw. Fehlerhinweis. */
     @Query(
@@ -240,8 +256,39 @@ interface DownloadDao {
     )
     suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
-    @Query("UPDATE downloads SET fileName = :name WHERE id = :id")
-    suspend fun setFileName(id: Long, name: String)
+    /** Name und Archivschluessel gehoeren zusammen - siehe [renameFile]. */
+    @Query("UPDATE downloads SET fileName = :name, archiveKey = :archiveKey WHERE id = :id")
+    suspend fun setFileName(id: Long, name: String, archiveKey: String?)
+
+    /** Ausstehende Teile des Sets (siehe [ArchiveSets.PENDING_ACTIVE]). */
+    @Query(ArchiveSets.PENDING_ACTIVE)
+    suspend fun pendingActiveParts(packageId: Long?, key: String, selfId: Long): Int
+
+    /** Noch ladende Teile des Sets (siehe [ArchiveSets.PENDING_LOADING]). */
+    @Query(ArchiveSets.PENDING_LOADING)
+    suspend fun pendingLoadingParts(packageId: Long?, key: String, selfId: Long): Int
+
+    /** Fertige/entpackende Teile des Sets inklusive [selfId] (siehe [ArchiveSets.SET_IDS]). */
+    @Query(ArchiveSets.SET_IDS)
+    suspend fun archiveSetIds(packageId: Long?, key: String, selfId: Long): List<Long>
+
+    @Query(ArchiveSets.COMPLETED_PARTS)
+    suspend fun completedParts(packageId: Long?, key: String): List<DownloadItem>
+
+    @Query(ArchiveSets.DELETE_EXTRACTED)
+    suspend fun deleteExtractedSet(packageId: Long?, key: String, selfId: Long)
+
+    @Query(ArchiveSets.WAITING_PARTS)
+    suspend fun waitingParts(packageId: Long, note: String): List<DownloadItem>
+
+    @Query(ArchiveSets.COMPLETED_ARCHIVES)
+    suspend fun completedArchives(packageId: Long): List<DownloadItem>
+
+    @Query(ArchiveSets.COUNT_KEY)
+    suspend fun countByArchiveKey(key: String): Int
+
+    @Query(ArchiveSets.SAME_NAME_ELSEWHERE)
+    suspend fun countSameNameElsewhere(fileName: String, packageId: Long?): Int
 
     /** Fertigen Eintrag von vorn laden. */
     @Query(
@@ -261,6 +308,10 @@ interface DownloadDao {
     )
     suspend fun requeue(id: Long)
 
+    /** "Alle fortsetzen": pausierte und gescheiterte Eintraege (siehe [DownloadQueries.REQUEUE_PAUSED_AND_FAILED]). */
+    @Query(DownloadQueries.REQUEUE_PAUSED_AND_FAILED)
+    suspend fun requeuePausedAndFailed()
+
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: Long)
 
@@ -273,6 +324,10 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE packageId = :packageId")
     suspend fun deletePackageItems(packageId: Long)
 }
+
+/** Dateinamen setzen und den Archivschluessel daraus ableiten - die eine Stelle dafuer. */
+suspend fun DownloadDao.renameFile(id: Long, name: String) =
+    setFileName(id, name, ArchiveNames.archiveKey(name))
 
 @Dao
 interface PackageDao {
@@ -328,7 +383,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -401,9 +456,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Archivschluessel als Spalte: vorher wurde die Zugehoerigkeit zu einem
+         * Archiv-Set bei jedem Aufruf aus allen Dateinamen berechnet. Bestehende
+         * Zeilen werden aus ihrem Dateinamen nachgefuellt.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN archiveKey TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_downloads_archiveKey ON downloads(archiveKey)")
+                // Erst alle Schluessel lesen, dann schreiben: nicht in die Tabelle
+                // schreiben, ueber die der Cursor gerade laeuft
+                val keys = ArrayList<Pair<Long, String>>()
+                db.query("SELECT id, fileName FROM downloads WHERE fileName IS NOT NULL").use { c ->
+                    while (c.moveToNext()) {
+                        ArchiveNames.archiveKey(c.getString(1))?.let { keys += c.getLong(0) to it }
+                    }
+                }
+                keys.forEach { (id, key) ->
+                    db.execSQL("UPDATE downloads SET archiveKey = ? WHERE id = ?", arrayOf<Any>(key, id))
+                }
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-            MIGRATION_7_8, MIGRATION_8_9
+            MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
         )
     }
 }

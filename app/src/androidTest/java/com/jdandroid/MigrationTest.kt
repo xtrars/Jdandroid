@@ -108,12 +108,51 @@ class MigrationTest {
     }
 
     @Test
-    fun migrateAll5To9() {
+    fun migrate9To10_fuelltArchiveKeyAusDemDateinamen() {
+        helper.createDatabase(dbName, 9).apply {
+            insertDownload9(this, 1, "https://example.org/a", "x.part2.rar")
+            insertDownload9(this, 2, "https://example.org/b", "x part1 rar")
+            insertDownload9(this, 3, "https://example.org/c", "film.mkv")
+            insertDownload9(this, 4, "https://example.org/d", null)
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(dbName, 10, true, AppDatabase.MIGRATION_9_10)
+        db.query("SELECT id, archiveKey FROM downloads ORDER BY id").use { c ->
+            assertEquals(4, c.count)
+            assertTrue(c.moveToFirst())
+            assertEquals("x", c.getString(1))
+            assertTrue(c.moveToNext())
+            assertEquals("x", c.getString(1))
+            assertTrue(c.moveToNext())
+            assertTrue(c.isNull(1))
+            assertTrue(c.moveToNext())
+            assertTrue(c.isNull(1))
+        }
+        db.query(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'index_downloads_archiveKey'"
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+        }
+    }
+
+    @Test
+    fun migrateAll5To10() {
         helper.createDatabase(dbName, 5).close()
         helper.runMigrationsAndValidate(
-            dbName, 9, true,
+            dbName, 10, true,
             AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9
+            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10
+        )
+    }
+
+    /** Fuegt eine downloads-Zeile im Schema der Version 9 ein (mit extractProgress, ohne archiveKey). */
+    private fun insertDownload9(db: SupportSQLiteDatabase, id: Long, url: String, fileName: String?) {
+        db.execSQL(
+            "INSERT INTO downloads (id, url, hosterId, packageId, fileName, fileSize, downloadedBytes, " +
+                "speedBps, status, errorMessage, localPath, attempts, retryAt, online, extractProgress, addedAt) VALUES " +
+                "(?, ?, 'ddownload', NULL, ?, 10, 0, 0, 'COMPLETED', NULL, NULL, 0, 0, 0, -1, 1)",
+            arrayOf<Any?>(id, url, fileName)
         )
     }
 

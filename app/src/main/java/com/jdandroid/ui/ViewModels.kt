@@ -9,6 +9,9 @@ import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.container.ContainerFiles
 import com.jdandroid.core.AppMessages
+import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.LiveProgress
+import com.jdandroid.core.ProgressBus
 import com.jdandroid.data.Account
 import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
@@ -18,12 +21,12 @@ import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
 import com.jdandroid.engine.DownloadService
-import com.jdandroid.engine.Extractor
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -70,6 +73,23 @@ internal fun groupDownloads(items: List<DownloadItem>, packages: List<DownloadPa
     )
 }
 
+/**
+ * Live-Werte aus dem [ProgressBus] ueber die Datenbank-Eintraege legen.
+ * Eintraege ohne Live-Werte bleiben dieselbe Instanz; -1 im Live-Wert
+ * bedeutet "Datenbankwert behalten" (z.B. Bytestand waehrend des Entpackens).
+ */
+internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProgress>): List<DownloadItem> {
+    if (live.isEmpty()) return items
+    return items.map { item ->
+        val p = live[item.id] ?: return@map item
+        item.copy(
+            downloadedBytes = if (p.downloadedBytes >= 0) p.downloadedBytes else item.downloadedBytes,
+            speedBps = p.speedBps,
+            extractProgress = if (p.extractPercent >= 0) p.extractPercent else item.extractProgress
+        )
+    }
+}
+
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val jdApp = app as JdApp
@@ -77,11 +97,18 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val packageDao = jdApp.db.packageDao()
 
-    /** Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im JDownloader. */
+    /**
+     * Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im
+     * JDownloader. Bytestand, Geschwindigkeit und Entpack-Prozent kommen live
+     * aus dem [ProgressBus], nicht aus der Datenbank; Ueberlagern und
+     * Gruppieren laufen abseits des Hauptthreads.
+     */
     val groups: StateFlow<List<DownloadGroup>> =
-        combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
-            groupDownloads(items.filter { it.status != DownloadStatus.COLLECTED }, packages)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        combine(dao.observeAll(), packageDao.observeAll(), ProgressBus.state) { items, packages, live ->
+            val visible = items.filter { it.status != DownloadStatus.COLLECTED }
+            groupDownloads(overlayProgress(visible, live), packages)
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Linksammler: noch nicht gestartete Links nach Paketen. */
     val collectorGroups: StateFlow<List<DownloadGroup>> =
@@ -235,10 +262,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     /** Alle fertigen Archive eines Pakets entpacken (nur erste Teile eines Sets). */
     fun extractPackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            val items = dao.byPackage(packageId).filter { it.status == DownloadStatus.COMPLETED }
-            val archives = items.filter { item ->
-                val name = Extractor.repairName(item.fileName ?: return@filter false)
-                Extractor.archiveBase(name) != null && !Extractor.isSecondaryVolume(name)
+            val archives = dao.completedArchives(packageId).filter { item ->
+                !ArchiveNames.isSecondaryVolume(ArchiveNames.repairName(item.fileName ?: return@filter false))
             }
             if (archives.isEmpty()) {
                 AppMessages.info("Keine fertigen Archive in diesem Paket")
@@ -266,10 +291,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Direkt aus der DB: ein StateFlow ohne Sammler haette keinen Wert
-            dao.all()
-                .filter { it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.FAILED }
-                .forEach { dao.requeue(it.id) }
+            // Direkt in der DB, ein Update fuer alle: ein StateFlow ohne Sammler haette keinen Wert
+            dao.requeuePausedAndFailed()
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }

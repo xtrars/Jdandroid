@@ -25,6 +25,26 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.8] – 2026-09-04
+
+Zwei Umbauten unter der Haube, keine neuen Funktionen.
+
+### Geändert
+
+- Archiv-Zugehörigkeit wird in der Datenbank gespeichert (Spalte
+  `archiveKey`, indiziert; Datenbankversion 10 mit Migration und Rückfüllung
+  aus den Dateinamen). Alle Set-Berechnungen laufen jetzt als gezielte
+  Abfragen statt über die ganze Tabelle, immer auf das Paket begrenzt; gleiche
+  Archivnamen in zwei Paketen kollidieren nicht mehr. Namenslogik in
+  `core/ArchiveNames`, Dateinamen-Logik in `core/FileNames`.
+- Live-Fortschritt (Bytestand, Geschwindigkeit, Entpack-Prozent) liegt in
+  einem Speicher-Bus (`core/ProgressBus`), nicht mehr in der Datenbank. Die
+  Datenbank sieht nur Zustandswechsel und alle 30 Sekunden eine Sicherung des
+  Bytestands. Die Liste wird dadurch bei mehreren Downloads deutlich seltener
+  neu aufgebaut.
+- SQL-Abfragen der Set- und Fortschrittslogik sind in JVM-Tests gegen das
+  exportierte Schema geprüft (sqlite-jdbc als Testabhängigkeit). 184 Tests.
+
 ## [0.0.7] – 2026-09-04
 
 ### Geändert
@@ -505,6 +525,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.8]: https://github.com/xtrars/Jdandroid/commit/f23de7f
 [0.0.7]: https://github.com/xtrars/Jdandroid/commit/5a65ec8
 [0.0.6]: https://github.com/xtrars/Jdandroid/commit/7afb954
 [0.0.5]: https://github.com/xtrars/Jdandroid/commit/d03642a
