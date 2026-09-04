@@ -95,7 +95,7 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
     // THIRD_PARTY_NOTICES.md). Rapidgator (orange Kachel) und ddownload (blaue
     // Kachel) bringen ihren Hintergrund selbst mit; die 1fichier-Wuerfel
     // liegen auf einer neutralen Flaeche.
-    val icon = hosterIcon(hoster.id)
+    val icon = hosterIconRes(hoster.id)
     val background = when (hoster.id) {
         "rapidgator", "ddownload" -> Color.Transparent
         else -> MaterialTheme.colorScheme.surfaceContainerHighest
@@ -125,13 +125,7 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
     }
 }
 
-/** Symbol je Hoster; null, wenn keines hinterlegt ist (dann Anfangsbuchstabe). */
-private fun hosterIcon(id: String): Int? = when (id) {
-    "rapidgator" -> com.jdandroid.R.drawable.hoster_rapidgator
-    "onefichier" -> com.jdandroid.R.drawable.hoster_onefichier
-    "ddownload" -> com.jdandroid.R.drawable.hoster_ddownload
-    else -> null
-}
+
 
 /**
  * Kontenliste. Der Dialog "Konto hinzufuegen" wird ueber [showAdd] von der

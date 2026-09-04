@@ -314,7 +314,7 @@ private fun PackageHeader(
                             if (group.finished > 0) {
                                 DropdownMenuItem(
                                     text = { Text("Archive entpacken") },
-                                    leadingIcon = { Icon(JdIcons.FolderOpen, contentDescription = null) },
+                                    leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
                                     onClick = { menuOpen = false; vm.extractPackage(group.pkg.id) }
                                 )
                             }
@@ -442,7 +442,7 @@ private fun DownloadRow(
                             DownloadStatus.COMPLETED -> {
                                 DropdownMenuItem(
                                     text = { Text("Entpacken") },
-                                    leadingIcon = { Icon(JdIcons.FolderOpen, contentDescription = null) },
+                                    leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
                                     onClick = { menuOpen = false; vm.extract(item.id) }
                                 )
                                 DropdownMenuItem(
@@ -480,7 +480,8 @@ private fun DownloadRow(
             MetaRow(
                 "$hosterName · $statusLine",
                 color = if (item.status == DownloadStatus.FAILED || item.status == DownloadStatus.OFFLINE)
-                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                hosterId = item.hosterId
             )
             if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.PAUSED) {
                 Spacer(Modifier.height(6.dp))

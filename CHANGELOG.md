@@ -25,6 +25,14 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.13] – 2026-09-04
+
+### Geändert
+
+- Hoster-Symbole auch in den Zeilen der Download-Liste und des Linksammlers.
+- Eindeutige Symbole: „Entpacken“ zeigt ein Archiv mit Pfeil, der DLC-Import
+  eine Datei mit Pfeil; das Ordnersymbol war für beides im Einsatz.
+
 ## [0.0.12] – 2026-09-04
 
 ### Behoben
@@ -553,6 +561,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.13]: https://github.com/xtrars/Jdandroid/commit/d958c03
 [0.0.12]: https://github.com/xtrars/Jdandroid/commit/6b50d9d
 [0.0.11]: https://github.com/xtrars/Jdandroid/commit/e839f09
 [0.0.10]: https://github.com/xtrars/Jdandroid/commit/ceef892

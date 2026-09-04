@@ -1,6 +1,11 @@
 package com.jdandroid.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +21,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -115,14 +122,35 @@ fun SettingsGroup(content: @Composable () -> Unit) {
 
 /** Kleine Zeile "Bezeichnung · Wert" fuer Meta-Angaben. */
 @Composable
-fun MetaRow(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
-    Row(Modifier.fillMaxWidth()) {
+fun MetaRow(
+    text: String,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    hosterId: String? = null
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Kleines Hoster-Symbol vor dem Text, falls eines hinterlegt ist
+        hosterId?.let { hosterIconRes(it) }?.let { res ->
+            Image(
+                painterResource(res),
+                contentDescription = null,
+                modifier = Modifier.size(14.dp).clip(CircleShape)
+            )
+            Spacer(Modifier.width(5.dp))
+        }
         Text(
             text,
             style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
             color = color
         )
     }
+}
+
+/** Symbol je Hoster (siehe THIRD_PARTY_NOTICES.md); null, wenn keines hinterlegt ist. */
+fun hosterIconRes(id: String): Int? = when (id) {
+    "rapidgator" -> com.jdandroid.R.drawable.hoster_rapidgator
+    "onefichier" -> com.jdandroid.R.drawable.hoster_onefichier
+    "ddownload" -> com.jdandroid.R.drawable.hoster_ddownload
+    else -> null
 }
 
 /**
@@ -140,6 +168,25 @@ object JdIcons {
             viewportWidth = 24f,
             viewportHeight = 24f
         ).addPath(pathData = addPathNodes(pathData), fill = SolidColor(Color.Black)).build()
+
+    /** Archiv mit Pfeil nach oben: Entpacken. */
+    val Unarchive: ImageVector by lazy {
+        icon(
+            "Unarchive",
+            "M20.55,5.22l-1.39,-1.68C18.88,3.21 18.47,3 18,3H6c-0.47,0 -0.88,0.21 -1.15,0.55L3.46,5.22" +
+                "C3.17,5.57 3,6.01 3,6.5V19c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V6.5c0,-0.49 -0.17,-0.93 " +
+                "-0.45,-1.28zM12,9.5l5.5,5.5H14v2h-4v-2H6.5L12,9.5zM5.12,5l0.81,-1h12l0.94,1H5.12z"
+        )
+    }
+
+    /** Datei mit Pfeil nach oben: Datei importieren (DLC). */
+    val UploadFile: ImageVector by lazy {
+        icon(
+            "UploadFile",
+            "M14,2H6C4.9,2 4.01,2.9 4.01,4L4,20c0,1.1 0.89,2 1.99,2H18c1.1,0 2,-0.9 2,-2V8L14,2zM18,20H6V4" +
+                "h7v5h5V20zM8,15.01l1.41,1.41L11,14.84V19h2v-4.16l1.59,1.59L16,15.01L12.01,11L8,15.01z"
+        )
+    }
 
     /** Pfeil nach unten auf einer Linie: Downloads. */
     val Download: ImageVector by lazy {

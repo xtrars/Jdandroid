@@ -94,7 +94,7 @@ fun LinkGrabberScreen(
                 colors = jdTopBarColors(),
                 actions = {
                     IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
-                        Icon(JdIcons.FolderOpen, contentDescription = "DLC-Datei importieren")
+                        Icon(JdIcons.UploadFile, contentDescription = "DLC-Datei importieren")
                     }
                     IconButton(onClick = { vm.recheckCollected() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Erneut prüfen")
@@ -115,7 +115,7 @@ fun LinkGrabberScreen(
             Box(content.padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "Der Linksammler ist leer.\n\nNeue Links (Einfügen, Teilen, DLC über das " +
-                        "Ordner-Symbol, Click'n'Load) erscheinen hier, werden online geprüft " +
+                        "Datei-Symbol, Click'n'Load) erscheinen hier, werden online geprüft " +
                         "und starten erst auf Wunsch.",
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium,
@@ -255,7 +255,8 @@ private fun CollectorRow(item: DownloadItem, vm: DownloadViewModel, modifier: Mo
                         if (item.online != OnlineState.ONLINE) item.errorMessage?.let { append(" ($it)") }
                     },
                     color = if (item.online == OnlineState.OFFLINE) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    hosterId = item.hosterId
                 )
             }
             IconButton(onClick = { vm.delete(item.id) }) {
