@@ -91,8 +91,9 @@ POM-Datei im Gradle-Cache
 
 ## Hoster-Symbole
 
-Die Symbole der Hoster (`app/src/main/res/drawable-nodpi/hoster_*.png`) sind die
-öffentlichen Website-Icons von rapidgator.net, 1fichier.com und ddownload.com,
-unverändert bis auf die Skalierung. Sie sind Kennzeichen der jeweiligen Betreiber und werden
+Die Symbole der Hoster (`app/src/main/res/drawable-nodpi/hoster_*.png`) stammen aus
+den öffentlichen Logos und Website-Icons der Betreiber: Rapidgator das weiße
+Pfeil-in-Ablage-Zeichen aus dem orangefarbenen Rapidgator-Logo auf orangefarbener
+Kachel, 1fichier die Würfel aus dem Logo, ddownload das Touch-Icon der Website. Sie sind Kennzeichen der jeweiligen Betreiber und werden
 ausschließlich zur Identifikation des Dienstes verwendet; sie stehen nicht
 unter der Projektlizenz. Auf Wunsch eines Betreibers werden sie entfernt.

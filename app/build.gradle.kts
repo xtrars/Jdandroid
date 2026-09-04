@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
-        versionCode = 38
-        versionName = "0.0.14"
+        versionCode = 39
+        versionName = "0.0.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

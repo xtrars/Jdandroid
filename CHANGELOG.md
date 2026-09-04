@@ -25,6 +25,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.15] – 2026-09-04
+
+### Behoben
+
+- Rapidgator-Symbol nach dem offiziellen Logo: weißes Pfeil-in-Ablage-Zeichen
+  auf orangefarbener Kachel.
+
 ## [0.0.14] – 2026-09-04
 
 ### Behoben
@@ -568,6 +575,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.15]: https://github.com/xtrars/Jdandroid/commit/f2c5395
 [0.0.14]: https://github.com/xtrars/Jdandroid/commit/891a924
 [0.0.13]: https://github.com/xtrars/Jdandroid/commit/d958c03
 [0.0.12]: https://github.com/xtrars/Jdandroid/commit/6b50d9d

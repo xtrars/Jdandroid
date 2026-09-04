@@ -91,12 +91,12 @@ private fun hosterColor(@Suppress("UNUSED_PARAMETER") id: String): Color =
 
 @Composable
 private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
-    // Symbole der Hoster (die oeffentlichen Website-Icons, siehe
-    // THIRD_PARTY_NOTICES.md). ddownload fuellt seine Kachel selbst; die
-    // Rapidgator-Kachel und die 1fichier-Wuerfel liegen auf neutraler Flaeche.
+    // Symbole der Hoster (siehe THIRD_PARTY_NOTICES.md). Rapidgator (orange)
+    // und ddownload (blau) fuellen ihre Kachel selbst; die 1fichier-Wuerfel
+    // liegen auf neutraler Flaeche.
     val icon = hosterIconRes(hoster.id)
     val background = when (hoster.id) {
-        "ddownload" -> Color.Transparent
+        "rapidgator", "ddownload" -> Color.Transparent
         else -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
     Box(
@@ -111,7 +111,7 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
                 painterResource(icon),
                 contentDescription = hoster.displayName,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(if (hoster.id == "ddownload") size.dp else (size * 0.82f).dp)
+                modifier = Modifier.size(if (hoster.id == "onefichier") (size * 0.8f).dp else size.dp)
             )
         } else {
             Text(
