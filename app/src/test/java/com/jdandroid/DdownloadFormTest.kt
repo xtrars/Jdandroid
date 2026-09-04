@@ -2,8 +2,10 @@ package com.jdandroid
 
 import com.jdandroid.hoster.DdownloadHoster
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -19,6 +21,9 @@ class DdownloadFormTest {
         <a href="https://ddownload.com/pricing">Upgrade</a>
         <a href="https://ddownload.com/?op=my_account">Konto</a>
         <link href="https://ddownload.com/assets/style.css">
+        <script>
+          var tracker = "https://ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t";
+        </script>
         <form name="F1" method="POST" action="" style="display:contents;">
           <input type="hidden" name="op" value="download2">
           <input type="hidden" name="id" value="chnaz5epeg4t">
@@ -62,11 +67,50 @@ class DdownloadFormTest {
         assertNull(hoster.extractDirectLink(echteSeite))
     }
 
+    /**
+     * Die Dateiseite enthaelt im Script einen Tracker-Aufruf auf der
+     * Hauptdomain (cgi-bin/tracker.cgi). Der galt frueher als Direktlink,
+     * wodurch das download2-Formular nie abgeschickt wurde.
+     */
+    @Test
+    fun trackerCgiGiltNichtAlsDirektlink() {
+        assertTrue(echteSeite.contains("tracker.cgi"))
+        assertNull(hoster.extractDirectLink(echteSeite))
+        assertNull(
+            hoster.extractDirectLink(
+                """<script>x="https://ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"</script>"""
+            )
+        )
+    }
+
     @Test
     fun echterDirektlinkWirdErkannt() {
         val html = """<a href="https://s12.ddownload.com/xyz/scn-smps8-S37.part1.rar">Download</a>"""
         val link = hoster.extractDirectLink(html)
         assertNotNull(link)
         assertEquals("https://s12.ddownload.com/xyz/scn-smps8-S37.part1.rar", link)
+    }
+
+    @Test
+    fun direktlinkAuchZwischenSeitenlinks() {
+        val html = echteSeite.replace(
+            "</form>",
+            """</form><a href="https://s45.ddownload.com/d/abc/scn-smps8-S37E02.rar">Download</a>"""
+        )
+        assertEquals("https://s45.ddownload.com/d/abc/scn-smps8-S37E02.rar", hoster.extractDirectLink(html))
+    }
+
+    /** Die Location der Formular-Antwort zaehlt nur, wenn sie auf einen Fileserver zeigt. */
+    @Test
+    fun weiterleitungszielNurVomFileserver() {
+        assertTrue(hoster.isFileServerUrl("https://s12.ddownload.com/xyz/scn-smps8-S37.part1.rar"))
+        assertTrue(hoster.isFileServerUrl("http://fs-1.ddownload.com/d/abc/name.mkv"))
+        assertFalse(hoster.isFileServerUrl("/login.html"))
+        assertFalse(hoster.isFileServerUrl("https://ddownload.com/login.html"))
+        assertFalse(hoster.isFileServerUrl("https://ddownload.com/chnaz5epeg4t"))
+        assertFalse(hoster.isFileServerUrl("https://www.ddownload.com/xyz/name.rar"))
+        assertFalse(hoster.isFileServerUrl("https://ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
+        assertFalse(hoster.isFileServerUrl("https://s12.ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
+        assertFalse(hoster.isFileServerUrl("https://cdn.ddownload.com/assets/style.css"))
     }
 }

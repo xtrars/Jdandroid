@@ -55,8 +55,18 @@ class DdownloadHoster : Hoster {
         val asKb = raw * 1024
         return if (asKb <= 4.0 * DAILY_QUOTA) asKb.toLong() else raw.toLong()
     }
+    /**
+     * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
+     * dass laengere Pfade (z.B. /register.html) als Code gelesen werden.
+     */
     private val pattern =
-        Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([A-Za-z0-9]{6,20})""")
+        Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([a-z0-9]{12})(?![A-Za-z0-9])""")
+
+    /**
+     * Direktlinks liegen auf Fileservern (Subdomain ausser www), nie auf der
+     * Hauptdomain und nie unter /cgi-bin/ (dort liegt z.B. tracker.cgi).
+     */
+    private val fileServerRegex = Regex("""https?://(?!www\.)[a-z0-9-]+\.ddownload\.com/[^\s"'<>]+""")
 
     /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
     private val browserUa =
@@ -430,7 +440,10 @@ class DdownloadHoster : Hoster {
                     pageUrl, form = form, referer = pageUrl, followRedirects = false
                 )
                 checkBlocked(page)
-                direct = page.location ?: extractDirectLink(page.body)
+                // Location nur uebernehmen, wenn sie auf einen Fileserver zeigt -
+                // relative Ziele oder /login.html sind kein Direktlink.
+                direct = page.location?.takeIf { isFileServerUrl(it) }
+                    ?: extractDirectLink(page.body)
                 if (direct == null) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
@@ -448,8 +461,7 @@ class DdownloadHoster : Hoster {
                     permanent = true
                 )
             }
-            val fileName = Regex("""<h[12][^>]*>\s*(?:Download\s+File\s*)?([^<]+?)\s*</h[12]>""")
-                .find(page.body)?.groupValues?.get(1)?.trim()?.ifBlank { null }
+            val fileName = pageFileName(page.body)
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(direct, fileName)
         }
@@ -462,8 +474,12 @@ class DdownloadHoster : Hoster {
                 val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
                     .optJSONArray("result")?.optJSONObject(0)
                     ?: return@withContext LinkInfo(online = null, note = "Keine Antwort der API")
-                return@withContext if (info.optInt("status") == 404) {
-                    LinkInfo(online = false, note = "Datei nicht gefunden")
+                val status = info.optInt("status")
+                return@withContext if (status != 200) {
+                    // 404 = nicht gefunden; jeder andere Status ist ebenfalls "nicht online"
+                    val note = info.optString("msg").ifBlank { null }
+                        ?: if (status == 404) "Datei nicht gefunden" else "Status $status"
+                    LinkInfo(online = false, note = note)
                 } else {
                     LinkInfo(
                         online = true,
@@ -490,15 +506,29 @@ class DdownloadHoster : Hoster {
             )
         }
 
-    /** Dateiname aus einer XFileSharing-Dateiseite (fname-Feld oder Titel). */
+    /**
+     * Dateiname aus einer XFileSharing-Dateiseite. Reihenfolge: die
+     * Ueberschrift mit Klasse dk-dl-name (aktuelles Layout), dann das
+     * fname-Feld, zuletzt der Titel - dort ersetzt ddownload Punkte durch
+     * Leerzeichen ("Download scn smps8 S37E02 rar"), er zaehlt daher nur,
+     * wenn er noch eine Dateiendung traegt.
+     */
     internal fun pageFileName(html: String): String? {
+        Regex(
+            """<h[12]\b[^>]*class=["'][^"']*\bdk-dl-name\b[^"']*["'][^>]*>\s*([^<]+?)\s*</h[12]>""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         Regex("""name=["']fname["']\s+value=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
             .find(html)?.let { return it.groupValues[1].trim() }
         Regex("""value=["']([^"']+)["']\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
             .find(html)?.let { return it.groupValues[1].trim() }
         return Regex("""<title>([^<]+?)(?:\s*[-|–].*)?</title>""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.trim()
-            ?.takeIf { it.isNotBlank() && !it.contains("ddownload", true) }
+            ?.removePrefix("Download ")?.trim()
+            ?.takeIf {
+                it.isNotBlank() && !it.contains("ddownload", true) &&
+                    Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it)
+            }
     }
 
     /** Groesse wie "1.2 GB" aus der Dateiseite. */
@@ -561,25 +591,36 @@ class DdownloadHoster : Hoster {
             .firstOrNull { it.value.contains("op\"", true) && it.value.contains("download", true) }
             ?.value
 
+    private val assetExtensions = setOf(
+        "html", "htm", "php", "css", "js", "png", "jpg", "jpeg", "gif",
+        "svg", "ico", "woff", "woff2", "ttf", "webp", "json", "xml", "cgi"
+    )
+
+    /**
+     * Gilt nur fuer Adressen auf einem Fileserver (Subdomain von ddownload.com
+     * ausser www), nicht unter /cgi-bin/ und mit Dateiendung, die kein
+     * Seiten-Asset ist. Damit fallen Seitenlinks, tracker.cgi, relative
+     * Weiterleitungen und /login.html heraus.
+     */
+    internal fun isFileServerUrl(url: String): Boolean {
+        if (fileServerRegex.matchEntire(url) == null) return false
+        if (url.contains("/cgi-bin/", ignoreCase = true)) return false
+        val path = url.substringAfter("://").substringAfter('/', "")
+        val last = path.substringBefore('?').substringAfterLast('/')
+        val ext = last.substringAfterLast('.', "").lowercase()
+        return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
+    }
+
     /**
      * Direktlink aus dem HTML. Das frühere Muster "URL enthält download" traf
      * jede Adresse der Website selbst ("ddownload.com" enthält "download") und
-     * lieferte dadurch Seitenlinks statt der Datei.
+     * lieferte dadurch Seitenlinks statt der Datei; spaeter galt auch
+     * tracker.cgi auf der Hauptdomain faelschlich als Direktlink.
      */
-    internal fun extractDirectLink(html: String): String? {
-        val assets = setOf(
-            "html", "htm", "php", "css", "js", "png", "jpg", "jpeg", "gif",
-            "svg", "ico", "woff", "woff2", "ttf", "webp", "json", "xml"
-        )
-        return Regex("""https?://[^\s"'<>]+""").findAll(html)
+    internal fun extractDirectLink(html: String): String? =
+        fileServerRegex.findAll(html)
             .map { it.value.trimEnd('\\', '"', '\'', ')') }
-            .firstOrNull { url ->
-                val path = url.substringAfter("://").substringAfter('/', "")
-                val last = path.substringBefore('?').substringAfterLast('/')
-                val ext = last.substringAfterLast('.', "").lowercase()
-                last.contains('.') && ext.isNotEmpty() && ext !in assets
-            }
-    }
+            .firstOrNull { isFileServerUrl(it) }
 
     private fun parseDate(s: String): Long = runCatching {
         SimpleDateFormat("d MMMM yyyy", Locale.US).parse(s.trim())?.time ?: 0L

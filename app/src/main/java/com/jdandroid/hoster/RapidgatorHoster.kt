@@ -4,8 +4,9 @@ import com.jdandroid.data.Account
 import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.Request
 import org.json.JSONObject
-import java.net.URLEncoder
 
 /**
  * rapidgator.net – offizielle API v2.
@@ -31,36 +32,81 @@ class RapidgatorHoster : Hoster {
         Regex("""/file/([A-Za-z0-9]+)""").find(url)?.groupValues?.get(1)
             ?: throw HosterException("Ungültiger Rapidgator-Link", true)
 
-    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
-
-    private fun call(path: String, params: Map<String, String>): JSONObject {
-        val query = params.entries.joinToString("&") { "${it.key}=${enc(it.value)}" }
-        val json = JSONObject(Http.get("$base/$path?$query"))
-        val status = json.optInt("status")
-        if (status != 200) {
-            val details = json.optString("details").ifBlank { "HTTP $status" }
-            // 401 (Token abgelaufen) ist nach erneutem Login behebbar, daher nicht permanent
-            throw HosterException("Rapidgator: $details", permanent = status in listOf(402, 403, 404))
+    /**
+     * API-Aufruf per POST mit Formular-Body: Zugangsdaten und Token gehoeren
+     * nicht in die URL (Proxy-/Server-Logs). Antwort begrenzt lesen wie Http.get.
+     */
+    private fun post(url: String, form: Map<String, String>): String {
+        val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", Http.USER_AGENT)
+            .post(body)
+            .build()
+        return Http.client.newCall(request).execute().use { resp ->
+            if (resp.body == null) throw HosterException("Leere Antwort vom Server")
+            resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
+    }
+
+    /** Vollstaendige JSON-Antwort inklusive "status", ohne Auswertung. */
+    private fun callRaw(path: String, params: Map<String, String>): JSONObject {
+        val text = post("$base/$path", params)
+        return runCatching { JSONObject(text) }
+            .getOrElse { throw HosterException("Rapidgator: unerwartete Antwort") }
+    }
+
+    /**
+     * Fehler aus einer API-Antwort mit status != 200 werfen.
+     * [loginCall]: 401 beim Login heisst falsches Passwort/2FA - permanent,
+     * damit weder Engine noch Kontopruefung in eine Login-Schleife laufen.
+     * Bei anderen Aufrufen ist 401 ein abgelaufener Token und nach erneutem
+     * Login behebbar, daher nicht permanent.
+     */
+    private fun fail(json: JSONObject, loginCall: Boolean): Nothing {
+        val status = json.optInt("status")
+        val details = json.optString("details").ifBlank { "HTTP $status" }
+        val permanent = status in listOf(402, 403, 404) || (loginCall && status == 401)
+        throw HosterException("Rapidgator: $details", permanent = permanent)
+    }
+
+    private fun call(path: String, params: Map<String, String>, loginCall: Boolean = false): JSONObject {
+        val json = callRaw(path, params)
+        if (json.optInt("status") != 200) fail(json, loginCall)
         return json.optJSONObject("response") ?: JSONObject()
     }
 
-    private fun login(account: Account): String {
+    /** Login; liefert Token und das "user"-Objekt der Login-Antwort. */
+    private fun login(account: Account): Pair<String, JSONObject> {
         val user = account.username ?: throw HosterException("Kein Benutzername hinterlegt", true)
         val pass = account.plainPassword ?: throw HosterException("Kein Passwort hinterlegt", true)
-        val resp = call("user/login", mapOf("login" to user, "password" to pass))
+        val resp = call("user/login", mapOf("login" to user, "password" to pass), loginCall = true)
         val token = resp.optString("token")
         if (token.isBlank()) throw HosterException("Rapidgator-Login fehlgeschlagen", true)
         tokens[account.id] = token
-        return token
+        return token to (resp.optJSONObject("user") ?: JSONObject())
     }
 
-    private fun tokenFor(account: Account): String = tokens[account.id] ?: login(account)
+    private fun tokenFor(account: Account): String = tokens[account.id] ?: login(account).first
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val token = login(account)
-        val resp = call("user/info", mapOf("token" to token))
-        val user = resp.optJSONObject("user") ?: JSONObject()
+        // Mit vorhandenem Token reicht user/info; nur bei 401 (Token abgelaufen)
+        // neu anmelden. Ohne Token liefert die Login-Antwort das user-Objekt
+        // bereits mit - ein zweiter Aufruf ist unnoetig.
+        val cached = tokens[account.id]
+        val user: JSONObject = if (cached != null) {
+            val json = callRaw("user/info", mapOf("token" to cached))
+            when (json.optInt("status")) {
+                200 -> json.optJSONObject("response")?.optJSONObject("user") ?: JSONObject()
+                401 -> {
+                    tokens.remove(account.id)
+                    login(account).second
+                }
+                else -> fail(json, loginCall = false)
+            }
+        } else {
+            login(account).second
+        }
         val premiumEnd = user.optLong("premium_end_time", 0) * 1000
         val premium = user.optBoolean("is_premium", false) ||
             premiumEnd > System.currentTimeMillis() ||
@@ -136,14 +182,20 @@ class RapidgatorHoster : Hoster {
                     hash = info?.optString("hash")?.lowercase()?.takeIf { it.length == 32 }
                 )
             }
-            try {
-                attempt(tokenFor(account))
-            } catch (e: HosterException) {
-                // Bei permanenten Fehlern (Datei offline, kein Premium) ist ein
-                // erneuter Login sinnlos
-                if (e.permanent) throw e
-                tokens.remove(account.id)
-                attempt(login(account))
+            // Nur wenn file/download mit einem vorhandenen Token scheitert
+            // (Token abgelaufen), einmal neu anmelden. Schlaegt der Login selbst
+            // fehl, wird der Fehler direkt weitergereicht - kein Login-Loop.
+            val cached = tokens[account.id]
+            if (cached != null) {
+                try {
+                    return@withContext attempt(cached)
+                } catch (e: HosterException) {
+                    // Bei permanenten Fehlern (Datei offline, kein Premium) ist ein
+                    // erneuter Login sinnlos
+                    if (e.permanent) throw e
+                    tokens.remove(account.id)
+                }
             }
+            attempt(login(account).first)
         }
 }

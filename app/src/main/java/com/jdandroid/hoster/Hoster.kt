@@ -42,7 +42,7 @@ data class AccountInfo(
  * permanent = true: erneuter Versuch ohne Nutzeraktion ist sinnlos
  * (Datei offline, kein Premium, ungueltiger Account).
  */
-class HosterException(message: String, val permanent: Boolean = false) : Exception(message)
+open class HosterException(message: String, val permanent: Boolean = false) : Exception(message)
 
 interface Hoster {
     val id: String
@@ -114,12 +114,16 @@ object HosterRegistry {
 }
 
 object LinkParser {
-    private val urlRegex = Regex("""https?://\S+""")
+    /** Anfuehrungszeichen, spitze und eckige Klammern beenden eine URL. */
+    private val urlRegex = Regex("""https?://[^\s"'<>\[\]]+""")
 
     /** Extrahiert alle unterstuetzten Links aus beliebigem Text. */
     fun parse(text: String): List<Pair<String, Hoster>> =
         urlRegex.findAll(text)
-            .map { it.value.trimEnd(')', ']', '>', '.', ',', ';', '"', '\'') }
+            // Kommas trennen Links ("url1,url2"): Teile ohne http verwerfen
+            .flatMap { m -> m.value.split(',').asSequence().filter { it.startsWith("http") } }
+            .map { it.trimEnd(')', ']', '>', '.', ',', ';', '"', '\'') }
+            .filter { it.isNotBlank() }
             .distinct()
             .mapNotNull { url -> HosterRegistry.forUrl(url)?.let { url to it } }
             .toList()
