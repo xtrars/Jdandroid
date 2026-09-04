@@ -2,26 +2,46 @@ name: Android CI
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+      - master
+      - "claude/**"
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Unit-Tests
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Lint
         run: ./gradlew --no-daemon lintDebug
+      - name: Lint-Report hochladen
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+      - name: Instrumentierte Tests kompilieren
+        run: ./gradlew --no-daemon compileDebugAndroidTestKotlin
       - name: Release-APK bauen
         run: ./gradlew --no-daemon assembleRelease
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: JDAndroid-release
           path: app/build/outputs/apk/release/*.apk

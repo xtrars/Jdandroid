@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,17 +9,21 @@ plugins {
 
 android {
     namespace = "com.jdandroid"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.jdandroid"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
         versionCode = 15
         versionName = "1.4.6"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    // Exportierte Room-Schemata als Test-Assets: Grundlage fuer MigrationTest
+    sourceSets["androidTest"].assets.srcDirs("$projectDir/schemas")
 
     // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
     ksp {
@@ -55,14 +61,29 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
     }
     testOptions {
+        // Noetig: ClickNLoadServerTest laeuft gegen android.util.Log (ohne
+        // Stub wirft die Methode "not mocked").
         unitTests.isReturnDefaultValues = true
+    }
+
+    // Release-APK nach Version benennen (statt app-release.apk)
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+                    "JDAndroid-${versionName}.apk"
+            }
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -80,7 +101,6 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.documentfile)
@@ -92,5 +112,8 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.room.testing)
 }

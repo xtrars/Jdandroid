@@ -61,21 +61,31 @@ Free-Downloads (Captcha + Wartezeit) werden nicht unterstützt.
 
 ## Build
 
-Voraussetzungen: JDK 17+, Android SDK (Platform 35).
+Voraussetzungen: JDK 17+, Android SDK (Platform 36). Toolchain: Gradle 8.14.3
+(Wrapper mit SHA-256-Prüfsumme), AGP 8.13.2, Kotlin 2.3.21, KSP 2.3.11,
+Compose BOM 2026.06.01, Room 2.8.4.
 
 ```bash
 ./gradlew testDebugUnitTest   # Unit-Tests (Linkparser, Entpacker, CnL-Server, DLC)
 ./gradlew lintDebug
+./gradlew compileDebugAndroidTestKotlin   # Migrationstest nur kompilieren
+./gradlew connectedDebugAndroidTest       # Migrationstest auf Gerät/Emulator
 ./gradlew assembleRelease
-# APK: app/build/outputs/apk/release/app-release.apk
+# APK: app/build/outputs/apk/release/JDAndroid-<version>.apk
 ```
 
-Dasselbe läuft bei jedem Push als GitHub-Actions-Workflow
-(`.github/workflows/android.yml`); die APK liegt dort als Build-Artefakt.
+Dasselbe läuft als GitHub-Actions-Workflow (`.github/workflows/android.yml`)
+bei jedem Push auf `main`/`master` bzw. `claude/**` sowie bei Pull Requests:
+Unit-Tests, Lint (Report als Build-Artefakt `lint-report`), Kompilieren des
+instrumentierten Migrationstests und Release-APK (Artefakt `JDAndroid-release`).
 Das Room-Schema wird nach `app/schemas/` exportiert – bei jeder Änderung an
-den Entities eine Migration ergänzen und den Versionssprung dort nachvollziehen.
+den Entities eine Migration ergänzen, den Versionssprung dort nachvollziehen
+und `app/src/androidTest/.../MigrationTest.kt` erweitern.
+Abhängigkeiten werden über `gradle/verification-metadata.xml` per Prüfsumme
+verifiziert; nach einem Versionswechsel die Datei mit
+`./gradlew --write-verification-metadata sha256 <tasks>` neu erzeugen.
 
-Mindest-Android-Version: 8.0 (API 26), Ziel: Android 15 (API 35).
+Mindest-Android-Version: 8.0 (API 26), Ziel: Android 16 (API 36).
 
 **Signierung:** Der Release-Build wird mit `app/keystore/release.jks` signiert
 (Passwort `jdandroid`, siehe `app/build.gradle.kts`). Der Keystore liegt bewusst
