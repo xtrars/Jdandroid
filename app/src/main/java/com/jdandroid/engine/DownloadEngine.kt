@@ -111,7 +111,7 @@ class DownloadEngine(
         return try {
             context.contentResolver.openOutputStream(target.uri)?.use { out ->
                 file.inputStream().use { it.copyTo(out) }
-            } ?: return null
+            } ?: run { target.delete(); return null }
             "${dir.name ?: "Zielordner"}/${target.name ?: candidate}"
         } catch (e: Exception) {
             target.delete()
@@ -175,6 +175,9 @@ class DownloadEngine(
     }
 
     suspend fun pauseAll() {
+        // Erst die Warteschlange anhalten: die abgebrochenen Jobs rufen in ihrem
+        // finally pump() auf und wuerden sonst sofort die naechsten Eintraege starten.
+        dao.pauseQueued()
         val running = mutex.withLock {
             val copy = jobs.toMap()
             jobs.clear()

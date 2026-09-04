@@ -50,6 +50,15 @@ class DownloadService : Service() {
     @Volatile
     private var startupDone = false
 
+    /**
+     * startForeground wurde vom System abgelehnt (Android 14/15, Start aus dem
+     * Hintergrund bzw. nach dem 6-h-Limit): dann darf nichts mehr angestossen
+     * werden, sonst bleiben Eintraege als RUNNING zurueck, wenn das System den
+     * Dienst gleich wieder beendet.
+     */
+    @Volatile
+    private var foregroundRefused = false
+
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     /** Bei Netzwechsel erneut anstossen (z.B. WLAN wieder verfuegbar). */
@@ -77,6 +86,7 @@ class DownloadService : Service() {
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification("Downloads werden vorbereitet …"))
         scope.launch {
+            if (foregroundRefused) return@launch
             // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
             if ((application as JdApp).settings.currentClickNLoadEnabled()) {
                 cnlWanted = true
@@ -91,6 +101,7 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (foregroundRefused) return START_NOT_STICKY
         val id = intent?.getLongExtra(EXTRA_ID, -1) ?: -1
         when (intent?.action) {
             ACTION_PUMP -> scope.launch { engine.pump() }
@@ -279,10 +290,15 @@ class DownloadService : Service() {
 
     /** Kurze, nicht dauerhafte Benachrichtigung (Click'n'Load, Zeitlimit). */
     private fun notifyEvent(id: Int, title: String, text: String, resumeAction: Boolean = false) {
+        // Bei "Fortsetzen" die App oeffnen und dort den Dienst starten: nach dem
+        // 6-h-Limit erlaubt Android 15 den Neustart nur aus dem Vordergrund.
         val open = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            this, if (resumeAction) 3 else 0,
+            Intent(this, MainActivity::class.java).apply {
+                if (resumeAction) putExtra(EXTRA_RESUME_ALL, true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_EVENTS)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -292,7 +308,7 @@ class DownloadService : Service() {
             .setContentIntent(open)
             .setAutoCancel(true)
         if (resumeAction) {
-            builder.addAction(0, "Fortsetzen", servicePendingIntent(ACTION_RESUME_ALL, 2))
+            builder.addAction(0, "Fortsetzen", open)
         }
         runCatching {
             getSystemService(NotificationManager::class.java)?.notify(id, builder.build())
@@ -317,6 +333,7 @@ class DownloadService : Service() {
             // ForegroundServiceDidNotStartInTimeException. Deshalb hier sauber
             // selbst beenden statt abgeschossen zu werden.
             android.util.Log.w("DownloadService", "startForeground abgelehnt: ${e.message}")
+            foregroundRefused = true
             runCatching { stopSelf() }
         }
     }
@@ -346,6 +363,7 @@ class DownloadService : Service() {
         const val ACTION_START_CNL = "com.jdandroid.action.START_CNL"
         const val ACTION_STOP_CNL = "com.jdandroid.action.STOP_CNL"
         const val EXTRA_ID = "id"
+        const val EXTRA_RESUME_ALL = "resume_all"
 
         fun send(context: Context, action: String, id: Long = -1) {
             val intent = Intent(context, DownloadService::class.java)

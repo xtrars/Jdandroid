@@ -125,6 +125,7 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {

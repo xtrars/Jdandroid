@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
 import com.jdandroid.JdApp
+import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -41,9 +42,15 @@ object AccountRefresher {
                     lastChecked = System.currentTimeMillis()
                 )
             } catch (e: Exception) {
+                // Nur ein endgueltiger Fehler (falsches Passwort, Konto gesperrt)
+                // macht das Konto ungueltig. Netzausfall, Cloudflare oder ein
+                // API-Schluckauf im Minutentakt duerfen nicht alle Downloads
+                // des Hosters in "kein Premium-Konto" laufen lassen.
+                val permanent = e is HosterException && e.permanent
                 account.copy(
-                    valid = false,
-                    statusText = e.message ?: "Prüfung fehlgeschlagen",
+                    valid = if (permanent) false else account.valid,
+                    statusText = (e.message ?: "Prüfung fehlgeschlagen") +
+                        if (!permanent && account.valid) " (vorübergehend)" else "",
                     lastChecked = System.currentTimeMillis()
                 )
             }
@@ -82,7 +89,7 @@ object AccountRefresher {
         app.appScope.launch {
             val cutoff = System.currentTimeMillis() - AFTER_DOWNLOAD_MIN_INTERVAL_MS
             app.db.accountDao().byHoster(hosterId)
-                .filter { it.valid && it.lastChecked < cutoff }
+                .filter { it.lastChecked < cutoff }
                 .forEach { launch { check(app, it.id) } }
         }
     }

@@ -39,13 +39,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerFiles
 import com.jdandroid.engine.DownloadService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -64,19 +70,32 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        handleIntent(intent)
+        // Nur beim ersten Start: nach einer Neuerstellung (Drehen, Dunkelmodus-
+        // Wechsel) liefert getIntent() noch das alte VIEW/SEND-Intent - das DLC
+        // wuerde sonst erneut importiert bzw. der Dialog erneut geoeffnet.
+        if (savedInstanceState == null) handleIntent(intent)
+        handleResumeRequest(intent)
         // Click'n'Load ueberlebt keinen Prozessneustart: ist es aktiviert, muss
         // der Dienst beim App-Start wieder hochgefahren werden, sonst lauscht
-        // niemand auf dem Port obwohl der Schalter an steht.
+        // niemand auf dem Port obwohl der Schalter an steht. Ausserdem wartende
+        // Downloads anstossen (z.B. nach Neustart des Geraets).
         lifecycleScope.launch {
-            if ((application as JdApp).settings.currentClickNLoadEnabled()) {
+            val app = application as JdApp
+            if (app.settings.currentClickNLoadEnabled()) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
             }
+            if (withContext(Dispatchers.IO) { app.db.downloadDao().queuedCount() } > 0) {
+                DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
+            }
         }
+        val settings = (application as JdApp).settings
+        // Gespeicherten Modus synchron lesen: sonst zeigt der erste Frame das
+        // Systemschema und springt danach um (Blitz bei jedem Kaltstart).
+        val initialMode = runBlocking { settings.themeMode.first() }
+        val initialDynamic = runBlocking { settings.dynamicColors.first() }
         setContent {
-            val settings = (application as JdApp).settings
-            val modeKey by settings.themeMode.collectAsState(initial = "system")
-            val dynamic by settings.dynamicColors.collectAsState(initial = false)
+            val modeKey by settings.themeMode.collectAsState(initial = initialMode)
+            val dynamic by settings.dynamicColors.collectAsState(initial = initialDynamic)
             val mode = ThemeMode.fromKey(modeKey)
             val dark = isDarkFor(mode)
             // Systemleisten zur gewaehlten Helligkeit passend einfaerben - auch
@@ -85,6 +104,11 @@ class MainActivity : ComponentActivity() {
                 val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                 else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                // Fensterhintergrund mitziehen, damit beim Drehen kein heller
+                // Streifen unter der Oberflaeche aufblitzt
+                window.setBackgroundDrawable(
+                    android.graphics.drawable.ColorDrawable(if (dark) 0xFF0F1417.toInt() else 0xFFF6F9FB.toInt())
+                )
             }
             JdTheme(mode = mode, dynamicColors = dynamic) {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -102,6 +126,19 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+        handleResumeRequest(intent)
+    }
+
+    /**
+     * "Fortsetzen" aus der Zeitlimit-Benachrichtigung: der Dienst darf auf
+     * Android 15 nach dem 6-h-Limit nur aus dem Vordergrund neu starten -
+     * also ueber die Activity, nicht per PendingIntent auf den Dienst.
+     */
+    private fun handleResumeRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(DownloadService.EXTRA_RESUME_ALL, false) == true) {
+            intent.removeExtra(DownloadService.EXTRA_RESUME_ALL)
+            DownloadService.send(this, DownloadService.ACTION_RESUME_ALL)
+        }
     }
 
     /** Verteilt eingehende Intents auf geteilten Text bzw. DLC-Dateien. */
@@ -118,16 +155,20 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (uri != null) {
-            // Groessenbegrenzt lesen: der Filter nimmt jede octet-stream-Datei an,
-            // ein versehentlich geteiltes Video darf keinen OutOfMemoryError ausloesen.
-            val result = runCatching { ContainerFiles.readText(contentResolver, uri) }
-            val content = result.getOrNull()
-            if (content != null && ContainerFiles.looksLikeDlc(content)) {
-                dlcContent.value = content
-            } else {
-                val reason = result.exceptionOrNull()?.message
-                    ?: "Die geöffnete Datei ist kein DLC-Container."
-                AppMessages.error(reason)
+            // Groessenbegrenzt und im Hintergrund lesen: der Filter nimmt jede
+            // octet-stream-Datei an, und Cloud-Anbieter laden die Datei beim
+            // Oeffnen erst herunter (sonst ANR auf dem Hauptthread).
+            lifecycleScope.launch(Dispatchers.IO) {
+                val result = runCatching { ContainerFiles.readText(contentResolver, uri) }
+                val content = result.getOrNull()
+                if (content != null && ContainerFiles.looksLikeDlc(content)) {
+                    withContext(Dispatchers.Main) { dlcContent.value = content }
+                } else {
+                    AppMessages.error(
+                        result.exceptionOrNull()?.message
+                            ?: "Die geöffnete Datei ist kein DLC-Container."
+                    )
+                }
             }
         }
     }
@@ -144,19 +185,30 @@ fun MainScreen(
     dlcContent: String?,
     onDlcConsumed: () -> Unit
 ) {
-    var tab by remember { mutableStateOf(Tab.Downloads) }
+    // Tab ueber Drehen/Neuerstellung behalten (Enums sind Serializable und
+    // damit direkt im Bundle sicherbar)
+    var tab by rememberSaveable { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
-    // Ein DLC gehoert in den Linksammler: dorthin wechseln, die Meldung erscheint dort
-    LaunchedEffect(dlcContent) { if (dlcContent != null) tab = Tab.Collector }
+    val autoStart by (context.applicationContext as JdApp).settings.autoStartLinks.collectAsState(initial = false)
+    // Ein DLC gehoert in den Linksammler (bei Sofortstart in die Downloads):
+    // dorthin wechseln, die Meldung erscheint dort
+    LaunchedEffect(dlcContent) { if (dlcContent != null) tab = if (autoStart) Tab.Downloads else Tab.Collector }
+    // Geteilter Text oeffnet den Dialog im Downloads-Tab - also dorthin wechseln,
+    // sonst passiert bei offenem Konten-/Einstellungs-Tab sichtbar nichts
+    LaunchedEffect(sharedText) { if (sharedText != null) tab = Tab.Downloads }
 
     // Zentrale Meldungen (DLC-Import, Kontofehler, ...): eine Fortschrittsmeldung
     // bleibt stehen, bis die naechste Meldung sie abloest.
     val messageHost = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
+        // Den laufenden Anzeige-Job abbrechen statt nur currentSnackbarData zu
+        // schliessen: kommt das Ergebnis direkt nach der Fortschrittsmeldung,
+        // ist die noch gar nicht sichtbar und bliebe sonst endlos stehen.
+        var showing: Job? = null
         AppMessages.events.collect { message ->
             AppMessages.markShown()
-            messageHost.currentSnackbarData?.dismiss()
-            launch { messageHost.showSnackbar(message) }
+            showing?.cancel()
+            showing = launch { messageHost.showSnackbar(message) }
         }
     }
     var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
@@ -211,7 +263,8 @@ fun MainScreen(
         when (tab) {
             Tab.Downloads -> DownloadsScreen(
                 downloadVm, sharedText, onSharedTextConsumed,
-                onLinksCollected = { tab = Tab.Collector }, modifier = modifier
+                onLinksAdded = { toCollector -> tab = if (toCollector) Tab.Collector else Tab.Downloads },
+                modifier = modifier
             )
             Tab.Collector -> LinkGrabberScreen(downloadVm, dlcContent, onDlcConsumed, modifier)
             Tab.Accounts -> AccountsScreen(accountVm, modifier)

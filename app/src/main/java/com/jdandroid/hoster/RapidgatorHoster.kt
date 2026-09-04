@@ -86,8 +86,14 @@ class RapidgatorHoster : Hoster {
                 return@withContext LinkInfo(online = null, note = "Prüfung erst mit Rapidgator-Konto")
             }
             val id = fileId(url)
+            // Login getrennt behandeln: ein Kontoproblem ist kein "Datei offline"
+            val token = try {
+                tokenFor(account)
+            } catch (e: Exception) {
+                return@withContext LinkInfo(online = null, note = e.message ?: "Rapidgator-Login fehlgeschlagen")
+            }
             try {
-                val file = call("file/info", mapOf("file_id" to id, "token" to tokenFor(account)))
+                val file = call("file/info", mapOf("file_id" to id, "token" to token))
                     .optJSONObject("file")
                     ?: return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
                 LinkInfo(

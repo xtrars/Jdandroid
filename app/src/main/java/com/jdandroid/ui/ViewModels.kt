@@ -46,9 +46,6 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val packageDao = jdApp.db.packageDao()
 
-    val downloads: StateFlow<List<DownloadItem>> = dao.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     private fun grouped(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
         val byPackage = items.groupBy { it.packageId }
         val known = packages.mapNotNull { pkg ->
@@ -130,10 +127,15 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
-    fun addLinks(text: String, packageName: String? = null, onDone: (Int) -> Unit = {}) {
+    fun addLinks(
+        text: String,
+        packageName: String? = null,
+        onDone: (added: Int, toCollector: Boolean) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
+            val toCollector = !jdApp.settings.currentAutoStartLinks()
             val added = LinkSink.addFromText(getApplication(), text, packageName)
-            launch(Dispatchers.Main) { onDone(added) }
+            launch(Dispatchers.Main) { onDone(added, toCollector) }
         }
     }
 
@@ -152,10 +154,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                     added += LinkSink.addUrls(getApplication(), pkg.urls, pkg.name)
                 }
                 val total = packages.sumOf { it.urls.size }
+                val target = if (jdApp.settings.currentAutoStartLinks()) "gestartet"
+                else "in den Linksammler übernommen"
                 if (added > 0) {
-                    AppMessages.success(
-                        "$added Link(s) in ${packages.size} Paket(en) in den Linksammler übernommen"
-                    )
+                    AppMessages.success("$added Link(s) in ${packages.size} Paket(en) $target")
                 } else {
                     AppMessages.info(
                         "DLC gelesen, aber keine neuen unterstützten Links ($total Link(s) insgesamt)"
@@ -198,7 +200,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
-            downloads.value
+            // Direkt aus der DB: ein StateFlow ohne Sammler haette keinen Wert
+            dao.all()
                 .filter { it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.FAILED }
                 .forEach { dao.requeue(it.id) }
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)

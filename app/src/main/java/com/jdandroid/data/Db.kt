@@ -118,6 +118,10 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'PAUSED'")
     suspend fun requeuePaused()
 
+    /** "Alle pausieren": auch Wartende anhalten, sonst startet pump() sofort die naechsten. */
+    @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")
+    suspend fun pauseQueued()
+
     /** Linksammler: Paket starten bzw. alles starten. */
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'COLLECTED' AND packageId = :packageId")
     suspend fun startCollected(packageId: Long)
@@ -131,14 +135,15 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status = 'COLLECTED' AND online IN (:states)")
     suspend fun collectedWithOnline(states: List<Int>): List<DownloadItem>
 
-    @Query("UPDATE downloads SET online = :online WHERE id = :id")
+    @Query("UPDATE downloads SET online = :online WHERE id = :id AND status = 'COLLECTED'")
     suspend fun setOnline(id: Long, online: Int)
 
     /** Ergebnis der Online-Pruefung eintragen (Name/Groesse nur, wenn bekannt). */
     @Query(
         "UPDATE downloads SET online = :online, errorMessage = :note, " +
             "fileName = COALESCE(:fileName, fileName), " +
-            "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END WHERE id = :id"
+            "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END " +
+            "WHERE id = :id AND status = 'COLLECTED'"
     )
     suspend fun applyCheck(id: Long, online: Int, note: String?, fileName: String?, fileSize: Long)
 

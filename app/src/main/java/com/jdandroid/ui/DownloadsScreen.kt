@@ -124,7 +124,7 @@ fun DownloadsScreen(
     vm: DownloadViewModel,
     sharedText: String?,
     onSharedTextConsumed: () -> Unit,
-    onLinksCollected: () -> Unit,
+    onLinksAdded: (toCollector: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val allGroups by vm.groups.collectAsState()
@@ -161,6 +161,8 @@ fun DownloadsScreen(
 
     Scaffold(
         modifier = modifier,
+        // Untere Systemleiste behandelt bereits die NavigationBar der MainActivity
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Downloads") },
@@ -253,10 +255,13 @@ fun DownloadsScreen(
             initialText = prefill,
             onDismiss = { showAddDialog = false },
             onAdd = { text, pkg ->
-                vm.addLinks(text, pkg) { added ->
+                vm.addLinks(text, pkg) { added, toCollector ->
                     if (added > 0) {
-                        AppMessages.success("$added Link(s) in den Linksammler übernommen")
-                        onLinksCollected()
+                        AppMessages.success(
+                            if (toCollector) "$added Link(s) in den Linksammler übernommen"
+                            else "$added Link(s) gestartet"
+                        )
+                        onLinksAdded(toCollector)
                     } else {
                         AppMessages.info("Keine neuen Links – alle bereits vorhanden")
                     }
