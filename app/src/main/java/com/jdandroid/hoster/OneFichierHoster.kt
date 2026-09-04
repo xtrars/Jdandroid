@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 1fichier.com – offizielle REST-API (API-Key, Premium/Access erforderlich).
@@ -24,9 +25,33 @@ class OneFichierHoster : Hoster {
 
     private val base = "https://api.1fichier.com/v1"
     private val jsonType = "application/json; charset=utf-8".toMediaType()
-    private val pattern = Regex("""https?://(?:www\.)?1fichier\.com/\?\S+""")
+
+    /**
+     * Alle Domains, unter denen 1fichier Dateien ausliefert. Die Datei-Id ist
+     * laut Doku kleingeschrieben; Grossbuchstaben werden beim Erkennen
+     * toleriert und in [normalize] auf Kleinschreibung gebracht.
+     */
+    private val pattern = Regex(
+        """https?://(?:www\.)?(?:1fichier\.com|alterupload\.com|cjoint\.net|desfichiers\.com|""" +
+            """dfichiers\.com|megadl\.fr|mesfichiers\.org|piecejointe\.net|pjointe\.com|""" +
+            """tenvoi\.com|dl4free\.com)/\?([A-Za-z0-9]{5,20})(?![A-Za-z0-9])"""
+    )
+
+    /** user/info.cgi erlaubt nur einen Aufruf pro 5 Minuten - Ergebnis zwischenspeichern. */
+    private val accountCache = ConcurrentHashMap<Long, Pair<Long, AccountInfo>>()
+    private val accountCacheMs = 5L * 60 * 1000
+
+    /** Fehler der Zugangsdaten (ungueltiger API-Key), immer permanent. */
+    private class AuthException(message: String) : HosterException(message, permanent = true)
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
+
+    /**
+     * Kanonische Form fuer API-Aufrufe: https://1fichier.com/?<id> (id klein),
+     * unabhaengig von Alias-Domain, www. oder Anhaengseln. null = kein 1fichier-Link.
+     */
+    internal fun normalize(url: String): String? =
+        pattern.find(url)?.groupValues?.get(1)?.lowercase()?.let { "https://1fichier.com/?$it" }
 
     private fun post(path: String, apiKey: String, body: JSONObject): JSONObject {
         val request = Request.Builder()
@@ -35,24 +60,33 @@ class OneFichierHoster : Hoster {
             .header("User-Agent", Http.USER_AGENT)
             .post(body.toString().toRequestBody(jsonType))
             .build()
-        val text = Http.client.newCall(request).execute().use { resp ->
+        val (code, text) = Http.client.newCall(request).execute().use { resp ->
             if (resp.body == null) throw HosterException("Leere Antwort von 1fichier")
             // begrenzt lesen, siehe Http.get
-            resp.peekBody(Http.MAX_TEXT_BYTES).string()
+            resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
-        val json = JSONObject(text)
+        val json = runCatching { JSONObject(text) }.getOrNull()
+        val msg = json?.optString("message")?.ifBlank { null }
+        // HTTP-Status zuerst: 401/403 = API-Key ungueltig/gesperrt (permanent),
+        // 429 = Rate-Limit (voruebergehend)
+        when (code) {
+            401, 403 -> throw AuthException("1fichier: ${msg ?: "Nicht angemeldet (HTTP $code)"}")
+            429 -> throw HosterException("1fichier: ${msg ?: "Zu viele Anfragen (HTTP 429)"}", permanent = false)
+        }
+        if (json == null) throw HosterException("1fichier: unerwartete Antwort (HTTP $code)")
         if (json.optString("status") == "KO") {
-            val msg = json.optString("message").ifBlank { "Unbekannter Fehler" }
+            val m = msg ?: "Unbekannter Fehler"
+            if (m.contains("Not authenticated", true)) throw AuthException("1fichier: $m")
             // Flood/Rate-Limit ist voruebergehend; fehlende/geloeschte Datei permanent
-            val transient = msg.contains("Flood", true) || msg.contains("try again", true)
+            val transient = m.contains("Flood", true) || m.contains("try again", true)
             val permanent = !transient && (
-                msg.contains("not found", true) ||
-                    msg.contains("deleted", true) ||
-                    msg.contains("no such", true) ||
-                    msg.contains("not allowed", true) ||
-                    msg.contains("Resource not", true)
+                m.contains("not found", true) ||
+                    m.contains("deleted", true) ||
+                    m.contains("no such", true) ||
+                    m.contains("not allowed", true) ||
+                    m.contains("Resource not", true)
             )
-            throw HosterException("1fichier: $msg", permanent = permanent)
+            throw HosterException("1fichier: $m", permanent = permanent)
         }
         return json
     }
@@ -75,7 +109,9 @@ class OneFichierHoster : Hoster {
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
-            val form = okhttp3.FormBody.Builder().add("links[]", url).build()
+            val link = normalize(url)
+                ?: return@withContext LinkInfo(online = null, note = "Ungültiger 1fichier-Link")
+            val form = okhttp3.FormBody.Builder().add("links[]", link).build()
             val request = Request.Builder()
                 .url("https://1fichier.com/check_links.pl")
                 .header("User-Agent", Http.USER_AGENT)
@@ -91,6 +127,10 @@ class OneFichierHoster : Hoster {
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         val key = account.plainApiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
+        val now = System.currentTimeMillis()
+        accountCache[account.id]?.let { (at, info) ->
+            if (now - at < accountCacheMs) return@withContext info
+        }
         val json = post("user/info.cgi", key, JSONObject())
         // "offer" kann als Zahl (>0 = zahlend) oder als Text ("Premium"/"Access"/"Free") kommen
         val offerRaw = json.opt("offer")?.toString()?.trim().orEmpty()
@@ -107,7 +147,7 @@ class OneFichierHoster : Hoster {
         // 1fichier begrenzt Premium/Access-Downloads nicht; CDN-Guthaben (GB) nur als Hinweis
         val cdnGb = json.optDouble("cdn", -1.0).takeIf { it >= 0 }
             ?: json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
-        AccountInfo(
+        val info = AccountInfo(
             valid = true,
             premiumUntil = end,
             trafficLeft = -1,
@@ -117,6 +157,8 @@ class OneFichierHoster : Hoster {
                 if (cdnGb != null && cdnGb > 0) append(" · CDN-Guthaben ${"%.1f".format(Locale.GERMANY, cdnGb)} GB")
             }
         )
+        accountCache[account.id] = now to info
+        info
     }
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
@@ -125,19 +167,24 @@ class OneFichierHoster : Hoster {
                 "1fichier benötigt einen API-Key (unter Konten hinzufügen).",
                 permanent = true
             )
+            val link = normalize(url) ?: throw HosterException("Ungültiger 1fichier-Link", true)
             var fileName: String? = null
             var size = -1L
-            var checksum: String? = null
-            runCatching {
-                val info = post("file/info.cgi", key, JSONObject().put("url", url))
+            try {
+                val info = post("file/info.cgi", key, JSONObject().put("url", link))
                 fileName = info.optString("filename").ifBlank { null }
                 size = info.optLong("size", -1)
-                // SHA-1 der Datei, fuer die Integritaetspruefung nach dem Download
-                checksum = info.optString("checksum").lowercase().takeIf { it.length == 40 }
+            } catch (e: AuthException) {
+                // Ungueltiger API-Key: get_token wuerde genauso scheitern
+                throw e
+            } catch (_: Exception) {
+                // Name/Groesse sind optional, ein Fehler hier verhindert den Download nicht
             }
-            val token = post("download/get_token.cgi", key, JSONObject().put("url", url))
+            val token = post("download/get_token.cgi", key, JSONObject().put("url", link))
             val direct = token.optString("url")
             if (direct.isBlank()) throw HosterException("1fichier lieferte keine Download-URL", true)
-            ResolvedLink(direct, fileName, size, checksum)
+            // Die von 1fichier gelieferte Pruefsumme ist Whirlpool (128 Hex), kein
+            // SHA-1/MD5 - fuer die Integritaetspruefung daher nicht verwendbar.
+            ResolvedLink(direct, fileName, size, hash = null)
         }
 }

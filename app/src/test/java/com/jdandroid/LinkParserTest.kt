@@ -51,4 +51,46 @@ class LinkParserTest {
     fun `unbekannte URLs ergeben leere Liste`() {
         assertTrue(LinkParser.parse("https://google.com https://example.org/file/abc").isEmpty())
     }
+
+    @Test
+    fun `Kommas trennen mehrere Links`() {
+        val links = LinkParser.parse(
+            "https://rapidgator.net/file/abc123/a.rar,https://1fichier.com/?abcde12345,https://ddl.to/a1b2c3d4e5f6"
+        )
+        assertEquals(
+            listOf(
+                "https://rapidgator.net/file/abc123/a.rar",
+                "https://1fichier.com/?abcde12345",
+                "https://ddl.to/a1b2c3d4e5f6"
+            ),
+            links.map { it.first }
+        )
+    }
+
+    @Test
+    fun `Anfuehrungszeichen und Klammern beenden den Link`() {
+        val text = """
+            <a href="https://rapidgator.net/file/abc123/a.rar">x</a>
+            [https://1fichier.com/?abcde12345]
+            'https://ddownload.com/a1b2c3d4e5f6'
+            <https://rg.to/file/def456/b.rar>
+        """.trimIndent()
+        val links = LinkParser.parse(text)
+        assertEquals(
+            listOf(
+                "https://rapidgator.net/file/abc123/a.rar",
+                "https://1fichier.com/?abcde12345",
+                "https://ddownload.com/a1b2c3d4e5f6",
+                "https://rg.to/file/def456/b.rar"
+            ),
+            links.map { it.first }
+        )
+    }
+
+    @Test
+    fun `Alias-Domains von 1fichier werden erkannt`() {
+        val links = LinkParser.parse("https://desfichiers.com/?abcde12345 und https://megadl.fr/?zyxwv98765")
+        assertEquals(2, links.size)
+        assertTrue(links.all { it.second.id == "onefichier" })
+    }
 }
