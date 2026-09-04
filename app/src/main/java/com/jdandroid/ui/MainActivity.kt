@@ -87,7 +87,9 @@ class MainActivity : ComponentActivity() {
             if (app.settings.currentClickNLoadEnabled()) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
             }
-            if (withContext(Dispatchers.IO) { app.db.downloadDao().queuedCount() } > 0) {
+            // Auch haengen gebliebene RUNNING/EXTRACTING zaehlen: der Dienst setzt
+            // sie beim Start zurueck und laedt weiter
+            if (withContext(Dispatchers.IO) { app.db.downloadDao().openCount() } > 0) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
             }
         }

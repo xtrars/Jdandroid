@@ -57,7 +57,7 @@ class SettingsRepository(private val context: Context) {
         prefs.map { it[keyAutoExtract] ?: true }
 
     val deleteArchiveAfterExtract: Flow<Boolean> =
-        prefs.map { it[keyDeleteArchive] ?: false }
+        prefs.map { it[keyDeleteArchive] ?: true }
 
     /** Eintraege eines Archivs nach erfolgreichem Entpacken aus der Liste entfernen (wie JDownloader). */
     val removeLinksAfterExtract: Flow<Boolean> =
