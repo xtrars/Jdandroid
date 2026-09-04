@@ -189,7 +189,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             SettingSwitch(
                 title = "Neue Links sofort starten",
                 subtitle = "Aus: Links landen zuerst im Linksammler, werden online geprüft " +
-                    "und starten erst auf \"Starten\" (wie im JDownloader)",
+                    "und starten erst auf \"Starten\"",
                 checked = autoStart,
                 onChange = { v -> scope.launch { settings.setAutoStartLinks(v) } }
             )
@@ -233,7 +233,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
                 title = "Archive automatisch entpacken",
-                subtitle = "ZIP, 7z und RAR nach dem Download entpacken (auch mehrteilige Archive)",
+                subtitle = "ZIP, 7z und RAR nach dem Download entpacken, auch mehrteilige Archive",
                 checked = autoExtract,
                 onChange = { v -> scope.launch { settings.setAutoExtract(v) } }
             )
@@ -246,7 +246,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             SettingSwitch(
                 title = "Einträge nach dem Entpacken entfernen",
                 subtitle = "Alle Teile des Archivs verschwinden aus der Download-Liste, " +
-                    "sobald es erfolgreich entpackt wurde (wie im JDownloader)",
+                    "sobald es erfolgreich entpackt wurde",
                 checked = removeLinks,
                 onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
             )
@@ -268,8 +268,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             StringListEditor(
                 title = "Vom Entpacken ausschließen",
                 description = "Dateien im Archiv, die zu diesen Mustern passen, werden nicht " +
-                    "entpackt (wie im JDownloader). * steht für beliebige Zeichen, ? für " +
-                    "eines, z.B. *.nfo, *.sfv, *sample*, proof/*",
+                    "entpackt. * steht für beliebige Zeichen, ? für eines, " +
+                    "z.B. *.nfo, *.sfv, *sample*, proof/*",
                 emptyText = "Keine Ausschlüsse – alles wird entpackt.",
                 fieldLabel = "Neues Muster",
                 importTitle = "Muster einfügen",

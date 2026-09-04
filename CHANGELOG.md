@@ -25,6 +25,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.6] – 2026-09-04
+
+### Geändert
+
+- Oberflächentexte ohne überflüssige Zusätze wie „(wie im JDownloader)“ in
+  den Einstellungen und in der Click'n'Load-Meldung.
+
 ## [0.0.5] – 2026-09-04
 
 Ergebnis der ersten Gesamtprüfung (drei Prüfberichte, 41 Funde, davon 32
@@ -490,6 +497,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.6]: https://github.com/xtrars/Jdandroid/commit/7afb954
 [0.0.5]: https://github.com/xtrars/Jdandroid/commit/d03642a
 [0.0.4]: https://github.com/xtrars/Jdandroid/commit/80abe87
 [0.0.3]: https://github.com/xtrars/Jdandroid/commit/f84d79a

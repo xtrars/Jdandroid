@@ -235,8 +235,7 @@ class DownloadService : Service() {
         }
         val raw = lastError?.message ?: lastError?.javaClass?.simpleName ?: "unbekannt"
         val reason = if (raw.contains("in use", true) || raw.contains("EADDRINUSE", true)) {
-            "Port ${ClickNLoadServer.PORT} ist belegt (läuft ein anderer Download-Manager " +
-                "oder JDownloader auf dem Gerät?)"
+            "Port ${ClickNLoadServer.PORT} ist belegt – läuft ein anderer Download-Manager auf dem Gerät?"
         } else raw
         CnlStatus.failed(reason)
         android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
