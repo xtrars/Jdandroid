@@ -223,7 +223,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val items = dao.byPackage(packageId).filter { it.status == DownloadStatus.COMPLETED }
             val archives = items.filter { item ->
-                val name = item.fileName ?: return@filter false
+                val name = Extractor.repairName(item.fileName ?: return@filter false)
                 Extractor.archiveBase(name) != null && !Extractor.isSecondaryVolume(name)
             }
             if (archives.isEmpty()) {

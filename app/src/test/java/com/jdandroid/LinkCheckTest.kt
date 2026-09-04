@@ -89,14 +89,22 @@ class LinkCheckTest {
         assertEquals("Serie.S01E01.mkv", ddl.pageFileName(html))
     }
 
-    /** Titel nur als letzter Ausweg und nur mit Dateiendung, "Download " abgeschnitten. */
+    /**
+     * Titel nur als letzter Ausweg, "Download " abgeschnitten. Ersetzt der
+     * Titel Punkte durch Leerzeichen, wird die Endung wiederhergestellt -
+     * sonst gilt ein Archiv nie als Archiv. Ohne bekannte Endung: kein Name.
+     */
     @Test
     fun ddownloadTitelNurMitEndung() {
         assertEquals(
             "Serie.S01E01.mkv",
             ddl.pageFileName("<html><head><title>Download Serie.S01E01.mkv - ddownload</title></head></html>")
         )
-        assertNull(ddl.pageFileName("<html><head><title>Download scn smps8 S37E02 rar</title></head></html>"))
+        assertEquals(
+            "scn.smps8.S37E02.rar",
+            ddl.pageFileName("<html><head><title>Download scn smps8 S37E02 rar</title></head></html>")
+        )
+        assertNull(ddl.pageFileName("<html><head><title>Download irgendwas ohne Endung</title></head></html>"))
     }
 
     @Test

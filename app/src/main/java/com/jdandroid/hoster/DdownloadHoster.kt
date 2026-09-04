@@ -651,7 +651,7 @@ class DdownloadHoster : Hoster {
             """<h[12]\b[^>]*class=["'][^"']*\bdk-dl-name\b[^"']*["'][^>]*>\s*([^<]+?)\s*</h[12]>""",
             RegexOption.IGNORE_CASE
         ).find(html)?.groupValues?.get(1)?.trim()?.removePrefix("Download ")?.trim()
-            ?.takeIf { it.isNotBlank() }?.let { return it }
+            ?.takeIf { it.isNotBlank() }?.let { return com.jdandroid.engine.Extractor.repairName(it) }
         Regex("""name=["']fname["']\s+value=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         Regex("""value=(["'])(.*?)\1\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
@@ -659,6 +659,7 @@ class DdownloadHoster : Hoster {
         return Regex("""<title>([^<]+?)(?:\s*[-|–].*)?</title>""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.trim()
             ?.removePrefix("Download ")?.trim()
+            ?.let { com.jdandroid.engine.Extractor.repairName(it) }
             ?.takeIf {
                 it.isNotBlank() && !it.contains("ddownload", true) &&
                     Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it)

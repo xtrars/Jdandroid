@@ -87,4 +87,20 @@ class ExtractorTest {
 
         Extractor.extract(zip, tmp.newFolder("out3"), listOf("falsch1", "falsch2"))
     }
+
+    @Test
+    fun kaputteNamenMitLeerzeichenWerdenRepariert() {
+        assertEquals(
+            "9d099111.9f5e.4499.9d3a.2bc366e406cf.part1.rar",
+            Extractor.repairName("Download 9d099111 9f5e 4499 9d3a 2bc366e406cf part1 rar")
+        )
+        assertEquals("scn-smps8-S37E02.rar", Extractor.repairName("scn-smps8-S37E02.rar"))
+        assertEquals("Film.mkv", Extractor.repairName("Download Film mkv"))
+        assertEquals("name.7z.001", Extractor.repairName("name 7z 001"))
+        assertEquals("Nur Text ohne Endung", Extractor.repairName("Nur Text ohne Endung"))
+        assertEquals(
+            "9d099111.9f5e.4499.9d3a.2bc366e406cf",
+            Extractor.archiveBase(Extractor.repairName("Download 9d099111 9f5e 4499 9d3a 2bc366e406cf part2 rar"))
+        )
+    }
 }

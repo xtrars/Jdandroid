@@ -504,6 +504,15 @@ class DownloadEngine(
         var fileName = originalName
         var base = Extractor.archiveBase(fileName)
         if (base == null) {
+            // "name part1 rar" (Hoster hat Punkte durch Leerzeichen ersetzt)
+            val repaired = Extractor.repairName(fileName)
+            if (Extractor.archiveBase(repaired) != null) {
+                fileName = repaired
+                dao.setFileName(id, fileName)
+                base = Extractor.archiveBase(fileName)
+            }
+        }
+        if (base == null) {
             // Name ohne Archiv-Endung, Inhalt aber ein Archiv (falscher oder
             // fehlender Name vom Hoster): Endung anhand der Magic Bytes ergaenzen
             Extractor.sniffExtension(temp)?.let { ext ->
@@ -541,7 +550,7 @@ class DownloadEngine(
             // mit dem Aufloesen)
             val pending = dao.all().any { other ->
                 other.id != id && other.status in active && (
-                    Extractor.archiveBase(other.fileName ?: "") == base ||
+                    Extractor.archiveBase(Extractor.repairName(other.fileName ?: "")) == base ||
                         (other.fileName == null && other.packageId != null && other.packageId == self?.packageId)
                     )
             }
@@ -592,6 +601,31 @@ class DownloadEngine(
         if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
         var name = item.fileName ?: return "Dateiname unbekannt"
         var base = Extractor.archiveBase(name)
+        if (base == null) {
+            // Namen wie "name part1 rar": alle Teile des Sets umbenennen (Datei
+            // im App-Ordner bzw. aus dem Zielordner zurueckgeholt) und in der
+            // Datenbank korrigieren
+            val repaired = Extractor.repairName(name)
+            val repairedBase = Extractor.archiveBase(repaired)
+            if (repairedBase != null) {
+                val parts = dao.all().filter {
+                    it.status == DownloadStatus.COMPLETED &&
+                        Extractor.archiveBase(Extractor.repairName(it.fileName ?: "")) == repairedBase
+                }
+                for (part in parts) {
+                    val oldName = part.fileName ?: continue
+                    val newName = Extractor.repairName(oldName)
+                    val local = File(downloadDir(), newName)
+                    if (!local.isFile) {
+                        val oldLocal = File(downloadDir(), oldName)
+                        if (oldLocal.isFile) oldLocal.renameTo(local) else restoreArchive(part, local)
+                    }
+                    dao.setFileName(part.id, newName)
+                }
+                name = repaired
+                base = repairedBase
+            }
+        }
         if (base == null) {
             // Vielleicht ein Archiv ohne passende Endung
             val local = File(downloadDir(), name).takeIf { it.isFile }
