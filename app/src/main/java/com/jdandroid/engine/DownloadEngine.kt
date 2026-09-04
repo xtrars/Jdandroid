@@ -83,7 +83,9 @@ class DownloadEngine(
     init {
         // Geschwindigkeitslimit aus den Einstellungen live uebernehmen
         scope.launch {
-            app.settings.speedLimitKbps.collect { limiter.limitBps = it.toLong() * 1024 }
+            app.settings.speedLimitMbit.collect {
+                limiter.limitBps = com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it)
+            }
         }
     }
 

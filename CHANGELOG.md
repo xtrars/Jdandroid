@@ -25,6 +25,14 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.7] – 2026-09-04
+
+### Geändert
+
+- Geschwindigkeitslimit in Mbit/s statt KiB/s, Dezimalwerte erlaubt
+  (z. B. 2,5); ein früher gespeicherter KiB/s-Wert wird umgerechnet. Das
+  Feld zeigt die Entsprechung in Bytes pro Sekunde an.
+
 ## [0.0.6] – 2026-09-04
 
 ### Geändert
@@ -497,6 +505,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.7]: https://github.com/xtrars/Jdandroid/commit/5a65ec8
 [0.0.6]: https://github.com/xtrars/Jdandroid/commit/7afb954
 [0.0.5]: https://github.com/xtrars/Jdandroid/commit/d03642a
 [0.0.4]: https://github.com/xtrars/Jdandroid/commit/80abe87

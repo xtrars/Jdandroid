@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -40,7 +41,9 @@ class SettingsRepository(private val context: Context) {
     private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
-    private val keySpeedLimit = intPreferencesKey("speed_limit_kbps")
+    /** Alter Schluessel (KiB/s), nur noch zum Uebernehmen in Mbit/s. */
+    private val keySpeedLimitKbps = intPreferencesKey("speed_limit_kbps")
+    private val keySpeedLimitMbit = doublePreferencesKey("speed_limit_mbit")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
     private val keyWifiOnly = booleanPreferencesKey("wifi_only")
     private val keyAutoStart = booleanPreferencesKey("auto_start_links")
@@ -91,9 +94,16 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    /** Globales Download-Limit in KB/s, 0 = unbegrenzt. */
-    val speedLimitKbps: Flow<Int> =
-        prefs.map { it[keySpeedLimit] ?: 0 }
+    /**
+     * Globales Download-Limit in Mbit/s (1 Mbit = 1 000 000 Bit), 0 = unbegrenzt.
+     * Ein alter Wert in KiB/s wird umgerechnet, bis der Nutzer neu speichert.
+     */
+    val speedLimitMbit: Flow<Double> =
+        prefs.map { p ->
+            p[keySpeedLimitMbit]
+                ?: p[keySpeedLimitKbps]?.let { kbps -> kbps * 1024.0 * 8 / 1_000_000 }
+                ?: 0.0
+        }
 
     /** Downloads nur über nicht-getaktete Verbindungen (WLAN). */
     val wifiOnly: Flow<Boolean> =
@@ -165,8 +175,17 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyMaxConcurrent] = value.coerceIn(1, 99) }
     }
 
-    suspend fun setSpeedLimitKbps(value: Int) {
-        context.dataStore.edit { it[keySpeedLimit] = value.coerceIn(0, 1_000_000) }
+    suspend fun setSpeedLimitMbit(value: Double) {
+        context.dataStore.edit {
+            it[keySpeedLimitMbit] = value.coerceIn(0.0, 100_000.0)
+            it.remove(keySpeedLimitKbps)
+        }
+    }
+
+    companion object {
+        /** Bytes pro Sekunde fuer ein Limit in Mbit/s (0 = unbegrenzt). */
+        fun mbitToBytesPerSecond(mbit: Double): Long =
+            if (mbit <= 0) 0L else (mbit * 1_000_000 / 8).toLong()
     }
 
     suspend fun currentClickNLoadEnabled(): Boolean = clickNLoadEnabled.first()

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
+import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
 import com.jdandroid.engine.DownloadService
@@ -102,7 +103,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) {
         if (!loaded) {
             maxConcurrentText = settings.maxConcurrent.first().toString()
-            speedLimitText = settings.speedLimitKbps.first().toString()
+            speedLimitText = formatMbit(settings.speedLimitMbit.first())
             loaded = true
         }
     }
@@ -174,14 +175,29 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             OutlinedTextField(
                 value = speedLimitText,
                 onValueChange = { value ->
-                    speedLimitText = value.filter { it.isDigit() }.take(7)
-                    speedLimitText.toIntOrNull()?.let { n ->
-                        if (loaded) scope.launch { settings.setSpeedLimitKbps(n) }
+                    // Ziffern und ein Dezimaltrenner (Komma oder Punkt)
+                    val cleaned = buildString {
+                        var separator = false
+                        for (c in value) {
+                            if (c.isDigit()) append(c)
+                            else if ((c == ',' || c == '.') && !separator) { append(','); separator = true }
+                        }
+                    }.take(8)
+                    speedLimitText = cleaned
+                    parseMbit(cleaned)?.let { n ->
+                        if (loaded) scope.launch { settings.setSpeedLimitMbit(n) }
                     }
                 },
-                label = { Text("Geschwindigkeitslimit (KiB/s, 0 = unbegrenzt)") },
-                supportingText = { Text("Gilt gemeinsam für alle laufenden Downloads") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text("Geschwindigkeitslimit (Mbit/s, 0 = unbegrenzt)") },
+                supportingText = {
+                    val bytes = parseMbit(speedLimitText)
+                        ?.let { com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
+                    Text(
+                        if (bytes > 0) "Gilt gemeinsam für alle laufenden Downloads, entspricht ${formatBytes(bytes)}/s"
+                        else "Gilt gemeinsam für alle laufenden Downloads"
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -567,3 +583,12 @@ private fun SettingSwitch(
         Switch(checked = checked, onCheckedChange = null)
     }
 }
+
+/** Mbit/s fuer das Eingabefeld: ganze Zahl ohne Nachkommastellen, sonst mit Komma. */
+private fun formatMbit(value: Double): String =
+    if (value == Math.floor(value)) value.toLong().toString()
+    else String.format(java.util.Locale.GERMANY, "%.2f", value).trimEnd('0').trimEnd(',')
+
+/** Eingabe mit Komma oder Punkt lesen; null bei leerem oder unvollstaendigem Text. */
+private fun parseMbit(text: String): Double? =
+    text.trim().replace(',', '.').takeIf { it.isNotEmpty() && it != "." }?.toDoubleOrNull()
