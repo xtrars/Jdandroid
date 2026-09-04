@@ -29,10 +29,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.engine.Extractor
 import com.jdandroid.hoster.HosterRegistry
 import java.util.Locale
 
@@ -296,9 +300,8 @@ private fun PackageHeader(
                     MetaRow(summary)
                 }
                 if (group.pkg.id != 0L) {
-                    IconButton(onClick = { renaming = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Paket umbenennen")
-                    }
+                    // Eine Aktion direkt (Start/Pause), alles Weitere im Menue -
+                    // sonst wird die Zeile mit Symbolen ueberladen
                     IconButton(onClick = {
                         if (group.active) vm.pausePackage(group.pkg.id)
                         else vm.startPackage(group.pkg.id)
@@ -309,8 +312,30 @@ private fun PackageHeader(
                             else "Paket starten"
                         )
                     }
-                    IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Paket löschen")
+                    var menuOpen by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Paketaktionen")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Umbenennen") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                onClick = { menuOpen = false; renaming = true }
+                            )
+                            if (group.finished > 0) {
+                                DropdownMenuItem(
+                                    text = { Text("Archive entpacken") },
+                                    leadingIcon = { Icon(JdIcons.FolderOpen, contentDescription = null) },
+                                    onClick = { menuOpen = false; vm.extractPackage(group.pkg.id) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Paket löschen") },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                onClick = { menuOpen = false; confirmDelete = true }
+                            )
+                        }
                     }
                 }
             }
@@ -377,7 +402,7 @@ private fun DownloadRow(
         )
     }
     RowCard(modifier) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 2.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 0.dp, top = 4.dp, bottom = 2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     item.fileName ?: item.url,
@@ -397,7 +422,50 @@ private fun DownloadRow(
                     DownloadStatus.FAILED -> "Fehler" to Tone.ERROR
                     DownloadStatus.OFFLINE -> "Offline" to Tone.ERROR
                 }
-                StatusPill(pillText, tone, Modifier.padding(end = 8.dp))
+                StatusPill(pillText, tone)
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Aktionen")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        when (item.status) {
+                            DownloadStatus.RUNNING, DownloadStatus.QUEUED -> DropdownMenuItem(
+                                text = { Text("Pause") },
+                                leadingIcon = { Icon(JdIcons.Pause, contentDescription = null) },
+                                onClick = { menuOpen = false; vm.pause(item.id) }
+                            )
+                            DownloadStatus.PAUSED -> DropdownMenuItem(
+                                text = { Text("Fortsetzen") },
+                                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                                onClick = { menuOpen = false; vm.resume(item) }
+                            )
+                            DownloadStatus.FAILED, DownloadStatus.OFFLINE -> DropdownMenuItem(
+                                text = { Text("Erneut versuchen") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                onClick = { menuOpen = false; vm.retry(item) }
+                            )
+                            DownloadStatus.COMPLETED -> {
+                                DropdownMenuItem(
+                                    text = { Text("Entpacken") },
+                                    leadingIcon = { Icon(JdIcons.FolderOpen, contentDescription = null) },
+                                    onClick = { menuOpen = false; vm.extract(item.id) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Erneut laden") },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                    onClick = { menuOpen = false; vm.redownload(item) }
+                                )
+                            }
+                            DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Löschen") },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            onClick = { menuOpen = false; confirmDelete = true }
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(3.dp))
             val statusLine = when (item.status) {
@@ -430,26 +498,7 @@ private fun DownloadRow(
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(null, Modifier.padding(end = 8.dp))
             }
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                when (item.status) {
-                    DownloadStatus.RUNNING, DownloadStatus.QUEUED ->
-                        IconButton(onClick = { vm.pause(item.id) }) {
-                            Icon(JdIcons.Pause, contentDescription = "Pause")
-                        }
-                    DownloadStatus.PAUSED ->
-                        IconButton(onClick = { vm.resume(item) }) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Fortsetzen")
-                        }
-                    DownloadStatus.FAILED, DownloadStatus.OFFLINE ->
-                        IconButton(onClick = { vm.retry(item) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Erneut versuchen")
-                        }
-                    DownloadStatus.COMPLETED, DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
-                }
-                IconButton(onClick = { confirmDelete = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Löschen")
-                }
-            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

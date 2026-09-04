@@ -317,20 +317,6 @@ class DdownloadHoster : Hoster {
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
         val tier = if (ultimate) "Ultimate" else "Premium"
 
-        // Woran die Erkennung haengt, fuer die Diagnose festhalten
-        run {
-            val text = pageText
-            val around = Regex("""(?i)account[- ]?(?:type|status)|premium|ultimate|expire|aktiv bis|active until""")
-                .findAll(text).take(6).joinToString(" | ") { m ->
-                    text.substring((m.range.first - 60).coerceAtLeast(0), (m.range.last + 120).coerceAtMost(text.length))
-                }
-            com.jdandroid.Diagnostics.sink?.invoke(
-                "ddownload_account_premium",
-                "ddownload-Kontoseite: Premium-Erkennung",
-                "expire=$expire premiumWort=$premiumWord ultimate=$ultimate premium=$premium\n$around"
-            )
-        }
-
         // Steht auf der Kontoseite ein API-Key, liefert die API das Kontingent
         // zuverlaessiger als die HTML-Seite (premium_traffic_left). Premium gilt,
         // wenn Seite ODER API es sagen - die Seite ist bei unklarem Datumsformat
@@ -354,23 +340,6 @@ class DdownloadHoster : Hoster {
             left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
             total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
         )
-        // Erkannten Wert immer festhalten: so laesst sich eine falsche Einheit
-        // anhand des Seitenausschnitts nachvollziehen
-        com.jdandroid.Diagnostics.sink?.invoke(
-            "ddownload_account_parse",
-            "ddownload-Kontoseite: erkanntes Kontingent",
-            "rest=${parsed.left} (plausibel ${traffic.left}) gesamt=${parsed.total} unbegrenzt=${parsed.unlimited}\n" +
-                parsed.snippet.take(1200)
-        )
-        if (traffic.left < 0 && !traffic.unlimited) {
-            // Nicht lesbar: Seitenausschnitt fuer die Diagnose ablegen (nur Text,
-            // keine Cookies/Zugangsdaten), damit das Muster nachgezogen werden kann.
-            com.jdandroid.Diagnostics.sink?.invoke(
-                "ddownload_account",
-                "ddownload-Kontoseite: Kontingent nicht lesbar",
-                traffic.snippet
-            )
-        }
         val trafficTotal = when {
             traffic.unlimited -> -1L
             traffic.total > 0 -> traffic.total
@@ -386,7 +355,7 @@ class DdownloadHoster : Hoster {
             trafficUnlimited = traffic.unlimited,
             statusText = buildString {
                 append(if (premium) tier else "Free (Downloads nicht möglich)")
-                if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar (Diagnose in Einstellungen)")
+                if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar")
             }
         )
     }
@@ -482,13 +451,6 @@ class DdownloadHoster : Hoster {
         val rawPremiumLeft = result.opt("premium_traffic_left")?.toString()?.trim().orEmpty()
         val unlimited = rawPremiumLeft.contains("unlimited", true) || rawPremiumLeft == "inf"
         val premiumLeft = rawPremiumLeft.toDoubleOrNull()
-        // Rohwert fuer die Diagnose festhalten (nur die Zahl, kein Schluessel)
-        com.jdandroid.Diagnostics.sink?.invoke(
-            "ddownload_api",
-            "ddownload-API: Rohwerte der Kontoabfrage",
-            "premium_traffic_left=$rawPremiumLeft traffic_left=${result.opt("traffic_left")} " +
-                "traffic_used=${result.opt("traffic_used")} premium_expire=${result.opt("premium_expire")}"
-        )
         // Premium: gueltiges Ablaufdatum - oder, wenn die API das Datum in einem
         // unbekannten Format liefert, ein vorhandenes Premium-Kontingent
         // (ein Free-Konto hat keins). Vorher hiess ein unlesbares Datum "Free".
@@ -571,9 +533,11 @@ class DdownloadHoster : Hoster {
                 return@withContext ResolvedLink(page.finalUrl, fileNameFromDisposition(page.contentDisposition))
             }
             checkOffline(page.body)
+            // Name von der Dateiseite merken: nach der Weiterleitungskette ist
+            // der Seitentext eine Umleitung ohne Inhalt
+            val pageName = pageFileName(page.body)
 
             var direct = extractDirectLink(page.body)
-            val steps = mutableListOf("GET $pageUrl -> ${page.code}")
             var formsSent = 0
             var hops = 0
             var currentUrl = pageUrl
@@ -583,12 +547,10 @@ class DdownloadHoster : Hoster {
                     // sonst der naechsten Seite folgen (ohne die Datei selbst zu laden).
                     // Relative Ziele gegen die zuletzt geholte Adresse aufloesen.
                     val target = resolveLocation(currentUrl, page.location!!)
-                    steps += "-> ${stripQuery(target)}"
                     if (isFileServerUrl(target)) { direct = target; break }
                     page = client.fetch(target, referer = currentUrl, followRedirects = false)
                     currentUrl = target
                     checkBlocked(page)
-                    steps += "GET -> ${page.code} ${page.contentType ?: ""}"
                     // Antwort ist bereits die Datei (Adresse ohne Dateiendung,
                     // z.B. dl.cgi/<token>): der Koerper wurde nicht gelesen
                     if (page.code in 200..299 && page.isFile) { direct = target; break }
@@ -605,17 +567,11 @@ class DdownloadHoster : Hoster {
                 currentUrl = pageUrl
                 checkBlocked(page)
                 if (page.code in 200..299 && page.isFile) { direct = page.finalUrl; break }
-                steps += "POST ${form.keys.joinToString(",")} -> ${page.code}"
                 direct = extractDirectLink(page.body)
                 if (direct == null && page.code !in 300..399) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
                 val text = visibleText(page.body)
-                com.jdandroid.Diagnostics.sink?.invoke(
-                    "ddownload_resolve",
-                    "ddownload: kein Direktlink (Ablauf der Anfrage)",
-                    steps.joinToString("\n") + "\nContent-Type=${page.contentType}\n" + text.take(1000)
-                )
                 val limitReached = Regex("""(?i)download limit|reached the|limit reached|too many|try again later""")
                     .containsMatchIn(text)
                 val freeMode = page.body.contains("countdown", true) ||
@@ -629,12 +585,11 @@ class DdownloadHoster : Hoster {
                     else -> "unerwartete Antwort"
                 }
                 throw HosterException(
-                    "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint). " +
-                        "Ablauf unter Einstellungen → Diagnose.",
+                    "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint).",
                     permanent = !limitReached
                 )
             }
-            val fileName = pageFileName(page.body)
+            val fileName = pageName ?: pageFileName(page.body)
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(direct, fileName)
         }
@@ -695,7 +650,8 @@ class DdownloadHoster : Hoster {
         Regex(
             """<h[12]\b[^>]*class=["'][^"']*\bdk-dl-name\b[^"']*["'][^>]*>\s*([^<]+?)\s*</h[12]>""",
             RegexOption.IGNORE_CASE
-        ).find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+        ).find(html)?.groupValues?.get(1)?.trim()?.removePrefix("Download ")?.trim()
+            ?.takeIf { it.isNotBlank() }?.let { return it }
         Regex("""name=["']fname["']\s+value=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         Regex("""value=(["'])(.*?)\1\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
@@ -804,9 +760,6 @@ class DdownloadHoster : Hoster {
         val ext = last.substringAfterLast('.', "").lowercase()
         return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
     }
-
-    /** Adresse ohne Query fuer die Diagnose (Direktlinks tragen Tokens). */
-    private fun stripQuery(url: String): String = url.substringBefore('?')
 
     /** Location-Header (auch relativ) gegen die Seitenadresse aufloesen. */
     private fun resolveLocation(base: String, location: String): String =

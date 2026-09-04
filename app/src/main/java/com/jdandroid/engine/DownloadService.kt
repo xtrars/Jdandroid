@@ -123,6 +123,9 @@ class DownloadService : Service() {
             ACTION_PUMP -> scope.launch { engine.pump() }
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
+            ACTION_EXTRACT -> scope.launch {
+                engine.extractNow(id)?.let { com.jdandroid.ui.AppMessages.error(it) }
+            }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
             ACTION_RESUME_ALL -> scope.launch {
                 (application as JdApp).db.downloadDao().requeuePaused()
@@ -409,6 +412,7 @@ class DownloadService : Service() {
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
+        const val ACTION_EXTRACT = "com.jdandroid.action.EXTRACT"
         const val ACTION_PAUSE_ALL = "com.jdandroid.action.PAUSE_ALL"
         const val ACTION_RESUME_ALL = "com.jdandroid.action.RESUME_ALL"
         const val ACTION_START_CNL = "com.jdandroid.action.START_CNL"

@@ -210,6 +210,16 @@ interface DownloadDao {
     )
     suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
+    @Query("UPDATE downloads SET fileName = :name WHERE id = :id")
+    suspend fun setFileName(id: Long, name: String)
+
+    /** Fertigen Eintrag von vorn laden. */
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0, " +
+            "downloadedBytes = 0, localPath = NULL WHERE id = :id AND status = 'COMPLETED'"
+    )
+    suspend fun requeueCompleted(id: Long)
+
     /** Nach echtem Fortschritt: Fehlversuche zaehlen von vorn. */
     @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
     suspend fun resetAttempts(id: Long)

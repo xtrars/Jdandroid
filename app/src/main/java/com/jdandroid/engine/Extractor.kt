@@ -49,6 +49,22 @@ object Extractor {
         }
     }
 
+    /** Archivformat anhand der ersten Bytes: "rar", "zip", "7z" oder null. */
+    fun sniffExtension(file: File): String? {
+        val head = ByteArray(8)
+        val n = runCatching { file.inputStream().use { it.read(head) } }.getOrDefault(-1)
+        if (n < 6) return null
+        fun at(i: Int) = head[i].toInt() and 0xFF
+        return when {
+            at(0) == 'R'.code && at(1) == 'a'.code && at(2) == 'r'.code && at(3) == '!'.code &&
+                at(4) == 0x1A && at(5) == 0x07 -> "rar"
+            at(0) == 'P'.code && at(1) == 'K'.code && at(2) == 3 && at(3) == 4 -> "zip"
+            at(0) == '7'.code && at(1) == 'z'.code && at(2) == 0xBC && at(3) == 0xAF &&
+                at(4) == 0x27 && at(5) == 0x1C -> "7z"
+            else -> null
+        }
+    }
+
     fun isArchive(fileName: String): Boolean {
         val lower = fileName.lowercase()
         return archiveExtensions.any { lower.endsWith(it) }

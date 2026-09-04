@@ -303,37 +303,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall
             )
 
-            // Diagnose-Ausschnitte der Hoster (z.B. Kontoseite, wenn das
-            // Kontingent nicht lesbar war) - zum Kopieren und Weitergeben.
-            var diagnostics by remember { mutableStateOf(com.jdandroid.Diagnostics.all(context)) }
-            if (diagnostics.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Diagnose")
-                diagnostics.forEach { (title, text) ->
-                    Spacer(Modifier.height(8.dp))
-                    Text(title, style = MaterialTheme.typography.titleSmall)
-                    SelectionContainer {
-                        Text(
-                            text.take(1500),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = {
-                            val clipboard = context.getSystemService(ClipboardManager::class.java)
-                            clipboard?.setPrimaryClip(ClipData.newPlainText(title, text))
-                        }) { Text("Kopieren") }
-                    }
-                }
-                TextButton(onClick = {
-                    com.jdandroid.Diagnostics.clear(context)
-                    diagnostics = emptyList()
-                }) { Text("Diagnose löschen") }
-            }
-
             // Diagnose: letzter Absturz, damit ein Fehler auf dem Geraet
             // nachvollziehbar ist statt nur "die App stuerzt ab".
             var crash by remember { mutableStateOf(CrashReporter.lastCrash(context)) }

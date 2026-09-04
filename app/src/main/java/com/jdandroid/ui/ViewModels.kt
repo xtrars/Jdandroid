@@ -17,6 +17,7 @@ import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
 import com.jdandroid.engine.DownloadService
+import com.jdandroid.engine.Extractor
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.Dispatchers
@@ -205,6 +206,33 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun retry(item: DownloadItem) = resume(item)
+
+    /** Fertigen Download erneut laden (z.B. Datei versehentlich geloescht). */
+    fun redownload(item: DownloadItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.requeueCompleted(item.id)
+            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
+        }
+    }
+
+    /** Nachtraeglich entpacken (Aktionsmenue). */
+    fun extract(id: Long) = DownloadService.send(getApplication(), DownloadService.ACTION_EXTRACT, id)
+
+    /** Alle fertigen Archive eines Pakets entpacken (nur erste Teile eines Sets). */
+    fun extractPackage(packageId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val items = dao.byPackage(packageId).filter { it.status == DownloadStatus.COMPLETED }
+            val archives = items.filter { item ->
+                val name = item.fileName ?: return@filter false
+                Extractor.archiveBase(name) != null && !Extractor.isSecondaryVolume(name)
+            }
+            if (archives.isEmpty()) {
+                AppMessages.info("Keine fertigen Archive in diesem Paket")
+                return@launch
+            }
+            archives.forEach { extract(it.id) }
+        }
+    }
 
     fun delete(id: Long) {
         viewModelScope.launch(Dispatchers.IO) {

@@ -269,9 +269,9 @@ class DownloadEngine(
             val resolved = hoster.resolve(item.url, account)
 
             var current = dao.byId(id) ?: return
-            if (current.fileName == null && resolved.fileName != null) {
-                current = current.copy(fileName = sanitizeFileName(resolved.fileName))
-                dao.update(current)
+            val resolvedName = resolved.fileName?.let { sanitizeFileName(it) }
+            if (resolvedName != null && preferName(current.fileName, resolvedName)) {
+                current = adoptFileName(current, resolvedName)
                 refinePackageName(current.packageId)
             }
             download(current, resolved.directUrl, resolved.hash)
@@ -413,15 +413,21 @@ class DownloadEngine(
                 )
             }
 
-            // Dateiname ggf. aus Content-Disposition oder URL ableiten
+            // Dateiname ggf. aus Content-Disposition oder URL ableiten. Der vom
+            // Server gelieferte Name ersetzt einen Platzhalter ohne Endung (z.B.
+            // aus dem Seitentitel der Linkpruefung) - sonst erkennt die App das
+            // Archiv nicht und entpackt nie.
             var current = dao.byId(item.id) ?: return
-            if (current.fileName == null) {
-                val name = fileNameFrom(resp.header("Content-Disposition"), resp.request.url)
-                current = current.copy(fileName = name)
-                dao.update(current)
-                val renamed = tempFile(current)
-                if (target.path != renamed.path && target.exists()) target.renameTo(renamed)
-                target = renamed
+            val serverName = resp.header("Content-Disposition")
+                ?.let { fileNameFromDisposition(it) }
+            val candidate = when {
+                current.fileName == null -> fileNameFrom(resp.header("Content-Disposition"), resp.request.url)
+                serverName != null && preferName(current.fileName, serverName) -> serverName
+                else -> null
+            }
+            if (candidate != null) {
+                current = adoptFileName(current, candidate)
+                target = tempFile(current)
             }
 
             var written = offset
@@ -494,8 +500,18 @@ class DownloadEngine(
      * zu Ende laufen, den Statuswechsel aber scheitern - Eintrag "pausiert" bei
      * 100 %, Teildatei weg, beim Fortsetzen Neudownload plus Duplikat.
      */
-    private suspend fun completeDownload(id: Long, temp: File, fileName: String) = withContext(NonCancellable) {
-        val base = Extractor.archiveBase(fileName)
+    private suspend fun completeDownload(id: Long, temp: File, originalName: String) = withContext(NonCancellable) {
+        var fileName = originalName
+        var base = Extractor.archiveBase(fileName)
+        if (base == null) {
+            // Name ohne Archiv-Endung, Inhalt aber ein Archiv (falscher oder
+            // fehlender Name vom Hoster): Endung anhand der Magic Bytes ergaenzen
+            Extractor.sniffExtension(temp)?.let { ext ->
+                fileName = "$fileName.$ext"
+                dao.setFileName(id, fileName)
+                base = Extractor.archiveBase(fileName)
+            }
+        }
         val autoExtract = app.settings.currentAutoExtract()
 
         if (!autoExtract || base == null) {
@@ -547,6 +563,10 @@ class DownloadEngine(
 
         // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
         // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
+        launchExtraction(id, base!!, primary, archiveFile)
+    }
+
+    private fun launchExtraction(id: Long, base: String, primary: File, archiveFile: File) {
         extracting.incrementAndGet()
         onStateChanged()
         scope.launch {
@@ -558,6 +578,92 @@ class DownloadEngine(
                 scope.launch { pump() }
             }
         }
+    }
+
+    /**
+     * Nachtraegliches Entpacken eines fertigen Downloads (Aktionsmenue). Alle
+     * Teile des Archiv-Sets werden bei Bedarf aus dem Zielordner (SAF oder
+     * Downloads/JDAndroid) in den App-Ordner zurueckgeholt. Liefert eine
+     * Fehlermeldung oder null, wenn das Entpacken gestartet wurde.
+     */
+    suspend fun extractNow(id: Long): String? {
+        val item = dao.byId(id) ?: return "Eintrag nicht gefunden"
+        if (item.status == DownloadStatus.EXTRACTING) return "Wird bereits entpackt"
+        if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
+        var name = item.fileName ?: return "Dateiname unbekannt"
+        var base = Extractor.archiveBase(name)
+        if (base == null) {
+            // Vielleicht ein Archiv ohne passende Endung
+            val local = File(downloadDir(), name).takeIf { it.isFile }
+                ?: run { val f = File(downloadDir(), name); if (restoreArchive(item, f)) f else null }
+            val ext = local?.let { Extractor.sniffExtension(it) } ?: return "Kein Archiv: $name"
+            val renamed = File(downloadDir(), "$name.$ext")
+            local.renameTo(renamed)
+            name = renamed.name
+            dao.setFileName(id, name)
+            base = Extractor.archiveBase(name) ?: return "Kein Archiv: $name"
+        }
+        val set = dao.all().filter {
+            it.status == DownloadStatus.COMPLETED && Extractor.archiveBase(it.fileName ?: "") == base
+        }
+        for (part in set) {
+            val partName = part.fileName ?: continue
+            val local = File(downloadDir(), partName)
+            if (!local.isFile && !restoreArchive(part, local)) {
+                return "Archivteil nicht mehr vorhanden: $partName"
+            }
+        }
+        val primary = Extractor.findPrimaryVolume(downloadDir(), base)
+            ?: return "Erstes Archiv-Teil fehlt"
+        dao.setStatus(id, DownloadStatus.EXTRACTING)
+        launchExtraction(id, base, primary, File(downloadDir(), name))
+        return null
+    }
+
+    /**
+     * Fertige Archivdatei in den App-Ordner zurueckholen: aus dem gemerkten
+     * Pfad, dem eigenen Zielordner (SAF) oder Downloads/JDAndroid (MediaStore).
+     */
+    private suspend fun restoreArchive(item: DownloadItem, dest: File): Boolean {
+        val name = item.fileName ?: return false
+        item.localPath?.let { path ->
+            val f = File(path)
+            if (f.isFile && f.path != dest.path) {
+                return runCatching { f.copyTo(dest, overwrite = true); true }.getOrDefault(false)
+            }
+        }
+        targetTree()?.findFile(name)?.takeIf { it.isFile }?.let { doc ->
+            return copyUriTo(doc.uri, dest)
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = context.contentResolver
+            val projection = arrayOf(MediaStore.MediaColumns._ID)
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+            val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid%")
+            runCatching {
+                resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, null)
+                    ?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val mediaId = cursor.getLong(0)
+                            val uri = android.content.ContentUris.withAppendedId(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI, mediaId
+                            )
+                            return copyUriTo(uri, dest)
+                        }
+                    }
+            }
+        }
+        return false
+    }
+
+    private fun copyUriTo(uri: android.net.Uri, dest: File): Boolean = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            dest.outputStream().use { input.copyTo(it) }
+        } != null
+    } catch (_: Exception) {
+        dest.delete()
+        false
     }
 
     /** Entpacken, exportieren, Set aktualisieren - immer nur eines gleichzeitig, nicht abbrechbar. */
@@ -698,6 +804,43 @@ class DownloadEngine(
             file.delete()
             throw HosterException("Prüfsumme ($algorithm) stimmt nicht – Datei wird erneut geladen")
         }
+    }
+
+    /**
+     * Ist [candidate] der bessere Dateiname? Ja, wenn bisher keiner bekannt
+     * ist, der bisherige keine Endung traegt oder erst der neue ein Archiv
+     * erkennen laesst.
+     */
+    private fun preferName(current: String?, candidate: String): Boolean {
+        if (current == null) return true
+        if (current == candidate) return false
+        val currentExt = current.substringAfterLast('.', "")
+        val hasExt = currentExt.isNotEmpty() && currentExt.length <= 10 && !currentExt.contains(' ')
+        if (!hasExt) return true
+        return Extractor.archiveBase(current) == null && Extractor.archiveBase(candidate) != null
+    }
+
+    /** Neuen Dateinamen speichern und eine vorhandene Teildatei mit umbenennen. */
+    private suspend fun adoptFileName(item: DownloadItem, name: String): DownloadItem {
+        val old = tempFile(item)
+        val updated = item.copy(fileName = name)
+        val renamed = tempFile(updated)
+        if (old.path != renamed.path && old.exists()) old.renameTo(renamed)
+        dao.setFileName(item.id, name)
+        return updated
+    }
+
+    /** Nur der Content-Disposition-Teil von [fileNameFrom]; null ohne Header. */
+    private fun fileNameFromDisposition(cd: String): String? {
+        Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
+            runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }
+                .getOrNull()?.takeIf { it.isNotBlank() }?.let { return sanitizeFileName(it) }
+        }
+        Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)?.let { m ->
+            val raw = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
+            if (raw.isNotEmpty()) return sanitizeFileName(raw)
+        }
+        return null
     }
 
     private fun fileNameFrom(contentDisposition: String?, url: okhttp3.HttpUrl): String {
