@@ -30,6 +30,7 @@ class JdApp : Application() {
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsRepository(this)
+        Diagnostics.sink = { key, title, text -> Diagnostics.save(this, key, title, text) }
         createNotificationChannel()
     }
 

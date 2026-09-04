@@ -231,34 +231,103 @@ class DdownloadHoster : Hoster {
             !Regex("""Account type[^<]*(?:</?[^>]*>\s*)*Free""", RegexOption.IGNORE_CASE)
                 .containsMatchIn(html)
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
-        val trafficMatch = Regex(
-            """[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*([\d.]+)\s*(GB|MB|TB)"""
-        ).find(html)
-        val trafficLeft = trafficMatch?.let { toBytes(it.groupValues[1], it.groupValues[2]) } ?: -1L
-        val unlimited = trafficMatch == null &&
-            Regex("""[Tt]raffic\s+available[^:]*:?\s*(?:</?[^>]*>\s*)*[Uu]nlimited""").containsMatchIn(html)
-        // Gesamt: "45.2 GB / 200 GB" bzw. "of 200 GB" auf der Kontoseite, sonst Tageskontingent
-        val totalFromPage = trafficMatch?.let { m ->
-            Regex("""(?:/|of|von)\s*([\d.]+)\s*(GB|MB|TB)""", RegexOption.IGNORE_CASE)
-                .find(html, m.range.last)?.takeIf { it.range.first - m.range.last < 80 }
-                ?.let { toBytes(it.groupValues[1], it.groupValues[2]) }
+
+        // Steht auf der Kontoseite ein API-Key, liefert die API das Kontingent
+        // zuverlaessiger als die HTML-Seite (premium_traffic_left).
+        apiKeyFromPage(html)?.let { key ->
+            runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
+                if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) return@withContext viaApi
+            }
+        }
+
+        val traffic = parseTraffic(html)
+        if (traffic.left < 0 && !traffic.unlimited) {
+            // Nicht lesbar: Seitenausschnitt fuer die Diagnose ablegen (nur Text,
+            // keine Cookies/Zugangsdaten), damit das Muster nachgezogen werden kann.
+            com.jdandroid.Diagnostics.sink?.invoke(
+                "ddownload_account",
+                "ddownload-Kontoseite: Kontingent nicht lesbar",
+                traffic.snippet
+            )
         }
         val trafficTotal = when {
-            unlimited -> -1L
-            totalFromPage != null && totalFromPage > 0 -> totalFromPage
-            premium && trafficLeft >= 0 -> maxOf(DAILY_QUOTA, trafficLeft)
+            traffic.unlimited -> -1L
+            traffic.total > 0 -> traffic.total
+            premium && traffic.left >= 0 -> maxOf(DAILY_QUOTA, traffic.left)
             else -> -1L
         }
 
         AccountInfo(
             valid = true,
             premiumUntil = expire,
-            trafficLeft = trafficLeft,
+            trafficLeft = traffic.left,
             trafficTotal = trafficTotal,
-            trafficUnlimited = unlimited,
-            statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
+            trafficUnlimited = traffic.unlimited,
+            statusText = buildString {
+                append(if (premium) "Premium" else "Free (Downloads nicht möglich)")
+                if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar (Diagnose in Einstellungen)")
+            }
         )
     }
+
+    /** Ergebnis der Kontingent-Suche auf der Kontoseite. */
+    internal data class TrafficParse(
+        val left: Long,
+        val total: Long,
+        val unlimited: Boolean,
+        val snippet: String
+    )
+
+    /** Sichtbaren Text der Seite gewinnen: Tags raus, Whitespace buendeln. */
+    internal fun visibleText(html: String): String =
+        html.replace(Regex("""<script\b[^>]*>[\s\S]*?</script>""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""<style\b[^>]*>[\s\S]*?</style>""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""<[^>]+>"""), " ")
+            .replace("&nbsp;", " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    /**
+     * Kontingent aus der Kontoseite lesen, tolerant gegen verschiedene Layouts:
+     * "Traffic available: 120.5 GB", "Premium traffic left 120,5 GB / 200 GB",
+     * "120.5 GB of 200 GB traffic", "Verfügbarer Traffic 120 GB", "unlimited".
+     */
+    internal fun parseTraffic(html: String): TrafficParse {
+        val text = visibleText(html)
+        val size = """(\d+(?:[.,]\d+)?)\s*(TB|GB|MB|KB)\b"""
+        val unit = { v: String, u: String -> toBytes(v.replace(',', '.'), u) }
+
+        // Ausschnitte rund um jedes "traffic" fuer die Diagnose
+        val snippet = Regex("""(?i)traffic""").findAll(text).take(8).joinToString(" | ") { m ->
+            text.substring((m.range.first - 100).coerceAtLeast(0), (m.range.last + 160).coerceAtMost(text.length))
+        }.ifBlank { "Kein Wort \"traffic\" auf der Seite gefunden. Anfang: " + text.take(600) }
+
+        var left = -1L
+        var total = -1L
+        var unlimited = false
+
+        // 1) Wort vor Zahl: "Traffic available: 120.5 GB", "Premium traffic left 120 GB"
+        val after = Regex("""(?i)traffic[^0-9]{0,60}?$size""").find(text)
+        // 2) Zahl vor Wort: "120.5 GB traffic left"
+        val before = Regex("""(?i)$size[^0-9]{0,40}?traffic""").find(text)
+        val hit = listOfNotNull(after, before).minByOrNull { it.range.first }
+        if (hit != null) {
+            val (v, u) = hit.destructured
+            left = unit(v, u)
+            // Gesamt direkt dahinter: "/ 200 GB", "of 200 GB", "von 200 GB"
+            Regex("""(?i)^\s*(?:/|of|von)\s*$size""").find(text.substring(hit.range.last + 1))
+                ?.let { t -> total = unit(t.groupValues[1], t.groupValues[2]) }
+        } else if (Regex("""(?i)traffic[^.]{0,60}?(unlimited|unbegrenzt)|(unlimited|unbegrenzt)[^.]{0,40}?traffic""")
+                .containsMatchIn(text)
+        ) {
+            unlimited = true
+        }
+        return TrafficParse(left, total, unlimited, snippet)
+    }
+
+    /** API-Key von der Kontoseite (XFS zeigt ihn unter "API"), nur mit klarer Form. */
+    internal fun apiKeyFromPage(html: String): String? =
+        Regex("""(?i)api[\s_-]*key[\s\S]{0,300}?value=["']([a-z0-9]{16,64})["']""").find(html)?.groupValues?.get(1)
 
     /** Kontopruefung ueber die offizielle API (ohne CAPTCHA). */
     private fun checkViaApi(key: String): AccountInfo {
