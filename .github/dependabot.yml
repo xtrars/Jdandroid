@@ -1,0 +1,54 @@
+# Dependabot: woechentliche Pruefung der Gradle-Abhaengigkeiten
+# (gradle/libs.versions.toml, Wrapper) und der GitHub-Actions in
+# .github/workflows.
+#
+# Achtung: Dieses Projekt nutzt Gradle-Dependency-Verification
+# (gradle/verification-metadata.xml, sha256). Ein Dependabot-PR, der eine
+# Version anhebt, scheitert in der CI, bis die Pruefsummen nachgezogen sind:
+#   ./gradlew --write-verification-metadata sha256 testDebugUnitTest assembleRelease
+# Das Ergebnis muss in den PR uebernommen werden (Dependabot tut das nicht).
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "Abhaengigkeiten"
+    groups:
+      # Zusammengehoerige Anhebungen in einem PR, damit die
+      # verification-metadata nur einmal nachgezogen werden muss.
+      kotlin-ksp:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.google.devtools.ksp*"
+      androidx:
+        patterns:
+          - "androidx.*"
+      archive:
+        patterns:
+          - "net.lingala.zip4j*"
+          - "org.apache.commons:commons-compress"
+          - "org.tukaani:xz"
+          - "com.github.omicronapps*"
+    ignore:
+      # Major-Spruenge von AGP und Kotlin bewusst von Hand (Toolchain,
+      # Compose-Compiler, KSP muessen zusammenpassen).
+      - dependency-name: "com.android.application"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.jetbrains.kotlin*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "CI"

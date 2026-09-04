@@ -1,0 +1,50 @@
+# EditorConfig fuer JDAndroid: https://editorconfig.org
+# Kotlin nach dem offiziellen Stil (kotlin.code.style=official in
+# gradle.properties), 4 Leerzeichen, LF, UTF-8, maximal 120 Zeichen.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+max_line_length = 120
+ij_kotlin_code_style_defaults = KOTLIN_OFFICIAL
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+ij_kotlin_name_count_to_use_star_import = 2147483647
+ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+ij_kotlin_packages_to_use_import_on_demand = unset
+ij_continuation_indent_size = 4
+
+# Android-Ressourcen und Manifest
+[*.xml]
+indent_size = 4
+
+# Workflows, Dependabot, Issue-Formulare
+[*.{yml,yaml}]
+indent_size = 2
+
+# Exportierte Room-Schemata (app/schemas) und andere JSON-Dateien:
+# von Room erzeugt, nicht von Hand umformatieren.
+[*.json]
+indent_size = 2
+
+[*.md]
+# Zwei Leerzeichen am Zeilenende sind in Markdown ein Zeilenumbruch.
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.properties]
+max_line_length = off
+
+# Gradle-Wrapper-Skript fuer Windows
+[*.bat]
+end_of_line = crlf
+
+[gradlew]
+end_of_line = lf

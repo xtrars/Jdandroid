@@ -1,0 +1,114 @@
+name: Fehlerbericht
+description: Ein Fehler in JDAndroid (Download, Entpacken, Linksammler, Konto, Click'n'Load, DLC, Oberfläche)
+title: "[Fehler] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Bericht. Bitte keine Zugangsdaten, API-Keys, Cookies oder
+        Premium-Links einfügen – Links am besten mit `…` kürzen. Die App-Version
+        steht in **Einstellungen** ganz unten (z. B. `JDAndroid 0.0.4 (28)`).
+  - type: input
+    id: android-version
+    attributes:
+      label: Android-Version
+      description: Android-Version und Gerät (Einstellungen → Über das Telefon). Mindestens Android 8.0.
+      placeholder: "z. B. Android 15, Pixel 8"
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App-Version
+      description: Anzeige am Ende der Einstellungen, mit versionCode in Klammern.
+      placeholder: "z. B. 0.0.4 (28)"
+    validations:
+      required: true
+  - type: dropdown
+    id: hoster
+    attributes:
+      label: Hoster
+      description: Bei welchem Hoster tritt der Fehler auf?
+      options:
+        - ddownload
+        - Rapidgator
+        - 1fichier
+        - kein Hoster / hosterunabhängig
+        - mehrere
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: Konto
+      description: Wie ist das betroffene Konto hinterlegt?
+      options:
+        - kein Konto (Free)
+        - API-Key
+        - Browser-Login (ddownload, Cloudflare Turnstile)
+        - Benutzername und Passwort
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich
+      options:
+        - Linksammler / Online-Prüfung
+        - Download (Warteschlange, Fortsetzen, Geschwindigkeit, WLAN-Regel)
+        - Entpacken (ZIP, 7z, RAR, Multipart, Passwortliste, Ausschlussfilter)
+        - Click'n'Load (127.0.0.1:9666)
+        - DLC-Import
+        - Konten / Kontingent
+        - Einstellungen / Zielordner
+        - Oberfläche / Design
+        - Benachrichtigung / Vordergrunddienst
+        - Sonstiges
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zum Nachstellen
+      description: Was hast du gemacht? Bei Archiven bitte Typ und Teilezahl nennen (z. B. RAR5, 12 Teile, mit Passwort).
+      placeholder: |
+        1. Links im Linksammler eingefügt …
+        2. Paket gestartet …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+      placeholder: Was hätte passieren sollen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächliches Verhalten und Meldung
+      description: Was passiert stattdessen? Bitte die Meldung aus der App wörtlich übernehmen (Fehlerzeile am Download, Kontostatus, CnL-Statuszeile).
+      placeholder: "z. B. „HTTP 403 – vorübergehend gesperrt“ am Download"
+    validations:
+      required: true
+  - type: textarea
+    id: crash
+    attributes:
+      label: Absturzbericht (falls vorhanden)
+      description: Einstellungen → „Letzter Absturz“ → Kopieren. Wird als Text formatiert, keine Backticks nötig.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vorab geprüft
+      options:
+        - label: Ich nutze die neueste APK aus `release/` bzw. dem letzten Release.
+          required: true
+        - label: Der Bericht enthält keine Zugangsdaten, API-Keys oder vollständigen Premium-Links.
+          required: true
+        - label: Bei Hoster-Fehlern habe ich es nach einigen Minuten erneut versucht (403 bei 1fichier/Rapidgator ist meist eine vorübergehende Sperre).
+          required: false

@@ -1,0 +1,83 @@
+name: Funktionswunsch
+description: Neue Funktion, neuer Hoster oder Verbesserung für JDAndroid
+title: "[Wunsch] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        JDAndroid orientiert sich an JDownloader, ist aber ein eigenständiges
+        Projekt (kein JDownloader-Code). Wünsche, die dort schon existieren,
+        gern mit dem Namen der JDownloader-Funktion benennen.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich
+      options:
+        - Neuer Hoster
+        - Linksammler / Online-Prüfung
+        - Download-Engine (Warteschlange, Limits, Wiederholversuche)
+        - Entpacken
+        - Click'n'Load / DLC / Container
+        - Konten
+        - Einstellungen
+        - Oberfläche / Design (Material You)
+        - Benachrichtigung / Hintergrundbetrieb
+        - Sonstiges
+    validations:
+      required: true
+  - type: input
+    id: hoster
+    attributes:
+      label: Hoster
+      description: Nur bei Hoster-Wünschen oder hosterbezogenen Änderungen. Bitte Domain und – falls bekannt – ob es eine öffentliche API gibt.
+      placeholder: "z. B. example-host.net, API unter /api/…, Konto per API-Key"
+    validations:
+      required: false
+  - type: input
+    id: app-version
+    attributes:
+      label: App-Version
+      description: Version, mit der der Wunsch geprüft wurde (Ende der Einstellungen).
+      placeholder: "z. B. 0.0.4 (28)"
+    validations:
+      required: false
+  - type: input
+    id: android-version
+    attributes:
+      label: Android-Version
+      placeholder: "z. B. Android 14"
+    validations:
+      required: false
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem oder Anlass
+      description: Welche Situation ist heute umständlich oder nicht möglich?
+      placeholder: "z. B. Beim Teilen aus dem Browser landen die Links erst im Linksammler, ich möchte …"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Gewünschtes Verhalten
+      description: Wie soll es sich verhalten? Bei Oberflächenwünschen bitte beachten, dass alle Schaltflächen sichtbar bleiben und pro Zeile ein Drei-Punkte-Menü genutzt wird.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Beispielablauf
+      description: Schritte, wie die Funktion aus Nutzersicht ablaufen würde.
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen und Hinweise
+      description: Umwege, die heute funktionieren; Verweise auf die entsprechende JDownloader-Funktion oder Hoster-Dokumentation.
+    validations:
+      required: false

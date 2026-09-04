@@ -1,0 +1,119 @@
+name: Release
+
+# Baut bei einem Tag der Form v<versionName> (z. B. v0.0.4) die signierte
+# Release-APK und legt sie als Asset eines GitHub-Releases ab.
+#
+# Signierung: Der Keystore app/keystore/release.jks liegt bewusst im Repo,
+# Passwoerter und Alias stehen in app/build.gradle.kts (signingConfigs.release).
+# Es sind daher keine Repository-Secrets noetig - "assembleRelease" signiert
+# von selbst. Die APK entspricht der in release/ abgelegten Datei.
+#
+# Ablauf fuer ein Release:
+#   1. versionName/versionCode in app/build.gradle.kts erhoehen, committen.
+#   2. git tag v<versionName> && git push origin v<versionName>
+# Der Tag muss zum versionName passen, sonst bricht der Lauf ab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Bestehender Tag (z. B. v0.0.4), fuer den das Release erneut gebaut wird"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Tag gegen versionName pruefen
+        run: |
+          set -eu
+          version="$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle.kts)"
+          code="$(sed -n 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' app/build.gradle.kts)"
+          echo "versionName=$version versionCode=$code Tag=$TAG"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag '$TAG' passt nicht zu versionName '$version' in app/build.gradle.kts (erwartet 'v$version')."
+            exit 1
+          fi
+          {
+            echo "VERSION=$version"
+            echo "VERSION_CODE=$code"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Beide Tasks getrennt, wie in CLAUDE.md beschrieben: parallele
+      # KSP-Laeufe koennen sonst ein leeres Room-Schema anlegen.
+      - name: Unit-Tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Release-APK bauen
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: APK pruefen und Pruefsumme erzeugen
+        run: |
+          set -eu
+          apk="app/build/outputs/apk/release/JDAndroid-${VERSION}.apk"
+          test -f "$apk" || { echo "::error::$apk wurde nicht gebaut."; ls -l app/build/outputs/apk/release/; exit 1; }
+          mkdir -p dist
+          cp "$apk" dist/
+          (cd dist && sha256sum "JDAndroid-${VERSION}.apk" > "JDAndroid-${VERSION}.apk.sha256")
+          # Signatur pruefen (apksigner aus den Build-Tools des Runners)
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [ -n "$apksigner" ]; then
+            "$apksigner" verify --print-certs "dist/JDAndroid-${VERSION}.apk"
+          else
+            echo "::warning::apksigner nicht gefunden, Signatur nicht geprueft."
+          fi
+          # Hinweis: liegt fuer diese Version schon eine APK in release/, muss sie
+          # nicht bytegleich sein (Build-Zeitstempel), aber die Signatur ist dieselbe.
+          if [ -f "release/JDAndroid-${VERSION}.apk" ]; then
+            echo "release/JDAndroid-${VERSION}.apk ist im Repo vorhanden."
+          fi
+
+      - name: GitHub-Release anlegen oder aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          notes="$(printf '%s\n' \
+            "Signierte Release-APK von JDAndroid ${VERSION} (versionCode ${VERSION_CODE})." \
+            "" \
+            "Installation: APK auf das Geraet kopieren, Installation aus unbekannten Quellen erlauben, oeffnen." \
+            "Updates ueber diese APK funktionieren nur, wenn bereits eine mit derselben Signatur installiert ist" \
+            "(alle Releases dieses Repos sind mit demselben Keystore signiert)." \
+            "Pruefsumme: siehe JDAndroid-${VERSION}.apk.sha256.")"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "JDAndroid ${VERSION}" \
+              --notes "$notes" \
+              --generate-notes
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: JDAndroid-${{ env.VERSION }}
+          path: dist/*
