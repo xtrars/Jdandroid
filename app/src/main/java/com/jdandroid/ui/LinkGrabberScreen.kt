@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,9 +67,23 @@ fun LinkGrabberScreen(
     vm: DownloadViewModel,
     dlcContent: String?,
     onDlcConsumed: () -> Unit,
+    sharedText: String?,
+    onSharedTextConsumed: () -> Unit,
+    onLinksStarted: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val groups by vm.collectorGroups.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+    var prefill by remember { mutableStateOf("") }
+
+    // Geteilter Text (Browser -> Teilen) oeffnet den Dialog mit Vorbelegung
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            prefill = sharedText
+            showAddDialog = true
+            onSharedTextConsumed()
+        }
+    }
     val total = groups.sumOf { it.items.size }
     val offline = groups.sumOf { g -> g.items.count { it.online == OnlineState.OFFLINE } }
     val scope = rememberCoroutineScope()
@@ -119,6 +135,11 @@ fun LinkGrabberScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { prefill = ""; showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Links hinzufügen")
+            }
         }
     ) { padding ->
         if (groups.isEmpty()) {
@@ -159,8 +180,30 @@ fun LinkGrabberScreen(
                     }
                     item(key = "cgap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
                 }
+                // Platz fuer den Plus-Knopf, damit er die letzte Zeile nicht verdeckt
+                item(key = "fab-space") { Spacer(Modifier.height(72.dp)) }
             }
         }
+    }
+
+    if (showAddDialog) {
+        AddLinksDialog(
+            initialText = prefill,
+            onDismiss = { showAddDialog = false },
+            onAdd = { text, pkg ->
+                vm.addLinks(text, pkg) { added, toCollector ->
+                    if (added > 0) {
+                        AppMessages.success(
+                            if (toCollector) "$added Link(s) in den Linksammler übernommen"
+                            else "$added Link(s) gestartet"
+                        )
+                        if (!toCollector) onLinksStarted()
+                    } else {
+                        AppMessages.info("Keine neuen Links – alle bereits vorhanden")
+                    }
+                }
+            }
+        )
     }
 }
 

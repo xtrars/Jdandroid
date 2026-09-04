@@ -193,9 +193,9 @@ fun MainScreen(
     // Ein DLC gehoert in den Linksammler (bei Sofortstart in die Downloads):
     // dorthin wechseln, die Meldung erscheint dort
     LaunchedEffect(dlcContent) { if (dlcContent != null) tab = if (autoStart) Tab.Downloads else Tab.Collector }
-    // Geteilter Text oeffnet den Dialog im Downloads-Tab - also dorthin wechseln,
+    // Geteilter Text oeffnet den Dialog im Linksammler - also dorthin wechseln,
     // sonst passiert bei offenem Konten-/Einstellungs-Tab sichtbar nichts
-    LaunchedEffect(sharedText) { if (sharedText != null) tab = Tab.Downloads }
+    LaunchedEffect(sharedText) { if (sharedText != null) tab = Tab.Collector }
 
     // Zentrale Meldungen (DLC-Import, Kontofehler, ...): eine Fortschrittsmeldung
     // bleibt stehen, bis die naechste Meldung sie abloest.
@@ -261,12 +261,11 @@ fun MainScreen(
     ) { padding ->
         val modifier = Modifier.padding(padding)
         when (tab) {
-            Tab.Downloads -> DownloadsScreen(
-                downloadVm, sharedText, onSharedTextConsumed,
-                onLinksAdded = { toCollector -> tab = if (toCollector) Tab.Collector else Tab.Downloads },
-                modifier = modifier
+            Tab.Downloads -> DownloadsScreen(downloadVm, modifier)
+            Tab.Collector -> LinkGrabberScreen(
+                downloadVm, dlcContent, onDlcConsumed, sharedText, onSharedTextConsumed,
+                onLinksStarted = { tab = Tab.Downloads }, modifier = modifier
             )
-            Tab.Collector -> LinkGrabberScreen(downloadVm, dlcContent, onDlcConsumed, modifier)
             Tab.Accounts -> AccountsScreen(accountVm, modifier)
             Tab.Settings -> SettingsScreen(modifier)
         }

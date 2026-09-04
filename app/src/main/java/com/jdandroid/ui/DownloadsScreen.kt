@@ -122,15 +122,10 @@ private enum class ListFilter(val label: String, val matches: (DownloadItem) -> 
 @Composable
 fun DownloadsScreen(
     vm: DownloadViewModel,
-    sharedText: String?,
-    onSharedTextConsumed: () -> Unit,
-    onLinksAdded: (toCollector: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val allGroups by vm.groups.collectAsState()
     val collapsed = remember { mutableStateMapOf<Long, Boolean>() }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var prefill by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ListFilter.ALL) }
@@ -149,15 +144,6 @@ fun DownloadsScreen(
         }
     }
 
-    LaunchedEffect(sharedText) {
-        if (sharedText != null) {
-            prefill = sharedText
-            showAddDialog = true
-            onSharedTextConsumed()
-        }
-    }
-
-    val scope = rememberCoroutineScope()
 
     Scaffold(
         modifier = modifier,
@@ -179,11 +165,6 @@ fun DownloadsScreen(
                 }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { prefill = ""; showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Links hinzufügen")
-            }
-        }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
         if (searchOpen) {
@@ -212,9 +193,9 @@ fun DownloadsScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     if (allGroups.isEmpty()) {
-                        "Noch keine Downloads.\n\nMit + Links einfügen oder aus dem Browser " +
-                            "teilen. Neue Links erscheinen zuerst im Linksammler und werden " +
-                            "dort gestartet."
+                        "Noch keine Downloads.\n\nLinks werden im Linksammler hinzugefügt " +
+                            "(Plus-Knopf, Teilen aus dem Browser, DLC, Click'n'Load) und " +
+                            "von dort gestartet."
                     } else "Keine Einträge für diesen Filter.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -250,25 +231,6 @@ fun DownloadsScreen(
         }
     }
 
-    if (showAddDialog) {
-        AddLinksDialog(
-            initialText = prefill,
-            onDismiss = { showAddDialog = false },
-            onAdd = { text, pkg ->
-                vm.addLinks(text, pkg) { added, toCollector ->
-                    if (added > 0) {
-                        AppMessages.success(
-                            if (toCollector) "$added Link(s) in den Linksammler übernommen"
-                            else "$added Link(s) gestartet"
-                        )
-                        onLinksAdded(toCollector)
-                    } else {
-                        AppMessages.info("Keine neuen Links – alle bereits vorhanden")
-                    }
-                }
-            }
-        )
-    }
 }
 
 /** Kopfzeile eines Pakets: Name, Gesamtfortschritt und Paketaktionen. */
