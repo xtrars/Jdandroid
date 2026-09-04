@@ -45,6 +45,21 @@ class DdownloadHoster : Hoster {
     /** Tageskontingent von ddownload Premium laut Anbieter (200 GB). */
     private val DAILY_QUOTA = 200L shl 30
 
+    /** Ablaufdatum der API tolerant lesen: mehrere Formate oder Unix-Zeit; 0 = unbekannt. */
+    internal fun parseExpire(raw: String?): Long {
+        val value = raw?.trim().orEmpty()
+        if (value.isEmpty() || value.equals("null", true)) return 0L
+        value.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000 }
+        val formats = listOf(
+            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd",
+            "dd MMMM yyyy", "dd MMM yyyy", "dd.MM.yyyy", "MM/dd/yyyy"
+        )
+        for (fmt in formats) {
+            runCatching { SimpleDateFormat(fmt, Locale.US).parse(value)?.time }.getOrNull()?.let { return it }
+        }
+        return 0L
+    }
+
     /**
      * Einheit von premium_traffic_left: Die Doku nennt keine. In der Praxis
      * liefert ddownload Kilobyte (als MB gerechnet erschienen 193 TiB statt
@@ -266,11 +281,34 @@ class DdownloadHoster : Hoster {
                 .containsMatchIn(html)
         val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
 
+        // Woran die Erkennung haengt, fuer die Diagnose festhalten
+        run {
+            val text = visibleText(html)
+            val around = Regex("""(?i)account type|premium|expire""").findAll(text).take(6).joinToString(" | ") { m ->
+                text.substring((m.range.first - 60).coerceAtLeast(0), (m.range.last + 120).coerceAtMost(text.length))
+            }
+            com.jdandroid.Diagnostics.sink?.invoke(
+                "ddownload_account_premium",
+                "ddownload-Kontoseite: Premium-Erkennung",
+                "expire=$expire premiumWort=$premiumWord premium=$premium\n$around"
+            )
+        }
+
         // Steht auf der Kontoseite ein API-Key, liefert die API das Kontingent
-        // zuverlaessiger als die HTML-Seite (premium_traffic_left).
+        // zuverlaessiger als die HTML-Seite (premium_traffic_left). Premium gilt,
+        // wenn Seite ODER API es sagen - die Seite ist bei unklarem Datumsformat
+        // der API die verlaesslichere Quelle.
         apiKeyFromPage(html)?.let { key ->
             runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
-                if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) return@withContext viaApi
+                if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) {
+                    val apiPremium = viaApi.statusText.startsWith("Premium")
+                    return@withContext if (premium && !apiPremium) {
+                        viaApi.copy(
+                            premiumUntil = if (viaApi.premiumUntil > 0) viaApi.premiumUntil else expire,
+                            statusText = "Premium"
+                        )
+                    } else viaApi
+                }
             }
         }
 
@@ -380,11 +418,7 @@ class DdownloadHoster : Hoster {
         val json = apiCall("account/info", mapOf("key" to key))
         val result = json.optJSONObject("result")
             ?: throw HosterException("ddownload: unerwartete API-Antwort", true)
-        val expire = runCatching {
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-                .parse(result.optString("premium_expire"))?.time ?: 0L
-        }.getOrDefault(0L)
-        val premium = expire > System.currentTimeMillis()
+        val expire = parseExpire(result.opt("premium_expire")?.toString())
         // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
         // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
         // betreffen den Free-Traffic und sind fuer Premium irrelevant.
@@ -398,6 +432,11 @@ class DdownloadHoster : Hoster {
             "premium_traffic_left=$rawPremiumLeft traffic_left=${result.opt("traffic_left")} " +
                 "traffic_used=${result.opt("traffic_used")} premium_expire=${result.opt("premium_expire")}"
         )
+        // Premium: gueltiges Ablaufdatum - oder, wenn die API das Datum in einem
+        // unbekannten Format liefert, ein vorhandenes Premium-Kontingent
+        // (ein Free-Konto hat keins). Vorher hiess ein unlesbares Datum "Free".
+        val premium = expire > System.currentTimeMillis() ||
+            (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
             unlimited -> -1L
             premiumLeft != null -> plausibleQuota(quotaToBytes(premiumLeft))

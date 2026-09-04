@@ -1,19 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Variante A "Pfeil in die Ablage": weisser Download-Pfeil, darunter die
+  Ablage als leuchtende Linie (Cyan -> Weiss), links zwei Tempo-Striche.
+  Alles innerhalb der 66-dp-Sicherheitszone des adaptiven Icons.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Pfeil nach unten auf Ablage: Download-Symbol -->
+    <!-- Pfeilschaft -->
     <path
-        android:pathData="M54,30 L54,58 M54,58 L42,46 M54,58 L66,46"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="6"
+        android:pathData="M54,24 L54,60"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="11"
+        android:strokeLineCap="round" />
+    <!-- Pfeilspitze -->
+    <path
+        android:pathData="M37,47 L54,66 L71,47"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="11"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
+    <!-- Ablage -->
     <path
-        android:pathData="M38,68 L70,68"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="6"
+        android:pathData="M31,80 L77,80"
+        android:strokeWidth="9"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="31"
+                android:startY="80"
+                android:endX="77"
+                android:endY="80">
+                <item android:offset="0" android:color="#FF9BE7FF" />
+                <item android:offset="1" android:color="#FFFFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Tempo-Striche -->
+    <path
+        android:pathData="M23,32 L31,32"
+        android:strokeColor="#D99BE7FF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M20,43 L26,43"
+        android:strokeColor="#D99BE7FF"
+        android:strokeWidth="4"
         android:strokeLineCap="round" />
 </vector>

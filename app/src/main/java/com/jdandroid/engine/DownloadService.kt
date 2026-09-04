@@ -318,7 +318,7 @@ class DownloadService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_DOWNLOADS)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(com.jdandroid.R.drawable.ic_stat_download)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setOngoing(true)
@@ -351,7 +351,7 @@ class DownloadService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_EVENTS)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(com.jdandroid.R.drawable.ic_stat_download)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))

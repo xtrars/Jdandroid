@@ -49,7 +49,7 @@ class BootReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, JdApp.CHANNEL_EVENTS)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(com.jdandroid.R.drawable.ic_stat_download)
             .setContentTitle(context.getString(R.string.app_name))
             .setContentText("$count Download(s) warten – antippen zum Fortsetzen")
             .setContentIntent(open)

@@ -103,3 +103,18 @@ class DdownloadPlausibilityTest {
         assertEquals(0L, ddl.plausibleQuota(0L))
     }
 }
+
+class DdownloadExpireTest {
+    private val ddl = DdownloadHoster()
+
+    @Test
+    fun verschiedeneDatumsformate() {
+        assertTrue(ddl.parseExpire("2030-01-05 12:00:00") > 0)
+        assertTrue(ddl.parseExpire("2030-01-05") > 0)
+        assertTrue(ddl.parseExpire("05 January 2030") > 0)
+        assertTrue(ddl.parseExpire("1893456000") > 0)
+        assertEquals(0L, ddl.parseExpire(""))
+        assertEquals(0L, ddl.parseExpire("null"))
+        assertEquals(0L, ddl.parseExpire("irgendwann"))
+    }
+}
