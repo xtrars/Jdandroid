@@ -10,10 +10,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,17 +45,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.container.ClickNLoadServer
@@ -63,26 +72,30 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val settings = (context.applicationContext as JdApp).settings
     val scope = rememberCoroutineScope()
-    val export by settings.exportToDownloads.collectAsState(initial = true)
-    val autoExtract by settings.autoExtract.collectAsState(initial = true)
-    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsState(initial = false)
-    val removeLinks by settings.removeLinksAfterExtract.collectAsState(initial = true)
-    val cnlEnabled by settings.clickNLoadEnabled.collectAsState(initial = false)
-    val wifiOnly by settings.wifiOnly.collectAsState(initial = false)
-    val autoStart by settings.autoStartLinks.collectAsState(initial = false)
-    val treeUri by settings.downloadTreeUri.collectAsState(initial = null)
-    val passwordText by settings.passwordList.collectAsState(initial = "")
+    val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
+    val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
+    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = false)
+    val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
+    val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
+    val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
+    val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
+    val passwordText by settings.passwordList.collectAsStateWithLifecycle(initialValue = "")
     val passwords = remember(passwordText) {
         passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
 
-    var maxConcurrentText by remember { mutableStateOf("") }
-    var speedLimitText by remember { mutableStateOf("") }
-    var loaded by remember { mutableStateOf(false) }
+    // Eingaben ueberleben Drehen und Tabwechsel; nur beim ersten Aufbau aus
+    // den gespeicherten Werten vorbelegen
+    var maxConcurrentText by rememberSaveable { mutableStateOf("") }
+    var speedLimitText by rememberSaveable { mutableStateOf("") }
+    var loaded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        maxConcurrentText = settings.maxConcurrent.first().toString()
-        speedLimitText = settings.speedLimitKbps.first().toString()
-        loaded = true
+        if (!loaded) {
+            maxConcurrentText = settings.maxConcurrent.first().toString()
+            speedLimitText = settings.speedLimitKbps.first().toString()
+            loaded = true
+        }
     }
 
     // Zielordner per Storage Access Framework (auch SD-Karte); die Berechtigung
@@ -101,19 +114,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { TopAppBar(title = { Text("Einstellungen") }, colors = jdTopBarColors()) }
     ) { padding ->
         Column(
             Modifier
                 .padding(padding)
+                // Seitliche Insets (Displayausschnitt, Querformat) freihalten
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                // Tastatur: das fokussierte Feld bleibt ueber der Tastatur sichtbar
+                .imePadding()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             SectionTitle("Darstellung")
             SettingsGroup {
-                val themeKey by settings.themeMode.collectAsState(initial = "system")
-                val dynamic by settings.dynamicColors.collectAsState(initial = false)
+                val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
+                val dynamic by settings.dynamicColors.collectAsStateWithLifecycle(initialValue = false)
                 Spacer(Modifier.height(6.dp))
                 Text("Hell / Dunkel", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(6.dp))
@@ -260,9 +277,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
             )
-            val cnlRunning by CnlStatus.running.collectAsState()
-            val cnlError by CnlStatus.error.collectAsState()
-            val cnlBoundTo by CnlStatus.boundTo.collectAsState()
+            val cnlRunning by CnlStatus.running.collectAsStateWithLifecycle()
+            val cnlError by CnlStatus.error.collectAsStateWithLifecycle()
+            val cnlBoundTo by CnlStatus.boundTo.collectAsStateWithLifecycle()
             Text(
                 when {
                     cnlRunning -> "Status: Server läuft auf Port " +
@@ -375,8 +392,8 @@ private fun PasswordListEditor(
     onAdd: (List<String>) -> Unit,
     onRemove: (String) -> Unit
 ) {
-    var newPassword by remember { mutableStateOf("") }
-    var importOpen by remember { mutableStateOf(false) }
+    var newPassword by rememberSaveable { mutableStateOf("") }
+    var importOpen by rememberSaveable { mutableStateOf(false) }
 
     Text("Passwortliste", style = MaterialTheme.typography.titleSmall)
     Text(
@@ -436,7 +453,7 @@ private fun PasswordListEditor(
     TextButton(onClick = { importOpen = true }) { Text("Mehrere einfügen …") }
 
     if (importOpen) {
-        var text by remember { mutableStateOf("") }
+        var text by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { importOpen = false },
             title = { Text("Passwörter einfügen") },
@@ -473,14 +490,19 @@ private fun SettingSwitch(
     checked: Boolean,
     onChange: (Boolean) -> Unit
 ) {
+    // Die ganze Zeile ist der Schalter: groessere Trefferflaeche, und
+    // Screenreader lesen Titel, Beschreibung und Zustand als ein Element
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(subtitle, style = MaterialTheme.typography.bodySmall)
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }

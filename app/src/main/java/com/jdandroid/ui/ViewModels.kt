@@ -1,10 +1,13 @@
 package com.jdandroid.ui
 
 import android.app.Application
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
 import com.jdandroid.container.ContainerDecrypter
+import com.jdandroid.container.ContainerFiles
 import com.jdandroid.data.Account
 import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
@@ -171,6 +174,26 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * DLC aus dem Dateiwaehler: Lesen und Pruefen laufen im ViewModel-Scope,
+     * damit ein Tabwechsel oder Drehen waehrend des Lesens den Import nicht
+     * abbricht (ein rememberCoroutineScope stirbt mit dem Bildschirm).
+     */
+    fun importDlcFromUri(resolver: ContentResolver, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { ContainerFiles.readText(resolver, uri) }
+            val content = result.getOrNull()
+            when {
+                content == null -> AppMessages.error(
+                    result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
+                )
+                !ContainerFiles.looksLikeDlc(content) ->
+                    AppMessages.error("Die gewählte Datei ist kein DLC-Container")
+                else -> importDlc(content)
+            }
+        }
+    }
+
     fun pause(id: Long) = DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE, id)
 
     fun resume(item: DownloadItem) {
@@ -227,19 +250,42 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     private val _webLogin = MutableStateFlow<Hoster?>(null)
     val webLogin: StateFlow<Hoster?> = _webLogin
 
+    /**
+     * Zustand des Browser-Logins lebt im ViewModel: die WebView wird beim
+     * Drehen neu erzeugt, die bereits erkannte Session und die Statuszeile
+     * duerfen dabei nicht verloren gehen.
+     */
+    private val _webLoginStatus = MutableStateFlow(WEB_LOGIN_INITIAL_STATUS)
+    val webLoginStatus: StateFlow<String> = _webLoginStatus
+
+    private val _webLoginCookies = MutableStateFlow<String?>(null)
+    val webLoginCookies: StateFlow<String?> = _webLoginCookies
+
+    fun setWebLoginStatus(status: String) { _webLoginStatus.value = status }
+
+    fun setWebLoginCookies(cookies: String?) { _webLoginCookies.value = cookies }
+
     /** Meldung fuer den Nutzer (z.B. Keystore-Fehler beim Speichern), null = keine. */
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
     fun consumeMessage() { _message.value = null }
 
-    fun requestWebLogin(hoster: Hoster) { _webLogin.value = hoster }
+    fun requestWebLogin(hoster: Hoster) {
+        _webLoginStatus.value = WEB_LOGIN_INITIAL_STATUS
+        _webLoginCookies.value = null
+        _webLogin.value = hoster
+    }
 
-    fun cancelWebLogin() { _webLogin.value = null }
+    fun cancelWebLogin() {
+        _webLogin.value = null
+        _webLoginCookies.value = null
+    }
 
     fun completeWebLogin(cookies: String) {
         val hoster = _webLogin.value ?: return
         _webLogin.value = null
+        _webLoginCookies.value = null
         addAccountWithCookies(hoster, cookies)
     }
 
@@ -291,5 +337,9 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(account: Account) {
         viewModelScope.launch(Dispatchers.IO) { dao.delete(account) }
+    }
+
+    companion object {
+        const val WEB_LOGIN_INITIAL_STATUS = "Bitte anmelden – inklusive \"Ich bin kein Roboter\"."
     }
 }
