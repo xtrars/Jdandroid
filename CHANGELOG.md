@@ -25,6 +25,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.10] – 2026-09-04
+
+### Geändert
+
+- Kontenübersicht: kein Zusatz „gerade geprüft“ mehr; ein Alter erscheint erst
+  ab zwei Minuten.
+
 ## [0.0.9] – 2026-09-04
 
 ### Geändert
@@ -532,6 +539,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.10]: https://github.com/xtrars/Jdandroid/commit/ceef892
 [0.0.9]: https://github.com/xtrars/Jdandroid/commit/f8e4331
 [0.0.8]: https://github.com/xtrars/Jdandroid/commit/f23de7f
 [0.0.7]: https://github.com/xtrars/Jdandroid/commit/5a65ec8

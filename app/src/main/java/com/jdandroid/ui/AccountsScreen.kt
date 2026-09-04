@@ -259,9 +259,10 @@ private fun TrafficLine(account: Account) {
         }
     }
     val minutesAgo = ((now - account.lastChecked) / 60_000L).coerceAtLeast(0)
+    // Frisch geprueft braucht keinen Zusatz (der Stand wird ohnehin jede Minute
+    // nachgeladen); nur ein aelterer Stand wird benannt
     val checked = when {
-        account.lastChecked == 0L -> ""
-        minutesAgo < 1 -> " · gerade geprüft"
+        account.lastChecked == 0L || minutesAgo < 2 -> ""
         minutesAgo < 60 -> " · vor $minutesAgo min"
         else -> " · vor ${minutesAgo / 60} h"
     }
