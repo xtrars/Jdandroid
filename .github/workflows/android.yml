@@ -7,6 +7,12 @@ on:
       - master
       - "claude/**"
   pull_request:
+  # Woechentlicher Pruef-Lauf (Montag 05:00 UTC): Tests, Lint, instrumentierte
+  # Tests kompilieren - auch ohne neue Commits, damit Abhaengigkeits- und
+  # Toolchain-Probleme frueh auffallen.
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
