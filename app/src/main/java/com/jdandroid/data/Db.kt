@@ -4,7 +4,9 @@ import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
@@ -36,7 +38,7 @@ data class DownloadPackage(
     val addedAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "downloads")
+@Entity(tableName = "downloads", indices = [Index(value = ["url"], unique = true)])
 data class DownloadItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
@@ -90,11 +92,19 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads")
     suspend fun all(): List<DownloadItem>
 
+    /**
+     * Naechster wartender Eintrag, der nicht bereits laeuft ([running]): sonst
+     * koennte derselbe Download nach requeueRunning() ein zweites Mal starten.
+     */
     @Query(
         "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
-            "ORDER BY addedAt ASC LIMIT 1"
+            "AND id NOT IN (:running) ORDER BY addedAt ASC LIMIT 1"
     )
-    suspend fun nextQueued(now: Long = System.currentTimeMillis()): DownloadItem?
+    suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
+
+    /** Offene Arbeit (wartend, laufend, entpackend) - fuer den App-Start. */
+    @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('QUEUED', 'RUNNING', 'EXTRACTING')")
+    suspend fun openCount(): Int
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
@@ -153,7 +163,8 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE url = :url")
     suspend fun countByUrl(url: String): Int
 
-    @Insert
+    /** Liefert -1, wenn die URL bereits vorhanden ist (eindeutiger Index). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: DownloadItem): Long
 
     @Update
@@ -165,8 +176,32 @@ interface DownloadDao {
     @Query("UPDATE downloads SET downloadedBytes = :bytes, fileSize = :total, speedBps = :speed WHERE id = :id")
     suspend fun updateProgress(id: Long, bytes: Long, total: Long, speed: Long)
 
-    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'RUNNING'")
+    /** Nach Prozess-Ende: laufende und entpackende Eintraege wieder einreihen. */
+    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 WHERE status IN ('RUNNING', 'EXTRACTING')")
     suspend fun requeueRunning()
+
+    /** Pause nur, wenn der Eintrag wirklich noch laeuft (nicht bereits fertig/entpackend). */
+    @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
+    suspend fun pauseIfActive(id: Long)
+
+    /** "Nur WLAN": laufenden Download zurueck in die Warteschlange (startet bei WLAN automatisch). */
+    @Query("UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, errorMessage = 'Wartet auf WLAN' WHERE id = :id AND status = 'RUNNING'")
+    suspend fun requeueIfRunning(id: Long)
+
+    /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
+    @Query(
+        "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
+            "speedBps = 0, attempts = 0, retryAt = 0 WHERE id = :id AND status IN ('RUNNING', 'EXTRACTING')"
+    )
+    suspend fun completeIfActive(id: Long, path: String?, note: String?): Int
+
+    /** Fertige Teile eines Archiv-Sets nach erfolgreichem Entpacken aktualisieren. */
+    @Query("UPDATE downloads SET localPath = :path, errorMessage = NULL WHERE id IN (:ids) AND status = 'COMPLETED'")
+    suspend fun updateCompletedSet(ids: List<Long>, path: String?)
+
+    /** Haengen gebliebene Linkpruefungen (Prozess-Ende) zuruecksetzen. */
+    @Query("UPDATE downloads SET online = 0 WHERE online = 3")
+    suspend fun resetChecking()
 
     /** Automatischer Wiederholversuch mit Backoff. */
     @Query(
@@ -175,10 +210,10 @@ interface DownloadDao {
     )
     suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
-    /** Manueller Neustart: Zaehler und Wartezeit zuruecksetzen. */
+    /** Manueller Neustart: nur fuer pausierte/gescheiterte Eintraege (laufende nie doppelt starten). */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
-            "retryAt = 0 WHERE id = :id"
+            "retryAt = 0 WHERE id = :id AND status IN ('PAUSED', 'FAILED', 'OFFLINE')"
     )
     suspend fun requeue(id: Long)
 
@@ -249,7 +284,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -307,8 +342,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Doppelte URLs (aus parallelen Click'n'Load-Anfragen) bereinigen,
+                // dann eindeutigen Index anlegen
+                db.execSQL("DELETE FROM downloads WHERE id NOT IN (SELECT MIN(id) FROM downloads GROUP BY url)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_downloads_url ON downloads(url)")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
-            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+            MIGRATION_7_8
         )
     }
 }

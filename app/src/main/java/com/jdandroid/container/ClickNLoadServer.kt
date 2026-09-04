@@ -72,6 +72,12 @@ class ClickNLoadServer(
     }
 
     private fun handleAdd(session: IHTTPSession): Response {
+        // Jede im Browser geoeffnete Seite darf hierher senden: die Groesse
+        // begrenzen, sonst laesst ein 50-MB-Koerper die App per OOM abstuerzen.
+        val length = session.headers["content-length"]?.trim()?.toLongOrNull()
+        if (length != null && length > MAX_BODY_BYTES) {
+            return newFixedLengthResponse(Response.Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n")
+        }
         val body = HashMap<String, String>()
         if (session.method == Method.POST || session.method == Method.PUT) {
             session.parseBody(body)
@@ -100,14 +106,18 @@ class ClickNLoadServer(
             return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n")
         }
 
+        // Paketname und Passwoerter kappen: eine Seite darf die Passwortliste
+        // nicht unbegrenzt fuellen (jede Extraktion probiert alle Eintraege)
         val passwords = params["passwords"].orEmpty()
             .split('\n', '\r')
-            .map { it.trim() }
+            .map { it.trim().take(MAX_PASSWORD_LENGTH) }
             .filter { it.isNotEmpty() }
+            .distinct()
+            .take(MAX_PASSWORDS)
         onRequest(
             CnlRequest(
-                urls = links,
-                packageName = params["package"]?.trim()?.ifBlank { null },
+                urls = links.take(MAX_LINKS),
+                packageName = params["package"]?.trim()?.take(MAX_PACKAGE_LENGTH)?.ifBlank { null },
                 passwords = passwords,
                 source = params["source"]?.trim()?.ifBlank { null }
                     ?: session.headers["referer"]?.takeIf { it.isNotBlank() }
@@ -119,6 +129,11 @@ class ClickNLoadServer(
     companion object {
         const val PORT = 9666
         const val LOOPBACK = "127.0.0.1"
+        const val MAX_BODY_BYTES = 2L * 1024 * 1024
+        const val MAX_PACKAGE_LENGTH = 200
+        const val MAX_PASSWORDS = 50
+        const val MAX_PASSWORD_LENGTH = 200
+        const val MAX_LINKS = 5000
         private val ADD_PATHS = setOf(
             "/flashgot", "/flash/add", "/flash/addcrypted", "/flash/addcrypted2"
         )

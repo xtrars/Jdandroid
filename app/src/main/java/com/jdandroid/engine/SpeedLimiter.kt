@@ -35,11 +35,14 @@ class SpeedLimiter {
             }
             windowBytes += bytes
             if (windowBytes >= limit) {
-                waitMs = (windowStart + WINDOW_MS - now).coerceAtLeast(0)
-                // Fenster vorziehen: nachfolgende Aufrufe warten dadurch nicht
-                // erneut auf dasselbe Kontingent.
-                windowStart += WINDOW_MS
-                windowBytes = 0
+                // Ueberschuss ins naechste Fenster uebertragen statt verwerfen:
+                // ein 64-KiB-Block bei 30 KiB/s Limit belegt gut zwei Fenster.
+                // Vorher lag der reale Durchsatz nie unter einem Block pro Fenster.
+                val over = windowBytes - limit
+                val windows = 1 + over / limit
+                waitMs = (windowStart + WINDOW_MS - now).coerceAtLeast(0) + (windows - 1) * WINDOW_MS
+                windowStart += windows * WINDOW_MS
+                windowBytes = over % limit
             }
         }
         if (waitMs > 0) delay(waitMs)

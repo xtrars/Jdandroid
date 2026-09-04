@@ -124,8 +124,13 @@ object ContainerDecrypter {
      * Base64-AES-CBC-verschluesselten Links.
      */
     fun decryptClickNLoad(crypted: String, jk: String): List<String> {
-        val hexKey = Regex("[\"']([0-9a-fA-F]{16,})[\"']").find(jk)?.groupValues?.get(1)
-            ?: throw ContainerException("Click'n'Load: kein Schlüssel gefunden")
+        // Schluessel als Hex-Literal; manche Seiten setzen ihn aus mehreren
+        // Teilen zusammen ('abcd' + 'ef01' ...) - dann alle Literale verketten.
+        val literals = Regex("[\"']([0-9a-fA-F]{2,})[\"']").findAll(jk).map { it.groupValues[1] }.toList()
+        val hexKey = literals.firstOrNull { it.length == 32 }
+            ?: literals.joinToString("").takeIf { it.length == 32 }
+            ?: literals.firstOrNull { it.length >= 16 }
+            ?: throw ContainerException("Click'n'Load: kein Schlüssel gefunden (jk nicht auswertbar)")
         // Das Protokoll ist AES-128: genau 16 Byte, die zugleich als IV dienen.
         // Ein laengerer Wert ergaebe einen unbrauchbaren IV und eine kryptische
         // Exception statt einer klaren Meldung.

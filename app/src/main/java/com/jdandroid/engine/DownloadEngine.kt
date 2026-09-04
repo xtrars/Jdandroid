@@ -15,11 +15,17 @@ import com.jdandroid.data.PackageNaming
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
@@ -56,6 +62,18 @@ class DownloadEngine(
      */
     private val completionMutex = Mutex()
 
+    /** Entpacken/Export laufen in eigenen Jobs, immer nur einer gleichzeitig. */
+    private val extractLimiter = Semaphore(1)
+    private val extracting = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * Startsperre: pump() wartet, bis der Dienst haengen gebliebene Eintraege
+     * zurueckgesetzt hat. Vorher konnte ein frueher pump() (Netzwerk-Callback)
+     * einen Eintrag starten, den requeueRunning() danach erneut einreihte -
+     * derselbe Download lief zweimal.
+     */
+    private val startGate = CompletableDeferred<Unit>()
+
     private val limiter = SpeedLimiter()
 
     init {
@@ -65,7 +83,15 @@ class DownloadEngine(
         }
     }
 
-    val activeCount: Int get() = jobs.size
+    /** Laufende Downloads plus laufende Entpackvorgaenge. */
+    val activeCount: Int get() = jobs.size + extracting.get()
+
+    fun markReady() { startGate.complete(Unit) }
+
+    /** Nichts laeuft und nichts wartet - unter der Sperre, damit pump() nicht dazwischenfunkt. */
+    suspend fun isIdle(): Boolean = mutex.withLock {
+        jobs.isEmpty() && extracting.get() == 0 && dao.queuedCount() == 0
+    }
 
     /** Summe der aktuellen Geschwindigkeiten, fuer die Benachrichtigung. */
     val totalSpeedBps: Long get() = speeds.values.sum()
@@ -141,6 +167,7 @@ class DownloadEngine(
 
     /** Startet weitere Downloads, solange Slots frei sind. */
     suspend fun pump() {
+        startGate.await()
         if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
             onStateChanged()
             return
@@ -148,7 +175,9 @@ class DownloadEngine(
         val max = app.settings.currentMaxConcurrent()
         mutex.withLock {
             while (jobs.size < max) {
-                val next = dao.nextQueued() ?: break
+                // Bereits laufende Kennungen ausschliessen: nie derselbe Download doppelt
+                val running = jobs.keys.toList() + listOf(-1L)
+                val next = dao.nextQueued(System.currentTimeMillis(), running) ?: break
                 dao.setStatus(next.id, DownloadStatus.RUNNING)
                 jobs[next.id] = scope.launch { run(next.id) }
             }
@@ -156,21 +185,49 @@ class DownloadEngine(
         onStateChanged()
     }
 
+    /**
+     * Netzwechsel: bei "Nur WLAN" und getakteter Verbindung laufende Downloads
+     * anhalten und zurueck in die Warteschlange legen - sie starten bei
+     * WLAN-Rueckkehr automatisch. Sonst einfach weiter pumpen.
+     */
+    suspend fun onNetworkChanged() {
+        if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
+            val running = mutex.withLock {
+                val copy = jobs.toMap()
+                jobs.clear()
+                copy
+            }
+            running.values.forEach { it.cancel() }
+            running.keys.forEach { dao.requeueIfRunning(it) }
+            onStateChanged()
+        } else {
+            pump()
+        }
+    }
+
     suspend fun pause(id: Long) {
         mutex.withLock { jobs.remove(id) }?.cancel()
-        val item = dao.byId(id) ?: return
-        if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.QUEUED) {
-            dao.setStatus(id, DownloadStatus.PAUSED)
-        }
+        // Nur RUNNING/QUEUED pausieren - ein Eintrag, der gerade fertig wird
+        // oder entpackt, bleibt unberuehrt (sonst Neudownload beim Fortsetzen)
+        dao.pauseIfActive(id)
         pump()
     }
 
     suspend fun cancelAndDelete(id: Long) {
         mutex.withLock { jobs.remove(id) }?.cancel()
-        dao.byId(id)?.let { item ->
-            tempFile(item).delete()
-        }
+        val item = dao.byId(id)
         dao.delete(id)
+        item?.let {
+            tempFile(it).delete()
+            // Archivteile im App-Ordner mit entfernen, wenn kein anderer Eintrag
+            // dasselbe Archiv referenziert - sonst bleiben sie unsichtbar liegen
+            val base = it.fileName?.let(Extractor::archiveBase)
+            if (base != null && dao.all().none { o -> Extractor.archiveBase(o.fileName ?: "") == base }) {
+                downloadDir().listFiles()
+                    ?.filter { f -> f.isFile && Extractor.archiveBase(f.name) == base }
+                    ?.forEach { f -> f.delete() }
+            }
+        }
         pump()
     }
 
@@ -184,7 +241,8 @@ class DownloadEngine(
             copy
         }
         running.values.forEach { it.cancel() }
-        running.keys.forEach { dao.setStatus(it, DownloadStatus.PAUSED) }
+        // Entpackende Eintraege bleiben EXTRACTING (laufen unter NonCancellable weiter)
+        running.keys.forEach { dao.pauseIfActive(it) }
         onStateChanged()
     }
 
@@ -196,6 +254,15 @@ class DownloadEngine(
     private suspend fun run(id: Long) {
         try {
             val item = dao.byId(id) ?: return
+            // Liegt das Archiv bereits vollstaendig im App-Ordner (z.B. nach
+            // Pause waehrend des Entpackens), nicht erneut laden
+            item.fileName?.let { name ->
+                val existing = File(downloadDir(), name)
+                if (item.fileSize > 0 && existing.isFile && existing.length() == item.fileSize) {
+                    completeDownload(id, existing, name)
+                    return
+                }
+            }
             val hoster = HosterRegistry.byId(item.hosterId)
                 ?: throw HosterException("Unbekannter Hoster", true)
             val account = accountDao.validForHoster(item.hosterId)
@@ -216,6 +283,9 @@ class DownloadEngine(
             } else {
                 handleTransientFailure(id, e.message ?: "Fehler")
             }
+        } catch (e: com.jdandroid.data.Secrets.SecretsException) {
+            // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
+            dao.setStatus(id, DownloadStatus.FAILED, e.message)
         } catch (e: Exception) {
             // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
             handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
@@ -279,7 +349,14 @@ class DownloadEngine(
             .header("User-Agent", Http.USER_AGENT)
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
-        Http.client.newCall(builder.build()).execute().use { resp ->
+        // Bei Pause/Loeschen die Verbindung sofort kappen: sonst wirkt der
+        // Abbruch erst nach dem naechsten Socket-Read (bis zu 60 s).
+        val call = Http.client.newCall(builder.build())
+        val cancelHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
+            if (cause != null) call.cancel()
+        }
+        try {
+        call.execute().use { resp ->
             // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig
             if (resp.code == 416 && offset > 0) {
                 dao.updateProgress(item.id, offset, offset, 0)
@@ -362,6 +439,9 @@ class DownloadEngine(
                 throw IOException("Download unvollständig ($written von $total Bytes)")
             }
         }
+        } finally {
+            cancelHandle?.dispose()
+        }
 
         // Integritaet pruefen, wenn der Hoster eine Pruefsumme geliefert hat
         if (expectedHash != null) verifyHash(target, expectedHash)
@@ -374,15 +454,19 @@ class DownloadEngine(
     /**
      * Abschluss eines Downloads: Archive werden (wenn aktiviert) automatisch
      * entpackt, sobald alle Teile vorliegen; alles andere wird direkt exportiert.
+     *
+     * Nicht abbrechbar: eine Pause waehrend des Exports liess vorher die Kopie
+     * zu Ende laufen, den Statuswechsel aber scheitern - Eintrag "pausiert" bei
+     * 100 %, Teildatei weg, beim Fortsetzen Neudownload plus Duplikat.
      */
-    private suspend fun completeDownload(id: Long, temp: File, fileName: String) = completionMutex.withLock {
+    private suspend fun completeDownload(id: Long, temp: File, fileName: String) = withContext(NonCancellable) {
         val base = Extractor.archiveBase(fileName)
         val autoExtract = app.settings.currentAutoExtract()
 
         if (!autoExtract || base == null) {
             val path = finish(temp, fileName)
             markCompleted(id, path, null)
-            return@withLock
+            return@withContext
         }
 
         // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
@@ -393,47 +477,81 @@ class DownloadEngine(
             temp.renameTo(archiveFile)
         }
 
-        // Warten noch andere Teile desselben Archivs (auch solche, die noch im
-        // Linksammler liegen)? Dann erst mal fertig melden; entpackt wird, sobald
-        // der letzte Teil da ist.
-        val pending = dao.all().any { other ->
-            other.id != id &&
-                other.status in listOf(
-                    DownloadStatus.COLLECTED, DownloadStatus.QUEUED, DownloadStatus.RUNNING,
-                    DownloadStatus.PAUSED, DownloadStatus.EXTRACTING
-                ) &&
-                Extractor.archiveBase(other.fileName ?: "") == base
+        // Entscheidung unter der Sperre: zwei gleichzeitig fertige Teile duerfen
+        // sich nicht gegenseitig als "noch ausstehend" sehen.
+        val shouldExtract = completionMutex.withLock {
+            val self = dao.byId(id)
+            val active = listOf(
+                DownloadStatus.COLLECTED, DownloadStatus.QUEUED, DownloadStatus.RUNNING,
+                DownloadStatus.PAUSED, DownloadStatus.EXTRACTING
+            )
+            // Ausstehend: weitere Teile desselben Archivs - auch solche im selben
+            // Paket, deren Name noch unbekannt ist (Sofortstart: Name kommt erst
+            // mit dem Aufloesen)
+            val pending = dao.all().any { other ->
+                other.id != id && other.status in active && (
+                    Extractor.archiveBase(other.fileName ?: "") == base ||
+                        (other.fileName == null && other.packageId != null && other.packageId == self?.packageId)
+                    )
+            }
+            if (pending) {
+                markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
+                false
+            } else {
+                dao.setStatus(id, DownloadStatus.EXTRACTING)
+                true
+            }
         }
-        if (pending) {
-            markCompleted(id, archiveFile.absolutePath, "Warte auf weitere Archiv-Teile")
-            return@withLock
-        }
+        if (!shouldExtract) return@withContext
 
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
         if (primary == null) {
             markCompleted(id, archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
-            return@withLock
+            return@withContext
         }
 
-        dao.setStatus(id, DownloadStatus.EXTRACTING)
+        // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
+        // Warteschlange steht nicht minutenlang hinter einem grossen RAR.
+        extracting.incrementAndGet()
         onStateChanged()
-        try {
-            val extractDir = File(downloadDir(), base)
-            Extractor.extract(primary, extractDir, app.settings.currentPasswords())
-            val exportedPath = exportDirectory(extractDir, base)
-            if (app.settings.currentDeleteArchive()) {
-                downloadDir().listFiles()
-                    ?.filter { Extractor.archiveBase(it.name) == base }
-                    ?.forEach { it.delete() }
+        scope.launch {
+            try {
+                extractAndExport(id, base, primary, archiveFile)
+            } finally {
+                extracting.decrementAndGet()
+                onStateChanged()
+                scope.launch { pump() }
             }
-            markCompleted(id, exportedPath, null)
-            if (app.settings.currentRemoveLinksAfterExtract()) {
-                removeExtractedEntries(id, base)
-            }
-        } catch (e: Exception) {
-            markCompleted(id, archiveFile.absolutePath, e.message)
         }
     }
+
+    /** Entpacken, exportieren, Set aktualisieren - immer nur eines gleichzeitig, nicht abbrechbar. */
+    private suspend fun extractAndExport(id: Long, base: String, primary: File, archiveFile: File) =
+        withContext(NonCancellable) {
+            extractLimiter.withPermit {
+                try {
+                    val extractDir = File(downloadDir(), base)
+                    Extractor.extract(primary, extractDir, app.settings.currentPasswords())
+                    val exportedPath = exportDirectory(extractDir, base)
+                    if (app.settings.currentDeleteArchive()) {
+                        downloadDir().listFiles()
+                            ?.filter { Extractor.archiveBase(it.name) == base }
+                            ?.forEach { it.delete() }
+                    }
+                    markCompleted(id, exportedPath, null)
+                    // Alle fertigen Teile des Sets: Pfad setzen, alte Notizen loeschen
+                    val setIds = dao.all()
+                        .filter { it.status == DownloadStatus.COMPLETED && Extractor.archiveBase(it.fileName ?: "") == base }
+                        .map { it.id }
+                    if (setIds.isNotEmpty()) dao.updateCompletedSet(setIds, exportedPath)
+                    if (app.settings.currentRemoveLinksAfterExtract()) {
+                        removeExtractedEntries(id, base)
+                    }
+                } catch (e: Exception) {
+                    markCompleted(id, archiveFile.absolutePath, e.message)
+                }
+            }
+        }
 
     /**
      * Wie im JDownloader ("Links nach dem Entpacken entfernen"): alle fertigen
@@ -452,18 +570,9 @@ class DownloadEngine(
         // Traffic-Stand des Hosters nachladen (gedrosselt), damit die
         // Kontenansicht den Verbrauch zeigt
         dao.byId(id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
-        dao.byId(id)?.let {
-            dao.update(
-                it.copy(
-                    status = DownloadStatus.COMPLETED,
-                    localPath = path,
-                    speedBps = 0,
-                    errorMessage = note,
-                    attempts = 0,
-                    retryAt = 0
-                )
-            )
-        }
+        // Bedingt: nur wenn der Eintrag noch laeuft/entpackt (nicht zwischenzeitlich
+        // pausiert oder geloescht)
+        dao.completeIfActive(id, path, note)
     }
 
     /**
@@ -555,11 +664,17 @@ class DownloadEngine(
     }
 
     private fun fileNameFrom(contentDisposition: String?, url: String): String {
-        contentDisposition?.let {
-            Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)"?""")
-                .find(it)?.groupValues?.get(1)?.let { name ->
-                    return sanitizeFileName(java.net.URLDecoder.decode(name.trim(), "UTF-8"))
-                }
+        contentDisposition?.let { cd ->
+            // RFC 5987: nur filename*= ist URL-kodiert; ein rohes filename="C++.zip"
+            // darf nicht dekodiert werden ("C  .zip", "100%.rar" wuerde werfen)
+            Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""").find(cd)?.groupValues?.get(1)?.let { enc ->
+                runCatching { java.net.URLDecoder.decode(enc.trim().replace("+", "%2B"), "UTF-8") }
+                    .getOrNull()?.let { return sanitizeFileName(it) }
+            }
+            Regex("""filename="([^"]+)"|filename=([^;]+)""").find(cd)?.let { m ->
+                val raw = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
+                if (raw.isNotEmpty()) return sanitizeFileName(raw)
+            }
         }
         return sanitizeFileName(url.substringBefore('?').substringAfterLast('/'))
     }

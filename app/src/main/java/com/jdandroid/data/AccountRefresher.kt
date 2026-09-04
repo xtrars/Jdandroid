@@ -28,7 +28,7 @@ object AccountRefresher {
         if (!inFlight.add(accountId)) return
         try {
             val dao = app.db.accountDao()
-            val account = dao.byId(accountId) ?: return
+            val account = upgradeSecrets(dao, dao.byId(accountId) ?: return)
             val hoster = HosterRegistry.byId(account.hosterId) ?: return
             val updated = try {
                 val info = hoster.checkAccount(account)
@@ -42,11 +42,12 @@ object AccountRefresher {
                     lastChecked = System.currentTimeMillis()
                 )
             } catch (e: Exception) {
-                // Nur ein endgueltiger Fehler (falsches Passwort, Konto gesperrt)
-                // macht das Konto ungueltig. Netzausfall, Cloudflare oder ein
-                // API-Schluckauf im Minutentakt duerfen nicht alle Downloads
-                // des Hosters in "kein Premium-Konto" laufen lassen.
-                val permanent = e is HosterException && e.permanent
+                // Nur ein endgueltiger Fehler (falsches Passwort, Konto gesperrt,
+                // Zugangsdaten nicht mehr entschluesselbar) macht das Konto
+                // ungueltig. Netzausfall, Cloudflare oder ein API-Schluckauf im
+                // Minutentakt duerfen nicht alle Downloads des Hosters in
+                // "kein Premium-Konto" laufen lassen.
+                val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
                 account.copy(
                     valid = if (permanent) false else account.valid,
                     statusText = (e.message ?: "Prüfung fehlgeschlagen") +
@@ -57,6 +58,28 @@ object AccountRefresher {
             dao.update(updated)
         } finally {
             inFlight.remove(accountId)
+        }
+    }
+
+    /**
+     * Klartext-Zugangsdaten aus fruehen Installationen (vor der Keystore-
+     * Verschluesselung) einmalig verschluesselt zurueckschreiben. Schlaegt der
+     * Keystore fehl, bleibt der Datensatz unveraendert, damit kein Konto verloren geht.
+     */
+    private suspend fun upgradeSecrets(dao: AccountDao, account: Account): Account {
+        val needs = listOf(account.password, account.apiKey, account.cookies)
+            .any { !it.isNullOrEmpty() && !Secrets.isEncrypted(it) }
+        if (!needs) return account
+        return try {
+            val upgraded = account.copy(
+                password = account.password?.let { if (Secrets.isEncrypted(it)) it else Secrets.encrypt(it) },
+                apiKey = account.apiKey?.let { if (Secrets.isEncrypted(it)) it else Secrets.encrypt(it) },
+                cookies = account.cookies?.let { if (Secrets.isEncrypted(it)) it else Secrets.encrypt(it) }
+            )
+            dao.update(upgraded)
+            upgraded
+        } catch (_: Exception) {
+            account
         }
     }
 

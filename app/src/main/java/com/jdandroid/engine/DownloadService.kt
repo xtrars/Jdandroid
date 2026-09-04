@@ -33,7 +33,16 @@ import kotlinx.coroutines.launch
  */
 class DownloadService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + JdApp.backgroundErrors("Download-Dienst")
+    )
+
+    /** Letzte startId fuer stopSelfResult: kein Stopp, wenn gerade ein neuer Befehl eintraf. */
+    @Volatile
+    private var lastStartId = -1
+
+    /** Aktueller Vordergrund-Typ (dataSync waehrend Downloads, sonst specialUse). */
+    private var foregroundType = -1
     private lateinit var engine: DownloadEngine
     private var wakeLock: PowerManager.WakeLock? = null
     private var cnlServer: ClickNLoadServer? = null
@@ -66,13 +75,13 @@ class DownloadService : Service() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
-                scope.launch { engine.pump() }
+                scope.launch { engine.onNetworkChanged() }
             }
             override fun onCapabilitiesChanged(
                 network: android.net.Network,
                 caps: android.net.NetworkCapabilities
             ) {
-                scope.launch { engine.pump() }
+                scope.launch { engine.onNetworkChanged() }
             }
         }
         runCatching { cm.registerDefaultNetworkCallback(callback) }
@@ -86,21 +95,28 @@ class DownloadService : Service() {
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification("Downloads werden vorbereitet …"))
         scope.launch {
-            if (foregroundRefused) return@launch
-            // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
-            if ((application as JdApp).settings.currentClickNLoadEnabled()) {
-                cnlWanted = true
-                startClickNLoadServer()
+            try {
+                if (foregroundRefused) return@launch
+                // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
+                if ((application as JdApp).settings.currentClickNLoadEnabled()) {
+                    cnlWanted = true
+                    startClickNLoadServer()
+                }
+                // Nach Prozess-Neustart haengen gebliebene RUNNING/EXTRACTING-
+                // Eintraege wieder einreihen - BEVOR irgendein pump() laeuft
+                (application as JdApp).db.downloadDao().requeueRunning()
+                startupDone = true
+            } finally {
+                // Startsperre der Engine oeffnen (auch bei Fehler, sonst haengt pump())
+                engine.markReady()
             }
-            startupDone = true
-            // Nach Prozess-Neustart haengen gebliebene RUNNING-Eintraege wieder einreihen
-            (application as JdApp).db.downloadDao().requeueRunning()
             engine.pump()
         }
         registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (foregroundRefused) return START_NOT_STICKY
         val id = intent?.getLongExtra(EXTRA_ID, -1) ?: -1
         when (intent?.action) {
@@ -135,14 +151,26 @@ class DownloadService : Service() {
      */
     override fun onTimeout(startId: Int, fgsType: Int) {
         scope.launch {
+            val wasActive = engine.activeCount > 0
             engine.pauseAll()
-            notifyEvent(
-                NOTIFICATION_TIMEOUT,
-                "Downloads pausiert",
-                "Android erlaubt Hintergrund-Downloads nur 6 Stunden am Stück. " +
-                    "Antippen, um fortzusetzen.",
-                resumeAction = true
-            )
+            // Nur melden, wenn wirklich Downloads liefen - im Leerlauf (CnL an)
+            // sollte der Dienst ohnehin als specialUse laufen und nicht auslaufen
+            if (wasActive) {
+                notifyEvent(
+                    NOTIFICATION_TIMEOUT,
+                    "Downloads pausiert",
+                    "Android erlaubt Hintergrund-Downloads nur 6 Stunden am Stück. " +
+                        "Antippen, um fortzusetzen.",
+                    resumeAction = true
+                )
+            } else if (cnlWanted) {
+                notifyEvent(
+                    NOTIFICATION_TIMEOUT,
+                    "Click'n'Load beendet",
+                    "Android hat den Hintergrunddienst nach 6 Stunden beendet. " +
+                        "App öffnen, um Click'n'Load wieder zu starten."
+                )
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -213,12 +241,15 @@ class DownloadService : Service() {
         // WakeLock nur halten, solange wirklich geladen wird - sonst bliebe die
         // CPU bei aktivem CnL dauerhaft wach.
         updateWakeLock(active > 0)
-        // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht
-        if (startupDone && active == 0 && queued == 0 && !cnlActive) {
+        // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht.
+        // Die Stopp-Entscheidung faellt unter der Engine-Sperre (isIdle) und mit
+        // stopSelfResult: ein gleichzeitig eintreffender Befehl verhindert den Stopp.
+        if (startupDone && !cnlActive && engine.isIdle()) {
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopSelfResult(lastStartId)
             return
         }
+        ensureForegroundType(active > 0)
         val text = buildString {
             if (active == 0 && queued == 0 && cnlActive) {
                 append("Click'n'Load aktiv (Port ${ClickNLoadServer.PORT})")
@@ -237,6 +268,25 @@ class DownloadService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         runCatching {
             manager.notify(NOTIFICATION_ID, buildNotification(text, progress, active > 0, paused > 0))
+        }
+    }
+
+    /**
+     * Android 15 zaehlt das 6-Stunden-Kontingent fuer dataSync auch im
+     * Leerlauf. Waehrend nichts laedt (Click'n'Load lauscht, Warten auf WLAN)
+     * laeuft der Dienst daher als specialUse und wechselt erst mit dem
+     * naechsten Download zurueck zu dataSync.
+     */
+    private fun ensureForegroundType(downloading: Boolean) {
+        if (Build.VERSION.SDK_INT < 34) return
+        val wanted = if (downloading) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        if (wanted == foregroundType) return
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Downloads werden vorbereitet …"), wanted)
+            foregroundType = wanted
+        } catch (e: Exception) {
+            android.util.Log.w("DownloadService", "Typwechsel abgelehnt: ${e.message}")
         }
     }
 
@@ -324,6 +374,7 @@ class DownloadService : Service() {
                 startForeground(
                     NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
+                foregroundType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }

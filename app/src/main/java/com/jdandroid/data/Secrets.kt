@@ -24,9 +24,16 @@ object Secrets {
     private const val IV_LENGTH = 12
     private const val TAG_BITS = 128
 
-    private fun secretKey(): SecretKey {
+    /** Nur lesen: beim Entschluesseln darf nie ein neuer Schluessel entstehen. */
+    @Synchronized
+    private fun existingKey(): SecretKey? {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
+        return (store.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+    }
+
+    @Synchronized
+    private fun secretKey(): SecretKey {
+        existingKey()?.let { return it }
         val generator = KeyGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore"
         )
@@ -67,19 +74,31 @@ object Secrets {
         }
     }
 
+    /** Ist der Wert bereits verschluesselt gespeichert? */
+    fun isEncrypted(value: String?): Boolean = value?.startsWith(PREFIX) == true
+
+    /**
+     * Entschluesselt [value]. Schlaegt das bei einem verschluesselten Wert fehl
+     * (Keystore-Eintrag nach Systemupdate nicht mehr lesbar), wird eine
+     * [SecretsException] geworfen - statt still null, was frueher als
+     * "kein Passwort hinterlegt" erschien.
+     */
     fun decrypt(value: String?): String? {
         if (value.isNullOrEmpty()) return value
         if (!value.startsWith(PREFIX)) return value
-        return runCatching {
+        return try {
             val raw = Base64.getDecoder().decode(value.removePrefix(PREFIX))
+            val key = existingKey() ?: throw IllegalStateException("Schlüssel fehlt im Keystore")
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                secretKey(),
-                GCMParameterSpec(TAG_BITS, raw, 0, IV_LENGTH)
-            )
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, raw, 0, IV_LENGTH))
             String(cipher.doFinal(raw, IV_LENGTH, raw.size - IV_LENGTH), Charsets.UTF_8)
-        }.getOrNull()
+        } catch (e: Exception) {
+            throw SecretsException(
+                "Zugangsdaten nicht lesbar (Android-Keystore: ${e.message ?: e.javaClass.simpleName}). " +
+                    "Bitte das Konto löschen und neu anlegen.",
+                e
+            )
+        }
     }
 }
 

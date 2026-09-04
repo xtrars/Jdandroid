@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.jdandroid.JdApp
 import com.jdandroid.engine.DownloadService
 import com.jdandroid.hoster.LinkParser
@@ -33,29 +34,41 @@ object LinkSink {
 
         if (passwords.isNotEmpty()) app.settings.addPasswords(passwords)
 
-        val links = LinkParser.parse(text).filter { dao.countByUrl(it.first) == 0 }
-        if (links.isEmpty()) return 0
-
-        val name = packageName?.takeIf { it.isNotBlank() }
-            ?: PackageNaming.suggestFromUrls(links.map { it.first })
-        val packageId = packageDao.insert(
-            DownloadPackage(
-                name = name,
-                autoNamed = packageName.isNullOrBlank(),
-                source = source?.let { displaySource(it) }
-            )
-        )
+        val parsed = LinkParser.parse(text)
+        if (parsed.isEmpty()) return 0
 
         // Wie im JDownloader: Links landen zuerst im Linksammler und werden
         // dort online geprueft; erst "Starten" reiht sie ein. Optional sofort.
         val autoStart = app.settings.currentAutoStartLinks()
         val status = if (autoStart) DownloadStatus.QUEUED else DownloadStatus.COLLECTED
-        val ids = links.map { (url, hoster) ->
-            dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId, status = status))
+
+        // Duplikatpruefung und Einfuegen in EINER Transaktion: Click'n'Load-
+        // Seiten senden oft doppelt (Formular + XHR) - sonst entstehen zwei
+        // Pakete mit denselben Links. Der eindeutige Index auf url faengt den
+        // Rest (insert liefert dann -1).
+        val ids = app.db.withTransaction {
+            val links = parsed.filter { dao.countByUrl(it.first) == 0 }
+            if (links.isEmpty()) return@withTransaction emptyList()
+            val name = packageName?.takeIf { it.isNotBlank() }
+                ?: PackageNaming.suggestFromUrls(links.map { it.first })
+            val packageId = packageDao.insert(
+                DownloadPackage(
+                    name = name,
+                    autoNamed = packageName.isNullOrBlank(),
+                    source = source?.let { displaySource(it) }
+                )
+            )
+            val inserted = links.mapNotNull { (url, hoster) ->
+                dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId, status = status))
+                    .takeIf { it > 0 }
+            }
+            if (inserted.isEmpty()) packageDao.delete(packageId)
+            inserted
         }
+        if (ids.isEmpty()) return 0
         if (autoStart) DownloadService.send(context, DownloadService.ACTION_PUMP)
         else LinkChecker.schedule(app, ids)
-        return links.size
+        return ids.size
     }
 
     suspend fun addUrls(

@@ -6,14 +6,20 @@ import android.app.NotificationManager
 import androidx.room.Room
 import com.jdandroid.data.AppDatabase
 import com.jdandroid.data.SettingsRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class JdApp : Application() {
 
-    /** Hintergrundarbeit, die keinen Bildschirm braucht (z.B. Link-Pruefung). */
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * Hintergrundarbeit, die keinen Bildschirm braucht (z.B. Link-Pruefung).
+     * Mit Exception-Handler: ein voller Speicher (SQLiteFullException) darf
+     * die App nicht beenden, sondern wird als Meldung angezeigt.
+     */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + backgroundErrors("Hintergrund"))
 
     lateinit var db: AppDatabase
         private set
@@ -32,6 +38,8 @@ class JdApp : Application() {
         settings = SettingsRepository(this)
         Diagnostics.sink = { key, title, text -> Diagnostics.save(this, key, title, text) }
         createNotificationChannel()
+        // Beim Prozess-Ende haengen gebliebene Linkpruefungen zuruecksetzen
+        appScope.launch { db.downloadDao().resetChecking() }
     }
 
     private fun createNotificationChannel() {
@@ -55,5 +63,11 @@ class JdApp : Application() {
     companion object {
         const val CHANNEL_DOWNLOADS = "downloads"
         const val CHANNEL_EVENTS = "events"
+
+        /** Unbehandelte Fehler in Hintergrund-Coroutinen als Meldung statt Absturz. */
+        fun backgroundErrors(where: String) = CoroutineExceptionHandler { _, e ->
+            android.util.Log.w("JDAndroid", "$where: ${e.message}", e)
+            com.jdandroid.ui.AppMessages.error("$where: ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 }

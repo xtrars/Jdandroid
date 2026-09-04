@@ -46,7 +46,7 @@ object LinkChecker {
     fun recheckAll(app: JdApp) {
         app.appScope.launch {
             val items = app.db.downloadDao().collectedWithOnline(
-                listOf(OnlineState.UNKNOWN, OnlineState.OFFLINE, OnlineState.ONLINE)
+                listOf(OnlineState.UNKNOWN, OnlineState.OFFLINE, OnlineState.ONLINE, OnlineState.CHECKING)
             )
             schedule(app, items.map { it.id })
         }

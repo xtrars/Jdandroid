@@ -11,6 +11,7 @@ import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.utils.MultiReadOnlySeekableByteChannel
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -79,10 +80,12 @@ object Extractor {
         var lastError: Exception? = null
         for (password in candidates) {
             try {
+                val lower = archive.name.lowercase()
                 when {
-                    archive.name.lowercase().endsWith(".zip") -> extractZip(archive, destDir, password)
-                    archive.name.lowercase().endsWith(".7z") -> extractSevenZip(archive, destDir, password)
-                    archive.name.lowercase().endsWith(".rar") -> extractRar(archive, destDir, password)
+                    lower.endsWith(".zip") -> extractZip(archive, destDir, password)
+                    lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
+                        extractSevenZip(archive, destDir, password)
+                    lower.endsWith(".rar") -> extractRar(archive, destDir, password)
                     else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
                 }
                 return password
@@ -109,8 +112,28 @@ object Extractor {
         zip.extractAll(destDir.absolutePath)
     }
 
+    /** Alle Volumes eines mehrteiligen 7z (.7z.001, .7z.002 ...) in Reihenfolge. */
+    internal fun sevenZVolumes(archive: File): List<File> {
+        val m = Regex("""^(.*)\.7z\.(\d+)$""", RegexOption.IGNORE_CASE).find(archive.name)
+            ?: return listOf(archive)
+        val prefix = m.groupValues[1]
+        val pattern = Regex("""^${Regex.escape(prefix)}\.7z\.(\d+)$""", RegexOption.IGNORE_CASE)
+        return archive.parentFile?.listFiles()
+            ?.filter { pattern.matches(it.name) }
+            ?.sortedBy { pattern.find(it.name)!!.groupValues[1].toInt() }
+            ?.ifEmpty { listOf(archive) }
+            ?: listOf(archive)
+    }
+
     private fun extractSevenZip(archive: File, destDir: File, password: String?) {
-        val builder = SevenZFile.builder().setFile(archive)
+        val volumes = sevenZVolumes(archive)
+        val builder = SevenZFile.builder()
+        if (volumes.size > 1) {
+            // Mehrteilig: alle Teile als ein zusammenhaengender Kanal
+            builder.setSeekableByteChannel(MultiReadOnlySeekableByteChannel.forFiles(*volumes.toTypedArray()))
+        } else {
+            builder.setFile(archive)
+        }
         if (password != null) builder.setPassword(password.toCharArray())
         builder.get().use { sevenZ ->
             while (true) {
