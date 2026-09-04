@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +39,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +70,8 @@ fun LinkGrabberScreen(
     modifier: Modifier = Modifier
 ) {
     val groups by vm.collectorGroups.collectAsStateWithLifecycle()
+    // Zugeklappte Pakete ueberleben Drehen und Tabwechsel (nur die IDs gesichert)
+    val collapsed = rememberSaveable(saver = collectorCollapsedSaver) { mutableStateMapOf<Long, Boolean>() }
     val total = groups.sumOf { it.items.size }
     val offline = groups.sumOf { g -> g.items.count { it.online == OnlineState.OFFLINE } }
     val context = LocalContext.current
@@ -137,9 +144,18 @@ fun LinkGrabberScreen(
                     }
                 }
                 groups.forEach { group ->
-                    item(key = "cpkg-${group.pkg.id}") { CollectorPackageHeader(group, vm) }
-                    items(group.items, key = { "c-${it.id}" }) { item ->
-                        CollectorRow(item, vm, Modifier.padding(start = 10.dp))
+                    val isCollapsed = collapsed[group.pkg.id] ?: false
+                    item(key = "cpkg-${group.pkg.id}") {
+                        CollectorPackageHeader(
+                            group, vm,
+                            collapsed = isCollapsed,
+                            onToggle = { collapsed[group.pkg.id] = !isCollapsed }
+                        )
+                    }
+                    if (!isCollapsed) {
+                        items(group.items, key = { "c-${it.id}" }) { item ->
+                            CollectorRow(item, vm, Modifier.padding(start = 10.dp))
+                        }
                     }
                     item(key = "cgap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
                 }
@@ -148,15 +164,32 @@ fun LinkGrabberScreen(
     }
 }
 
+/** Zugeklappte Pakete ueber Drehen/Tabwechsel behalten: nur die IDs sichern. */
+private val collectorCollapsedSaver = listSaver<SnapshotStateMap<Long, Boolean>, Long>(
+    save = { map -> map.filterValues { it }.keys.toList() },
+    restore = { ids -> mutableStateMapOf<Long, Boolean>().apply { ids.forEach { put(it, true) } } }
+)
+
 @Composable
-private fun CollectorPackageHeader(group: DownloadGroup, vm: DownloadViewModel) {
+private fun CollectorPackageHeader(
+    group: DownloadGroup,
+    vm: DownloadViewModel,
+    collapsed: Boolean,
+    onToggle: () -> Unit
+) {
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val online = group.items.count { it.online == OnlineState.ONLINE }
     val checking = group.items.count { it.online == OnlineState.CHECKING }
     val known = group.items.filter { it.fileSize > 0 }.sumOf { it.fileSize }
 
     PackageCard {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 2.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (collapsed) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (collapsed) "Aufklappen" else "Zuklappen"
+                )
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     group.pkg.name,

@@ -25,6 +25,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.9] – 2026-09-04
+
+### Geändert
+
+- Linksammler: Pakete lassen sich wie in der Download-Liste zusammenklappen;
+  der Zustand überlebt Drehen und Tabwechsel.
+
 ## [0.0.8] – 2026-09-04
 
 Zwei Umbauten unter der Haube, keine neuen Funktionen.
@@ -525,6 +532,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.9]: https://github.com/xtrars/Jdandroid/commit/f8e4331
 [0.0.8]: https://github.com/xtrars/Jdandroid/commit/f23de7f
 [0.0.7]: https://github.com/xtrars/Jdandroid/commit/5a65ec8
 [0.0.6]: https://github.com/xtrars/Jdandroid/commit/7afb954
