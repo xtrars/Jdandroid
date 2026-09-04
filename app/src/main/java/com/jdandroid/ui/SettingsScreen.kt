@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -438,8 +441,35 @@ private fun StringListEditor(
     val passwords = items
     var newPassword by rememberSaveable { mutableStateOf("") }
     var importOpen by rememberSaveable { mutableStateOf(false) }
+    // Zusammengeklappt, bis man die Liste braucht: die Einstellungen bleiben
+    // uebersichtlich, die Anzahl der Eintraege ist trotzdem sichtbar
+    var expanded by rememberSaveable(title) { mutableStateOf(false) }
 
-    Text(title, style = MaterialTheme.typography.titleSmall)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                when (passwords.size) {
+                    0 -> "keine Einträge"
+                    1 -> "1 Eintrag"
+                    else -> "${passwords.size} Einträge"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = if (expanded) "Zuklappen" else "Aufklappen"
+        )
+    }
+    if (!expanded) return
     Text(description, style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
     if (passwords.isEmpty()) {
