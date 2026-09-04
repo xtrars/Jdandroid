@@ -241,9 +241,9 @@ private fun TrafficLine(account: Account) {
         else -> " · vor ${minutesAgo / 60} h"
     }
     val text = when {
-        account.trafficUnlimited -> "Verbleibend: unbegrenzt$checked"
-        left >= 0 -> "Verbleibend: ${formatBytes(left)}$checked"
-        else -> "Verbleibend: unbekannt$checked"
+        account.trafficUnlimited -> "unbegrenzt$checked"
+        left >= 0 -> "${formatBytes(left)}$checked"
+        else -> "Restmenge unbekannt$checked"
     }
     val low = left in 0 until (1L shl 30) && !account.trafficUnlimited
     Text(
