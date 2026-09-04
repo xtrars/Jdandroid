@@ -77,8 +77,10 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 Der Nutzer wünscht eine regelmäßige Gesamtprüfung (Architektur, Fehler,
 Stand der Technik, Sinn und Erweiterbarkeit der Tests). Ablauf und
 Checkliste stehen in `docs/PRUEFUNG.md`. Die Prüfung ist als Workflow
-`.claude/workflows/pruefung.js` hinterlegt (Workflow-Tool, `name:
-"pruefung"`): sechs Blickwinkel finden, zwei Skeptiker je Fund
+`.claude/workflows/pruefung.js` hinterlegt (Workflow-Tool mit `scriptPath`
+auf diese Datei; `name: "pruefung"` nur, wenn das Tool den Namen kennt).
+Optional `args: {reports: [...]}` mit vorab erstellten Berichten, dann
+entfällt die eigene Suche. Ablauf: sechs Blickwinkel finden, zwei Skeptiker je Fund
 verifizieren, bestätigte Funde werden datei­weise behoben, Tests ergänzt,
 zum Schluss Build und Tests. Eine Routine startet ihn jeden Montag 06:00
 UTC in einer frischen Sitzung. Nach dem Workflow: Version/APK wie oben.
