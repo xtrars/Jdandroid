@@ -63,6 +63,13 @@ object AccountRefresher {
         }
     }
 
+    /** Alle Konten sofort pruefen (Minutentakt in der Kontenansicht). */
+    fun refreshAll(app: JdApp) {
+        app.appScope.launch {
+            app.db.accountDao().all().forEach { launch { check(app, it.id) } }
+        }
+    }
+
     /** Nach einem Download: Traffic des betroffenen Hosters aktualisieren. */
     fun refreshHoster(app: JdApp, hosterId: String) {
         app.appScope.launch {

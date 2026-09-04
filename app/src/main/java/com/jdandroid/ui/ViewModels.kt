@@ -277,6 +277,9 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     /** Beim Oeffnen der Kontenansicht: veraltete Angaben (Traffic!) nachladen. */
     fun refreshStale() = AccountRefresher.refreshStale(jdApp)
 
+    /** Minutentakt, solange die Kontenansicht sichtbar ist. */
+    fun refreshAll() = AccountRefresher.refreshAll(jdApp)
+
     fun delete(account: Account) {
         viewModelScope.launch(Dispatchers.IO) { dao.delete(account) }
     }
