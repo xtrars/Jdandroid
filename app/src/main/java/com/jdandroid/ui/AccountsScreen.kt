@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -251,6 +252,16 @@ private fun TrafficLine(account: Account) {
         style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
         color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     )
+    // Balken: Restmenge im Verhaeltnis zum Kontingent (wenn der Hoster es meldet)
+    val total = account.trafficTotal
+    if (!account.trafficUnlimited && left >= 0 && total > 0) {
+        Spacer(Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { (left.toFloat() / total).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+    }
 }
 
 @Composable
