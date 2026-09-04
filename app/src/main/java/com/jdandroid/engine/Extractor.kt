@@ -121,7 +121,8 @@ object Extractor {
         destDir: File,
         passwords: List<String>,
         excludes: List<String> = emptyList(),
-        progress: ProgressListener? = null
+        progress: ProgressListener? = null,
+        flat: Boolean = false
     ): String? {
         destDir.mkdirs()
         // Jeder Versuch laeuft in ein eigenes Arbeitsverzeichnis: destDir ist der
@@ -138,10 +139,10 @@ object Extractor {
                 try {
                     val lower = archive.name.lowercase()
                     when {
-                        lower.endsWith(".zip") -> extractZip(archive, workDir, password, excludes, progress)
+                        lower.endsWith(".zip") -> extractZip(archive, workDir, password, excludes, progress, flat)
                         lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
-                            extractSevenZip(archive, workDir, password, excludes, progress)
-                        lower.endsWith(".rar") -> extractRar(archive, workDir, password, excludes, progress)
+                            extractSevenZip(archive, workDir, password, excludes, progress, flat)
+                        lower.endsWith(".rar") -> extractRar(archive, workDir, password, excludes, progress, flat)
                         else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
                     }
                     workDir.listFiles()?.forEach { moveInto(it, File(destDir, it.name)) }
@@ -179,7 +180,8 @@ object Extractor {
     }
 
     private fun extractZip(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
+        flat: Boolean
     ) {
         val zip = ZipFile(archive)
         if (zip.isEncrypted) {
@@ -194,10 +196,12 @@ object Extractor {
         val headers = zip.fileHeaders.filter { !it.isDirectory && !isExcluded(it.fileName, excludes) }
         val total = headers.sumOf { it.uncompressedSize.coerceAtLeast(0) }
         var done = 0L
+        val used = HashSet<String>()
         progress?.onProgress(0, total)
         for (header in headers) {
-            safeChild(destDir, header.fileName)
-            zip.extractFile(header, destDir.absolutePath)
+            val out = targetFile(destDir, header.fileName, flat, used)
+            if (flat) zip.extractFile(header, destDir.absolutePath, out.name)
+            else zip.extractFile(header, destDir.absolutePath)
             done += header.uncompressedSize.coerceAtLeast(0)
             progress?.onProgress(done, total)
         }
@@ -217,7 +221,8 @@ object Extractor {
     }
 
     private fun extractSevenZip(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
+        flat: Boolean
     ) {
         val volumes = sevenZVolumes(archive)
         val builder = SevenZFile.builder()
@@ -234,15 +239,16 @@ object Extractor {
                 .sumOf { it.size.coerceAtLeast(0) }
             var done = 0L
             var lastReport = 0L
+            val used = HashSet<String>()
             progress?.onProgress(0, total)
             while (true) {
                 val entry = sevenZ.nextEntry ?: break
                 if (isExcluded(entry.name, excludes)) continue
-                val out = safeChild(destDir, entry.name)
                 if (entry.isDirectory) {
-                    out.mkdirs()
+                    if (!flat) safeChild(destDir, entry.name).mkdirs()
                     continue
                 }
+                val out = targetFile(destDir, entry.name, flat, used)
                 out.parentFile?.mkdirs()
                 out.outputStream().use { stream ->
                     val buffer = ByteArray(64 * 1024)
@@ -267,7 +273,8 @@ object Extractor {
      * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
      */
     private fun extractRar(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?
+        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
+        flat: Boolean
     ) {
         ensureSevenZip()
         val openCallback = RarOpenCallback(archive, password)
@@ -283,15 +290,16 @@ object Extractor {
                 val total = items.sumOf { (it.size ?: 0L).coerceAtLeast(0) }
                 var done = 0L
                 var lastReport = 0L
+                val used = HashSet<String>()
                 progress?.onProgress(0, total)
                 for (item in inArchive.simpleInterface.archiveItems) {
                     val path = item.path ?: continue
                     if (isExcluded(path, excludes)) continue
-                    val out = safeChild(destDir, path)
                     if (item.isFolder) {
-                        out.mkdirs()
+                        if (!flat) safeChild(destDir, path).mkdirs()
                         continue
                     }
+                    val out = targetFile(destDir, path, flat, used)
                     out.parentFile?.mkdirs()
                     val result = out.outputStream().use { stream ->
                         val sink = net.sf.sevenzipjbinding.ISequentialOutStream { data ->
@@ -360,6 +368,27 @@ object Extractor {
                 (lower.endsWith(".rar") || lower.endsWith(".zip") ||
                     lower.endsWith(".7z") || lower.endsWith(".7z.001"))
         }
+
+    /**
+     * Zieldatei eines Archiveintrags. Flach: die Ordner im Archiv werden
+     * ignoriert, jede Datei landet direkt in [destDir]; gleiche Namen aus
+     * verschiedenen Archivordnern bekommen "(2)", "(3)" ... angehaengt.
+     * [used] merkt sich die in diesem Lauf vergebenen Namen.
+     */
+    internal fun targetFile(destDir: File, entryPath: String, flat: Boolean, used: MutableSet<String>): File {
+        if (!flat) return safeChild(destDir, entryPath)
+        val name = entryPath.replace('\\', '/').trimEnd('/').substringAfterLast('/').ifBlank { "datei" }
+        val base = name.substringBeforeLast('.', name)
+        val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+        var candidate = name
+        var n = 2
+        while (candidate.lowercase() in used || File(destDir, candidate).exists()) {
+            candidate = "$base ($n)$ext"
+            n++
+        }
+        used += candidate.lowercase()
+        return safeChild(destDir, candidate)
+    }
 
     /** Schutz gegen Zip-Slip: Zielpfad muss innerhalb von destDir bleiben. */
     private fun safeChild(destDir: File, name: String): File {

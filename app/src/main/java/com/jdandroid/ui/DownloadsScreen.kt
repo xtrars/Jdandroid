@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jdandroid.core.FreeMode
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
@@ -385,6 +387,17 @@ private fun DownloadRow(
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    // Free-Modus: Wartezeit live herunterzaehlen, Captcha-Eintrag erkennen
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    val freeWaiting = item.status == DownloadStatus.QUEUED && FreeMode.isWaitMessage(item.errorMessage)
+    val captchaHold = item.status == DownloadStatus.QUEUED &&
+        FreeMode.isCaptchaHold(item.errorMessage, item.retryAt, now)
+    LaunchedEffect(freeWaiting, item.retryAt) {
+        while (freeWaiting && item.retryAt > System.currentTimeMillis()) {
+            kotlinx.coroutines.delay(1000)
+            now = System.currentTimeMillis()
+        }
+    }
     if (confirmDelete) {
         ConfirmDeleteDialog(
             title = "Download löschen?",
@@ -423,6 +436,13 @@ private fun DownloadRow(
                         Icon(Icons.Default.MoreVert, contentDescription = "Aktionen")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (captchaHold) {
+                            DropdownMenuItem(
+                                text = { Text("Captcha lösen") },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                onClick = { menuOpen = false; vm.solveCaptcha(item) }
+                            )
+                        }
                         when (item.status) {
                             DownloadStatus.RUNNING, DownloadStatus.QUEUED -> DropdownMenuItem(
                                 text = { Text("Pause") },
@@ -466,7 +486,13 @@ private fun DownloadRow(
                 DownloadStatus.RUNNING ->
                     "${formatBytes(item.downloadedBytes)} / ${formatBytes(item.fileSize)}" +
                         if (item.speedBps > 0) " · ${formatBytes(item.speedBps)}/s" else ""
-                DownloadStatus.QUEUED -> item.errorMessage ?: "in der Warteschlange"
+                DownloadStatus.QUEUED -> when {
+                    freeWaiting && item.retryAt > now ->
+                        FreeMode.waitMessage(
+                            FreeMode.remainingSeconds(item.retryAt, now), FreeMode.waitReason(item.errorMessage)
+                        )
+                    else -> item.errorMessage ?: "in der Warteschlange"
+                }
                 DownloadStatus.COLLECTED -> "noch nicht gestartet"
                 DownloadStatus.PAUSED -> "${formatBytes(item.downloadedBytes)} geladen"
                 DownloadStatus.EXTRACTING ->

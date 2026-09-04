@@ -39,8 +39,11 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 - Einheiten immer 1024-basiert (KiB, MiB, GiB, TiB).
 - Kontenübersicht: nur Restmenge anzeigen (kein „Verbleibend:“-Präfix),
   Balken bleibt, Auffrischen jede Minute, solange der Tab sichtbar ist.
-- Entpacken immer in einen Unterordner mit dem Paketnamen; Entpack-Status
+- Entpacken immer in einen Unterordner mit dem Paketnamen, standardmäßig
+  flach (Ordner im Archiv ignorieren, gleiche Namen mit „(2)“); Entpack-Status
   an allen Teilen eines Archivs und am Paket, mit Prozent und Balken.
+- Keine Diagnose-Abschnitte in den Einstellungen, auch nicht „Letzter
+  Absturz“; der Absturzdialog beim Start genügt.
 
 ## Technik in Kürze
 
@@ -65,10 +68,37 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
   Namen durch Leerzeichen („name part1 rar“), `Extractor.repairName()`
   stellt sie her; Download-Formular antwortet mit Weiterleitungsketten, die
   ohne Dateiladen verfolgt werden. WebView-Kennung für die Session nutzen
-  (cf_clearance ist daran gebunden).
+  (cf_clearance ist daran gebunden). Free: Download-Formular verlangt ein
+  Cloudflare-Turnstile-Token (`op=download2` ohne Token = „Wrong captcha“),
+  daher Captcha-Ansicht nötig; Sperren stehen als `data-wait-seconds` am
+  gesperrten Knopf, Formularfehler in `dk-dl-alert` (`DdownloadFreePage`).
+  Ein Countdown über 180 s wird als Wartezeit an die Engine gegeben, das
+  Formular (`rand`) bleibt dafür je Dateicode gemerkt – ohne das stünde der
+  Countdown beim Folgeversuch wieder auf demselben Wert.
 - 1fichier: HTTP 403 ist meist Flood-Sperre, nie pauschal „Konto ungültig“;
   `check_links.pl` liefert drei Felder; `user/info` nur alle 5 Minuten.
-- Rapidgator: 403 mit Tageslimit/IP-Sperre ist vorübergehend.
+  Free (`OneFichierFreePage`): Dateiseite mit `&lg=en`/Cookie `LG=en`
+  (sonst französische Meldungen) → Formular `f1` (hidden `adz`, `save`
+  entfernen) → Countdown `var count` → POST → Direktlink
+  `a-<n>.1fichier.com/<token>` („Click here to download“ oder 302), nur
+  wenige Minuten gültig, HTTP→HTTPS (Cleartext gesperrt). Antwort ist
+  schon die Datei = Hotlink. Der Hinweis „only one file at a time“ steht
+  auf jeder Free-Dateiseite: mit Formular keine Sperre (`classify(…,
+  downloadOffered)`), erst in der Formular-Antwort. Direktlink-Kandidaten
+  müssen `isFileServerUrl` bestehen (ein Pfadsegment, keine www/static-
+  Subdomain). Kein Captcha im Normalablauf; Server-/VPN-IPs
+  werden pauschal gesperrt („Accès restreint“). Passwortgeschützte Dateien
+  und Captchas laufen über die Captcha-Ansicht auf der Dateiseite.
+- Rapidgator: 403 mit Tageslimit/IP-Sperre ist vorübergehend. Free
+  (`RapidgatorFreePage`): Dateiseite → `AjaxStartTimer?fid` → `secs`
+  (180 s) warten → `AjaxGetDownloadLink?sid` → `/download/captcha`
+  (Turnstile, nur Browser). Zu früher Abruf macht den Timer ungültig (dann
+  von vorn); die Freischaltung (`sdata__`) ist an die IP gebunden, die
+  Captcha-Seite leitet bei fremdem Zustand auf die Dateiseite zurück. Die
+  OkHttp-Cookies gehen mit der `CaptchaRequiredException` an die
+  Captcha-Ansicht, die sie beim Öffnen in die WebView setzt;
+  Direktlink `pr<N>.rapidgator.net//?r=download/index&session_id=…` ohne
+  Dateiendung (eigenes `isDirectDownloadUrl`).
 - Allgemein: HTML statt Datei nie als Dateiinhalt speichern; vorübergehende
   Fehler (5xx, Sperren) dürfen ein Konto nie dauerhaft abschalten.
 

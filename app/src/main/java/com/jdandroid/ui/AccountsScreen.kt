@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import com.jdandroid.core.AppMessages
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.Account
+import com.jdandroid.data.hasPremium
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
@@ -200,10 +201,7 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    val isPremium = account.valid && (
-        account.premiumUntil > System.currentTimeMillis() ||
-            (account.premiumUntil == 0L && account.statusText?.startsWith("Premium") == true)
-    )
+    val isPremium = account.hasPremium()
 
     Card(Modifier.fillMaxWidth()) {
         Row(

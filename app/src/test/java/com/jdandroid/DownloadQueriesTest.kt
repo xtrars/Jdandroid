@@ -25,6 +25,31 @@ class DownloadQueriesTest : SchemaDbTest() {
     private fun openDownloadedBytesExcept(except: List<Long>): Long =
         long(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT.replace(":except", except.joinToString(",")))
 
+    /** Room liefert fuer MIN() ohne Treffer NULL - hier als null. */
+    private fun nextRetryAt(now: Long, horizon: Long): Long? =
+        bind(DownloadQueries.NEXT_RETRY_AT, "now" to now, "horizon" to horizon).use { st ->
+            st.executeQuery().use { rs -> rs.next(); rs.getObject(1)?.let { (it as Number).toLong() } }
+        }
+
+    private fun retryAt(id: Long, at: Long) = execute("UPDATE downloads SET retryAt = :at WHERE id = :id", "at" to at, "id" to id)
+
+    @Test
+    fun `nextRetryAt liefert das kleinste kuenftige retryAt bis zum Horizont`() {
+        val now = 1_000_000L
+        val horizon = now + 30L * 24 * 3600 * 1000
+        assertNull(nextRetryAt(now, horizon))
+        item(1, "a.rar", DownloadStatus.QUEUED); retryAt(1, now + 3_600_000)   // Free-Wartezeit 1 h
+        item(2, "b.rar", DownloadStatus.QUEUED); retryAt(2, now + 20_000)      // Backoff 20 s
+        item(3, "c.rar", DownloadStatus.QUEUED); retryAt(3, now - 1)           // faellig: nextQueued() nimmt ihn
+        item(4, "d.rar", DownloadStatus.QUEUED); retryAt(4, horizon + 1)       // Captcha: wartet auf den Nutzer
+        item(5, "e.rar", DownloadStatus.PAUSED); retryAt(5, now + 1)           // nicht in der Warteschlange
+        assertEquals(now + 20_000L, nextRetryAt(now, horizon))
+        // Nach Ablauf des Backoffs bleibt die Wartezeit
+        assertEquals(now + 3_600_000L, nextRetryAt(now + 20_000, horizon))
+        // Danach nur noch der Captcha-Eintrag jenseits des Horizonts: kein Timer
+        assertNull(nextRetryAt(now + 3_600_000, horizon))
+    }
+
     @Test
     fun `applyCheck ohne Namen laesst Name und archiveKey stehen`() {
         item(1, "film.part1.rar", DownloadStatus.COLLECTED)

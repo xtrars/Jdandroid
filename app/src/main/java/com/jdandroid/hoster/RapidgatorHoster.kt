@@ -3,14 +3,21 @@ package com.jdandroid.hoster
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
 import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * rapidgator.net – offizielle API v2.
- * Download ueber die API setzt einen Premium-Account voraus.
+ * rapidgator.net – offizielle API v2 fuer Premium-Konten; ohne Konto der
+ * Free-Ablauf der Website ([resolveFree]: Timer, Freischaltung, Captcha).
  */
 class RapidgatorHoster : Hoster {
 
@@ -25,7 +32,317 @@ class RapidgatorHoster : Hoster {
     /** Session-Token pro Account-Id zwischenspeichern. */
     private val tokens = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
+    override val siteHosts = setOf("rapidgator.net", "www.rapidgator.net", "rg.to", "www.rg.to")
+
+    override val supportsFree = true
+
     override fun matches(url: String) = pattern.containsMatchIn(url)
+
+    // ------------------------------------------------------------------
+    // Free-Modus (Website-Ablauf ohne Konto)
+    // ------------------------------------------------------------------
+
+    private val siteBase = "https://rapidgator.net"
+
+    /** Captcha-Seite: dort loest der Nutzer das Turnstile im eingebetteten Browser. */
+    private val captchaPageUrl get() = "$siteBase/download/captcha"
+
+    /**
+     * Browser-Kennung wie in der Captcha-Ansicht: Timer, Freischaltung,
+     * Captcha und Dateiabruf laufen unter derselben Kennung und denselben Cookies.
+     */
+    private val browserUa: String
+        get() = Http.browserUserAgent
+            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.0.0 Mobile Safari/537.36"
+
+    /**
+     * Zustand eines Free-Ablaufs je Datei-Kennung: eigener Cookie-Speicher
+     * (PHPSESSID, __token, sdata__), Timer-Kennung und Zeitpunkt, ab dem der
+     * Link freigeschaltet werden darf. Lebt nur im Prozess - nach einem Neustart
+     * beginnt der Ablauf von vorn.
+     */
+    private class FreeSession(val pageUrl: String) {
+        lateinit var vars: RapidgatorFreeVars
+        var fileName: String? = null
+        var fileSize = -1L
+        var hash: String? = null
+        val store = mutableListOf<Cookie>()
+        val client: OkHttpClient = Http.client.newBuilder()
+            .followRedirects(true)
+            .cookieJar(object : CookieJar {
+                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                    synchronized(store) {
+                        for (c in cookies) {
+                            store.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
+                            store.add(c)
+                        }
+                    }
+                }
+                override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(store) {
+                    val now = System.currentTimeMillis()
+                    store.filter { it.matches(url) && it.expiresAt > now }
+                }
+            })
+            .build()
+        var sid: String? = null
+        var readyAt = 0L
+        var linkReady = false
+        val createdAt = System.currentTimeMillis()
+
+        val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
+
+        /** Cookie-Header fuer [url], null ohne passende Cookies. */
+        fun cookieHeader(url: String): String? {
+            val http = runCatching { url.toHttpUrl() }.getOrNull() ?: return null
+            val now = System.currentTimeMillis()
+            return synchronized(store) {
+                store.filter { it.matches(http) && it.expiresAt > now }
+                    .joinToString("; ") { "${it.name}=${it.value}" }
+            }.ifBlank { null }
+        }
+
+        /** Alle Cookies im Set-Cookie-Format fuer den Browser. */
+        fun cookiesForBrowser(): List<String> = synchronized(store) {
+            val now = System.currentTimeMillis()
+            store.filter { it.expiresAt > now }.map { it.toString() }
+        }
+    }
+
+    private val freeSessions = ConcurrentHashMap<String, FreeSession>()
+
+    /** Neustarts je Datei, wenn der Server Timer oder Zustand nicht anerkennt. */
+    private val restarts = ConcurrentHashMap<String, Int>()
+
+    private data class Resp(val code: Int, val body: String, val location: String?, val finalUrl: String)
+
+    private fun FreeSession.fetch(
+        url: String,
+        referer: String? = null,
+        ajax: Boolean = false,
+        followRedirects: Boolean = true
+    ): Resp {
+        val builder = Request.Builder()
+            .url(url)
+            .header("User-Agent", browserUa)
+            .header("Accept-Language", "en,de;q=0.8")
+        if (ajax) {
+            builder.header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("X-Requested-With", "XMLHttpRequest")
+        } else {
+            builder.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        }
+        referer?.let { builder.header("Referer", it) }
+        val c = if (followRedirects) client else {
+            client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+        }
+        return c.newCall(builder.build()).execute().use { resp ->
+            val type = resp.header("Content-Type").orEmpty().lowercase()
+            // Nur Seiten und JSON als Text lesen, nie eine Datei (Heap)
+            val textual = type.isBlank() || type.startsWith("text/") || type.contains("json") ||
+                type.contains("javascript") || type.contains("xml")
+            val body = if (textual) runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("") else ""
+            Resp(resp.code, body, resp.header("Location"), resp.request.url.toString())
+        }
+    }
+
+    private fun waitFor(block: RapidgatorBlock): Nothing = when (block) {
+        is RapidgatorBlock.Wait -> throw WaitException(block.seconds, block.text)
+        is RapidgatorBlock.Permanent -> throw HosterException(block.text, permanent = true)
+        RapidgatorBlock.Restart -> throw HosterException("Rapidgator: Ablauf neu starten", permanent = false)
+    }
+
+    /**
+     * Free-Modus ohne Konto. Ablauf ohne Nutzer: Dateiseite holen (Offline,
+     * Premium-Grenzen, Sperren mit Wartezeit), Timer per AjaxStartTimer
+     * starten und die Wartezeit (`secs`, meist 180 s) als [WaitException] an
+     * die Engine geben; beim naechsten Versuch den Link per
+     * AjaxGetDownloadLink freischalten und die Captcha-Seite pruefen. Steht
+     * dort das Turnstile-Formular, gehen die Session-Cookies mit der
+     * [CaptchaRequiredException] an die Captcha-Ansicht und der Nutzer loest
+     * das Captcha auf der Captcha-Seite; die Navigation auf den Fileserver
+     * (`pr<N>.rapidgator.net//?r=download/index&session_id=…`) faengt die
+     * Captcha-Ansicht ab und liefert sie als [FreeHints.direktUrlAusBrowser].
+     *
+     * Alle Schritte laufen ueber dieselbe IP, dieselben Cookies und dieselbe
+     * Browser-Kennung: die Freischaltung (`sdata__`) ist an die IP gebunden,
+     * ein zu frueher Abruf macht den Timer ungueltig (dann von vorn).
+     */
+    override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
+        withContext(Dispatchers.IO) {
+            val (id, nameSegment) = RapidgatorFreePage.fileIdAndName(url)
+                ?: throw HosterException("Ungültiger Rapidgator-Link", true)
+            val pageUrl = "$siteBase/file/$id" + (nameSegment?.let { "/$it" } ?: "")
+
+            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
+                val session = freeSessions.remove(id)
+                restarts.remove(id)
+                return@withContext ResolvedLink(
+                    direct,
+                    session?.fileName,
+                    session?.fileSize ?: -1,
+                    session?.hash,
+                    headers = freeHeaders(hints.cookies ?: session?.cookieHeader(direct))
+                )
+            }
+
+            while (true) {
+                val session = freeSessions[id]?.takeUnless { it.expired }
+                    ?: startFreeSession(id, pageUrl)
+
+                // Timer laeuft noch: lange Reste an die Engine, kurze im Prozess abwarten
+                val remaining = session.readyAt - System.currentTimeMillis()
+                if (remaining > MAX_INLINE_WAIT_MS) {
+                    throw WaitException(((remaining + 999) / 1000).toInt() + 1, WAIT_TEXT)
+                }
+                if (remaining > 0) delay(remaining + 500)
+
+                if (!session.linkReady) {
+                    val reply = ajax(session, session.vars.getDownloadUrl, "sid" to (session.sid ?: ""))
+                    when (reply.state) {
+                        "done" -> session.linkReady = true
+                        else -> {
+                            val block = reply.code?.let { RapidgatorFreePage.classify(it) }
+                            if (block != null && block !is RapidgatorBlock.Restart) waitFor(block)
+                            // Timer nicht anerkannt (zu frueh, Zustand weg): von vorn
+                            restart(id, "Freischaltung abgelehnt: ${reply.code ?: reply.state}")
+                            continue
+                        }
+                    }
+                }
+
+                // Captcha-Seite: bei verlorenem Zustand (andere IP, abgelaufen)
+                // leitet sie auf die Dateiseite zurueck - dann von vorn
+                val page = session.fetch(resolveUrl(session.vars.captchaUrl), referer = pageUrl, followRedirects = false)
+                when {
+                    page.code == 500 -> throw WaitException(30 * 60, "Rapidgator: Download derzeit nicht möglich")
+                    page.code in 300..399 -> {
+                        restart(id, "Captcha-Seite nicht erreichbar (Weiterleitung)")
+                        continue
+                    }
+                    page.code !in 200..299 -> throw HosterException(
+                        "Rapidgator: Captcha-Seite nicht erreichbar (HTTP ${page.code})", permanent = false
+                    )
+                }
+                RapidgatorFreePage.directLink(page.body)?.let { direct ->
+                    // Kein Captcha verlangt: Direktlink liegt schon vor
+                    freeSessions.remove(id)
+                    restarts.remove(id)
+                    return@withContext ResolvedLink(
+                        direct, session.fileName, session.fileSize, session.hash,
+                        headers = freeHeaders(session.cookieHeader(direct))
+                    )
+                }
+                if (RapidgatorFreePage.hasCaptchaForm(page.body)) {
+                    // Session-Cookies gehen mit: die Captcha-Ansicht setzt sie beim Oeffnen
+                    throw CaptchaRequiredException(
+                        captchaPageUrl, "Rapidgator: Captcha (Turnstile) – nur im Browser lösbar",
+                        cookieUrl = siteBase, cookies = session.cookiesForBrowser()
+                    )
+                }
+                RapidgatorFreePage.pageBlock(page.body)?.let { waitFor(it) }
+                throw HosterException("Rapidgator: kein Direktlink erhalten (HTTP ${page.code})", permanent = false)
+            }
+            @Suppress("UNREACHABLE_CODE")
+            throw IllegalStateException()
+        }
+
+    /**
+     * Dateiseite holen, auswerten und den Timer starten. Kehrt nie normal
+     * zurueck: die Wartezeit des Timers geht als [WaitException] an die Engine,
+     * die Session bleibt fuer den naechsten Versuch gespeichert.
+     */
+    private fun startFreeSession(id: String, pageUrl: String): Nothing {
+        freeSessions.remove(id)
+        val session = FreeSession(pageUrl)
+        // Englische Texte erzwingen, damit die Fehlermuster greifen
+        session.store.add(Cookie.Builder().name("lang").value("en").domain("rapidgator.net").path("/").build())
+        val page = session.fetch(pageUrl, referer = "$siteBase/")
+        // Unbekannte Kennung: 302 auf /article/premium; rg.to leitet auf rapidgator.net weiter
+        if (page.code == 404 || !page.finalUrl.contains("/file/$id", ignoreCase = true) ||
+            RapidgatorFreePage.isOffline(page.body)
+        ) {
+            throw HosterException("Datei ist offline", true)
+        }
+        if (page.code !in 200..299) {
+            throw HosterException("Rapidgator: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+        }
+        RapidgatorFreePage.pageBlock(page.body)?.let { waitFor(it) }
+        val vars = RapidgatorFreePage.freeVars(page.body)
+            ?: throw HosterException("Rapidgator: Seite bietet keinen Free-Download an", permanent = false)
+        session.vars = vars
+        session.fileName = RapidgatorFreePage.fileName(page.body)
+        session.fileSize = RapidgatorFreePage.fileSize(page.body)
+        session.hash = RapidgatorFreePage.md5(page.body)
+
+        val reply = ajax(session, vars.startTimerUrl, "fid" to vars.fid)
+        if (reply.state != "started" || reply.sid.isNullOrBlank()) {
+            reply.code?.let { RapidgatorFreePage.classify(it) }?.let { waitFor(it) }
+            throw HosterException(
+                "Rapidgator: Free-Download derzeit nicht möglich (${reply.code ?: reply.state})", permanent = false
+            )
+        }
+        session.sid = reply.sid
+        session.readyAt = System.currentTimeMillis() + vars.secs * 1000L
+        freeSessions[id] = session
+        throw WaitException(vars.secs + 1, WAIT_TEXT)
+    }
+
+    private fun ajax(session: FreeSession, path: String, param: Pair<String, String>): RapidgatorFreePage.AjaxReply {
+        val url = resolveUrl(path).toHttpUrl().newBuilder()
+            .setQueryParameter(param.first, param.second).build().toString()
+        val resp = session.fetch(url, referer = session.pageUrl, ajax = true)
+        if (resp.code !in 200..299) {
+            throw HosterException("Rapidgator: Antwort HTTP ${resp.code}", permanent = false)
+        }
+        return RapidgatorFreePage.ajaxReply(resp.body)
+            ?: throw HosterException("Rapidgator: unerwartete Antwort", permanent = false)
+    }
+
+    /** Zustand verwerfen und von vorn beginnen; nach zu vielen Anlaeufen vorerst aufgeben. */
+    private fun restart(id: String, reason: String) {
+        freeSessions.remove(id)
+        val count = restarts.merge(id, 1) { a, b -> a + b } ?: 1
+        if (count > MAX_RESTARTS) {
+            restarts.remove(id)
+            throw HosterException("Rapidgator: Free-Ablauf wird vom Server nicht anerkannt ($reason)", permanent = false)
+        }
+    }
+
+    private fun resolveUrl(path: String): String =
+        if (path.startsWith("http", ignoreCase = true)) path else siteBase + (if (path.startsWith("/")) path else "/$path")
+
+    /**
+     * Header fuer den Dateiabruf: Browser-Kennung und Referer der Captcha-Seite
+     * wie im Browser, dazu die Cookies (sdata__ gilt fuer alle Subdomains).
+     */
+    internal fun freeHeaders(cookies: String?): Map<String, String> {
+        val headers = LinkedHashMap<String, String>()
+        headers["User-Agent"] = browserUa
+        headers["Referer"] = captchaPageUrl
+        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        return headers
+    }
+
+    /**
+     * Fileserver-Adresse nach dem Captcha: `https://pr5.rapidgator.net//?r=download/index&session_id=…`
+     * (keine Dateiendung, daher neben [DirectLinks]). Seiten der Hauptdomain zaehlen nie.
+     */
+    override fun isDirectDownloadUrl(url: String): Boolean {
+        if (DirectLinks.isDirectDownloadUrl(url, siteHosts)) return true
+        val m = Regex("""^https?://([^/?#]+)/[^?#]*\?(?:[^#]*&)?r=download/index(?:&|$)""", RegexOption.IGNORE_CASE)
+            .find(url) ?: return false
+        if (m.groupValues[1].lowercase() in siteHosts) return false
+        return Regex("""[?&]session_id=[A-Za-z0-9]+""").containsMatchIn(url)
+    }
+
+    private companion object {
+        /** Reste bis hierhin laufen im Prozess ab, laengere gehen als Wartezeit an die Engine. */
+        const val MAX_INLINE_WAIT_MS = 5_000L
+        const val SESSION_MAX_AGE_MS = 2L * 60 * 60 * 1000
+        const val MAX_RESTARTS = 3
+        const val WAIT_TEXT = "Rapidgator: Wartezeit vor dem Free-Download"
+    }
 
     /** file_id (Hash) aus der Rapidgator-URL: .../file/<id>[/name.html] */
     private fun fileId(url: String): String =
@@ -148,7 +465,7 @@ class RapidgatorHoster : Hoster {
             trafficLeft = trafficLeft,
             trafficTotal = trafficTotal,
             trafficUnlimited = premium && trafficLeft < 0 && trafficTotal < 0,
-            statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
+            statusText = if (premium) "Premium" else freeStatusText
         )
     }
 

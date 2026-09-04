@@ -11,15 +11,20 @@ import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.JdApp
 import com.jdandroid.core.ArchiveNames
 import com.jdandroid.core.FileNames
+import com.jdandroid.core.FreeMode
 import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
+import com.jdandroid.data.hasPremium
 import com.jdandroid.data.renameFile
+import com.jdandroid.hoster.CaptchaRequiredException
+import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
+import com.jdandroid.hoster.WaitException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -103,7 +108,10 @@ class DownloadEngine(
 
     /** Nichts laeuft und nichts wartet - unter der Sperre, damit pump() nicht dazwischenfunkt. */
     suspend fun isIdle(): Boolean = mutex.withLock {
-        jobs.isEmpty() && extracting.get() == 0 && dao.queuedCount() == 0
+        // Eintraege, die auf ein Captcha warten, brauchen keinen laufenden
+        // Dienst: "Captcha loesen" startet ihn bei Bedarf neu
+        jobs.isEmpty() && extracting.get() == 0 &&
+            dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
     }
 
     /** Summe der aktuellen Geschwindigkeiten, fuer die Benachrichtigung. */
@@ -206,6 +214,7 @@ class DownloadEngine(
                 jobs[next.id] = scope.launch { run(next.id) }
             }
         }
+        armRetryTimer()
         onStateChanged()
     }
 
@@ -246,6 +255,7 @@ class DownloadEngine(
     suspend fun cancelAndDelete(id: Long) {
         mutex.withLock { jobs.remove(id) }?.cancel()
         ProgressBus.remove(id)
+        FreeDownloads.forget(id)
         val item = dao.byId(id)
         dao.delete(id)
         item?.let {
@@ -313,8 +323,20 @@ class DownloadEngine(
             }
             val hoster = HosterRegistry.byId(item.hosterId)
                 ?: throw HosterException("Unbekannter Hoster", true)
+            // Nur ein Premium-Konto nimmt den Premium-Weg: ein gueltiges
+            // Free-Konto wuerde dort dauerhaft scheitern ("benoetigt Premium")
             val account = accountDao.validForHoster(item.hosterId)
-            val resolved = hoster.resolve(item.url, account)
+            val premium = account?.takeIf { it.hasPremium() }
+            val resolved = when {
+                premium != null -> hoster.resolve(item.url, premium)
+                // Ohne Premium: Free-Modus mit Wartezeiten und ggf. Captcha. Die
+                // Hinweise aus der Captcha-Ansicht (Direktlink, Cookies) gelten
+                // fuer genau diesen Versuch
+                app.settings.currentFreeMode() ->
+                    hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
+                account != null -> throw HosterException(FreeMode.NO_PREMIUM_MESSAGE, true)
+                else -> throw HosterException(FreeMode.DISABLED_MESSAGE, true)
+            }
 
             var current = dao.byId(id) ?: return
             val resolvedName = resolved.fileName?.let { FileNames.sanitize(it) }
@@ -322,9 +344,13 @@ class DownloadEngine(
                 current = adoptFileName(current, resolvedName)
                 PackageNaming.refineAutoName(app.db, current.packageId)
             }
-            download(current, resolved.directUrl, resolved.hash)
+            download(current, resolved.directUrl, resolved.hash, resolved.headers)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
+        } catch (e: WaitException) {
+            scheduleFreeWait(id, e.seconds, e.message)
+        } catch (e: CaptchaRequiredException) {
+            holdForCaptcha(id, e)
         } catch (e: HosterException) {
             if (e.permanent) {
                 dao.setStatus(id, DownloadStatus.FAILED, e.message)
@@ -374,14 +400,80 @@ class DownloadEngine(
             id, attempts, System.currentTimeMillis() + backoff,
             "$message – Versuch $attempts/$MAX_ATTEMPTS in ${backoff / 1000}s"
         )
-        // Nach Ablauf der Wartezeit erneut anstossen
-        scope.launch {
-            kotlinx.coroutines.delay(backoff)
-            pump()
+        // Den Folgeversuch stoesst der Timer aus pump() an (run() ruft pump() im finally)
+    }
+
+    /**
+     * Free-Modus: der Hoster verlangt eine Wartezeit. Der Eintrag bleibt
+     * QUEUED mit retryAt nach Ablauf; pump() ueberspringt ihn bis dahin
+     * (nextQueued prueft retryAt) und stellt den Timer ([armRetryTimer]).
+     * Kein Fehlversuch - Warten ist kein Fehler. Der Grund des Hosters
+     * ("Tageslimit erreicht") bleibt in der Meldung sichtbar.
+     */
+    private suspend fun scheduleFreeWait(id: Long, seconds: Int, reason: String?) {
+        val item = dao.byId(id) ?: return
+        val retryAt = FreeMode.retryAt(System.currentTimeMillis(), seconds)
+        dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitMessage(seconds, reason))
+    }
+
+    /**
+     * Free-Modus: Captcha noetig. Der Eintrag bleibt QUEUED, aber mit retryAt
+     * weit in der Zukunft - erst "Captcha loesen" (Browser) gibt ihn wieder
+     * frei. Seite und Session-Cookies merkt sich [FreeDownloads] prozessweit;
+     * die Meldung nennt den Grund des Hosters (Passwort, Turnstile).
+     */
+    private suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
+        val item = dao.byId(id) ?: return
+        FreeDownloads.captchaRequired(id, CaptchaPage(e.pageUrl, e.cookieUrl, e.cookies))
+        dao.scheduleRetry(
+            id, item.attempts, System.currentTimeMillis() + FreeMode.CAPTCHA_HOLD_MS,
+            FreeMode.captchaMessage(e.message)
+        )
+    }
+
+    /** Ausstehender Timer fuer das naechste retryAt und sein Zeitpunkt (unter [timerLock]). */
+    private var retryTimer: Job? = null
+    private var retryTimerAt = Long.MAX_VALUE
+    private val timerLock = Any()
+
+    /**
+     * Timer auf das kleinste kuenftige retryAt stellen (Free-Wartezeit,
+     * Backoff). Ein delay() im Dienst-Scope allein reicht nicht: stirbt der
+     * Prozess waehrend einer stundenlangen Wartezeit, ruft der neue Dienst
+     * nur einmal pump() - nextQueued() liefert den Eintrag noch nicht, und
+     * nichts stiesse ihn nach Ablauf an. Deshalb liest pump() den Zeitpunkt
+     * aus der Datenbank; es laeuft immer nur ein Timer, ein frueherer
+     * Zeitpunkt ersetzt ihn. Captcha-Eintraege (jenseits des Horizonts)
+     * bleiben unberuecksichtigt.
+     */
+    private suspend fun armRetryTimer() {
+        val now = System.currentTimeMillis()
+        val next = dao.nextRetryAt(now, now + FreeMode.USER_ACTION_HORIZON_MS) ?: return
+        synchronized(timerLock) {
+            if (retryTimer?.isActive == true && retryTimerAt <= next) return
+            retryTimer?.cancel()
+            retryTimerAt = next
+            retryTimer = scope.launch {
+                kotlinx.coroutines.delay((next - now + RETRY_TIMER_SLACK_MS).coerceAtLeast(0))
+                // Sich selbst austragen, bevor pump() den naechsten Timer stellt:
+                // sonst hielte pump() diesen (noch laufenden) Job fuer den aktuellen
+                synchronized(timerLock) {
+                    if (retryTimer === coroutineContext[Job]) {
+                        retryTimer = null
+                        retryTimerAt = Long.MAX_VALUE
+                    }
+                }
+                pump()
+            }
         }
     }
 
-    private suspend fun download(item: DownloadItem, directUrl: String, expectedHash: String? = null) {
+    private suspend fun download(
+        item: DownloadItem,
+        directUrl: String,
+        expectedHash: String? = null,
+        headers: Map<String, String> = emptyMap()
+    ) {
         var target = tempFile(item)
         var offset = if (target.exists()) target.length() else 0L
 
@@ -390,6 +482,9 @@ class DownloadEngine(
             .header("User-Agent", Http.USER_AGENT)
             // Ohne gzip: sonst fehlt Content-Length und die Vollstaendigkeitspruefung
             .header("Accept-Encoding", "identity")
+        // Vom Hoster mitgegebene Header (Free-Modus: Cookie, Referer); der
+        // Hoster darf dabei auch die Browser-Kennung setzen
+        headers.forEach { (name, value) -> builder.header(name, value) }
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
         // Bei Pause/Loeschen die Verbindung sofort kappen: sonst wirkt der
@@ -862,7 +957,8 @@ class DownloadEngine(
                         primary, extractDir,
                         app.settings.currentPasswords(),
                         app.settings.currentExtractExcludes(),
-                        listener
+                        listener,
+                        flat = app.settings.currentFlatExtract()
                     )
                     val exportedPath = exportDirectory(extractDir, folder)
                     if (app.settings.currentDeleteArchive()) {
@@ -1102,6 +1198,9 @@ class DownloadEngine(
 
         /** Hoechstens so oft wird der Bytestand waehrend des Ladens in die Datenbank gesichert. */
         const val SAVE_MS = 30_000L
+
+        /** Zuschlag auf den Timer fuer retryAt, damit nextQueued() den Eintrag sicher liefert. */
+        const val RETRY_TIMER_SLACK_MS = 500L
 
         /** Mindestabstand der Benachrichtigungs-Aktualisierung. */
         const val NOTIFY_MS = 1_000L

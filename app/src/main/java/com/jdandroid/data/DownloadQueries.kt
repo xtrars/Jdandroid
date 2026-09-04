@@ -27,6 +27,17 @@ object DownloadQueries {
             "retryAt = 0 WHERE status IN ('PAUSED', 'FAILED')"
 
     /**
+     * Naechster Zeitpunkt, zu dem ein wartender Eintrag von selbst startet:
+     * kleinstes retryAt in der Zukunft bis :horizon (Captcha-Eintraege liegen
+     * dahinter). NULL, wenn nichts ansteht. Die Engine stellt darauf ihren
+     * Timer - auch nach einem Neustart des Dienstes, dessen delay()-Aufrufe
+     * mit dem alten Prozess verschwunden sind.
+     */
+    const val NEXT_RETRY_AT =
+        "SELECT MIN(retryAt) FROM downloads WHERE status = 'QUEUED' " +
+            "AND retryAt > :now AND retryAt <= :horizon"
+
+    /**
      * Summe des Bytestands offener Eintraege ohne :except - die Eintraege mit
      * Live-Stand im ProgressBus, deren Datenbankwert bis zu 30 s alt ist.
      * Room expandiert die Liste; sie darf nie leer sein (Aufrufer haengt -1 an).

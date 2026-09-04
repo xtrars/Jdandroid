@@ -38,6 +38,7 @@ class SettingsRepository(private val context: Context) {
     private val keyExportToDownloads = booleanPreferencesKey("export_to_downloads")
     private val keyAutoExtract = booleanPreferencesKey("auto_extract")
     private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
+    private val keyFlatExtract = booleanPreferencesKey("flat_extract")
     private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
@@ -47,6 +48,7 @@ class SettingsRepository(private val context: Context) {
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
     private val keyWifiOnly = booleanPreferencesKey("wifi_only")
     private val keyAutoStart = booleanPreferencesKey("auto_start_links")
+    private val keyFreeMode = booleanPreferencesKey("free_mode")
     private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
 
@@ -61,6 +63,16 @@ class SettingsRepository(private val context: Context) {
 
     val deleteArchiveAfterExtract: Flow<Boolean> =
         prefs.map { it[keyDeleteArchive] ?: true }
+
+    /** Flach entpacken: Ordner im Archiv ignorieren, alle Dateien direkt in den Paketordner. */
+    val flatExtract: Flow<Boolean> =
+        prefs.map { it[keyFlatExtract] ?: true }
+
+    suspend fun currentFlatExtract(): Boolean = flatExtract.first()
+
+    suspend fun setFlatExtract(value: Boolean) {
+        context.dataStore.edit { it[keyFlatExtract] = value }
+    }
 
     /** Eintraege eines Archivs nach erfolgreichem Entpacken aus der Liste entfernen (wie JDownloader). */
     val removeLinksAfterExtract: Flow<Boolean> =
@@ -115,6 +127,19 @@ class SettingsRepository(private val context: Context) {
      */
     val autoStartLinks: Flow<Boolean> =
         prefs.map { it[keyAutoStart] ?: false }
+
+    /**
+     * Free-Modus: Links ohne Konto laden (Wartezeiten, ggf. Captcha im
+     * eingebetteten Browser). Standard an - wie im JDownloader.
+     */
+    val freeMode: Flow<Boolean> =
+        prefs.map { it[keyFreeMode] ?: true }
+
+    suspend fun currentFreeMode(): Boolean = freeMode.first()
+
+    suspend fun setFreeMode(value: Boolean) {
+        context.dataStore.edit { it[keyFreeMode] = value }
+    }
 
     /** Per Storage Access Framework gewaehlter Zielordner (Tree-URI), null = Downloads/JDAndroid. */
     val downloadTreeUri: Flow<String?> =

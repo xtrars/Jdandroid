@@ -1,7 +1,5 @@
 package com.jdandroid.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -61,7 +58,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
@@ -81,10 +77,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
     val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
     val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = true)
+    val flatExtract by settings.flatExtract.collectAsStateWithLifecycle(initialValue = true)
     val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
     val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
     val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
     val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
+    val freeMode by settings.freeMode.collectAsStateWithLifecycle(initialValue = true)
     val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
     val excludeText by settings.extractExcludeList.collectAsStateWithLifecycle(initialValue = "")
     val excludes = remember(excludeText) {
@@ -216,6 +214,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 checked = wifiOnly,
                 onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
             )
+            SettingSwitch(
+                title = "Free-Modus",
+                subtitle = "Ohne Konto laden: mit Wartezeiten und ggf. Captcha",
+                checked = freeMode,
+                onChange = { v -> scope.launch { settings.setFreeMode(v) } }
+            )
 
             Spacer(Modifier.height(12.dp))
             Text("Zielordner", style = MaterialTheme.typography.titleSmall)
@@ -252,6 +256,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 subtitle = "ZIP, 7z und RAR nach dem Download entpacken, auch mehrteilige Archive",
                 checked = autoExtract,
                 onChange = { v -> scope.launch { settings.setAutoExtract(v) } }
+            )
+            SettingSwitch(
+                title = "Flach entpacken",
+                subtitle = "Ordner im Archiv werden ignoriert, alle Dateien landen direkt im " +
+                    "Paketordner; gleiche Namen erhalten (2), (3) …",
+                checked = flatExtract,
+                onChange = { v -> scope.launch { settings.setFlatExtract(v) } }
             )
             SettingSwitch(
                 title = "Archiv nach dem Entpacken löschen",
@@ -371,34 +382,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall
             )
 
-            // Diagnose: letzter Absturz, damit ein Fehler auf dem Geraet
-            // nachvollziehbar ist statt nur "die App stuerzt ab".
-            var crash by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
-            crash?.let { report ->
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
-                SectionTitle("Letzter Absturz")
-                Spacer(Modifier.height(8.dp))
-                SelectionContainer {
-                    Text(
-                        report.take(4000),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextButton(onClick = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("Absturz", report))
-                    }) { Text("Kopieren") }
-                    TextButton(onClick = {
-                        CrashReporter.clear(context)
-                        crash = null
-                    }) { Text("Löschen") }
-                }
-            }
 
             Spacer(Modifier.height(24.dp))
             Text(

@@ -21,6 +21,9 @@ import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
 import com.jdandroid.engine.DownloadService
+import com.jdandroid.engine.CaptchaPage
+import com.jdandroid.engine.FreeDownloads
+import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.Dispatchers
@@ -90,12 +93,41 @@ internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProg
     }
 }
 
+/** Ein Eintrag, dessen Captcha gerade im Browser geloest wird (Seite samt Hoster-Cookies). */
+data class CaptchaRequest(val id: Long, val page: CaptchaPage, val hoster: Hoster)
+
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val jdApp = app as JdApp
     private val dao = jdApp.db.downloadDao()
 
     private val packageDao = jdApp.db.packageDao()
+
+    /** Offene Captcha-Ansicht (Free-Modus), null = keine. */
+    private val _captcha = MutableStateFlow<CaptchaRequest?>(null)
+    val captcha: StateFlow<CaptchaRequest?> = _captcha
+
+    /**
+     * "Captcha loesen": die von der Engine gemerkte Seite oeffnen; nach einem
+     * Prozessneustart ist sie unbekannt, dann die Dateiseite selbst.
+     */
+    fun solveCaptcha(item: DownloadItem) {
+        val hoster = HosterRegistry.byId(item.hosterId) ?: return
+        _captcha.value = CaptchaRequest(item.id, FreeDownloads.captchaPage(item.id) ?: CaptchaPage(item.url), hoster)
+    }
+
+    fun cancelCaptcha() { _captcha.value = null }
+
+    /** Direktlink aus dem Browser: Hinweise hinterlegen, Eintrag sofort starten. */
+    fun completeCaptcha(directUrl: String, cookies: String?) {
+        val request = _captcha.value ?: return
+        _captcha.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            FreeDownloads.putHints(request.id, FreeHints(direktUrlAusBrowser = directUrl, cookies = cookies))
+            dao.releaseQueued(request.id)
+            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
+        }
+    }
 
     /**
      * Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im

@@ -98,6 +98,18 @@ data class Account(
     val statusText: String? = null
 )
 
+/**
+ * Konto hat Premium: Ablaufdatum in der Zukunft oder - ohne Datum - ein
+ * Premium-Kontostatus (ddownload: "Premium"/"Ultimate", 1fichier:
+ * "Premium/Access"). Ein gueltiges Konto ohne Premium ist ein Free-Konto:
+ * die Engine laedt dann im Free-Modus, nicht ueber den Premium-Weg.
+ */
+fun Account.hasPremium(now: Long = System.currentTimeMillis()): Boolean =
+    valid && (
+        premiumUntil > now ||
+            (premiumUntil == 0L && statusText?.let { it.startsWith("Premium") || it.startsWith("Ultimate") } == true)
+        )
+
 @Dao
 interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY addedAt DESC")
@@ -125,6 +137,18 @@ interface DownloadDao {
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
+
+    /**
+     * Wartende Eintraege, die bis [before] von selbst starten. Eintraege, die
+     * auf ein Captcha warten (retryAt weit in der Zukunft), zaehlen nicht:
+     * sie halten den Dienst nicht am Leben.
+     */
+    @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED' AND retryAt <= :before")
+    suspend fun queuedCountDue(before: Long): Int
+
+    /** Naechstes retryAt in der Zukunft bis [horizon], null ohne (siehe [DownloadQueries.NEXT_RETRY_AT]). */
+    @Query(DownloadQueries.NEXT_RETRY_AT)
+    suspend fun nextRetryAt(now: Long, horizon: Long): Long?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
     suspend fun pausedCount(): Int
@@ -307,6 +331,16 @@ interface DownloadDao {
             "retryAt = 0 WHERE id = :id AND status IN ('PAUSED', 'FAILED', 'OFFLINE')"
     )
     suspend fun requeue(id: Long)
+
+    /**
+     * Wartenden Eintrag sofort freigeben (Captcha im Browser geloest): nur
+     * QUEUED, ein inzwischen pausierter oder laufender Eintrag bleibt unberuehrt.
+     */
+    @Query(
+        "UPDATE downloads SET retryAt = 0, errorMessage = NULL, speedBps = 0 " +
+            "WHERE id = :id AND status = 'QUEUED'"
+    )
+    suspend fun releaseQueued(id: Long)
 
     /** "Alle fortsetzen": pausierte und gescheiterte Eintraege (siehe [DownloadQueries.REQUEUE_PAUSED_AND_FAILED]). */
     @Query(DownloadQueries.REQUEUE_PAUSED_AND_FAILED)

@@ -25,6 +25,27 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.16] – 2026-09-04
+
+### Hinzugefügt
+
+- Free-Modus: Downloads ohne Premium-Konto bei ddownload, Rapidgator und
+  1fichier (Einstellung „Free-Modus“, standardmäßig an). Wartezeiten der
+  Hoster laufen in der Zeile herunter und zählen nicht als Fehlversuch.
+  Verlangt ein Hoster ein Captcha (ddownload und Rapidgator: Cloudflare
+  Turnstile), bietet das Zeilenmenü „Captcha lösen“ an; die Seite öffnet im
+  eingebetteten Browser, der Direktlink wird abgefangen und der Download
+  startet. 1fichier läuft im Normalfall ganz ohne Browser. Ein Konto ohne
+  Premium nutzt ebenfalls den Free-Modus.
+- Flach entpacken (Einstellung, standardmäßig an): Ordner im Archiv werden
+  ignoriert, alle Dateien landen direkt im Paketordner; gleiche Namen
+  erhalten „(2)“, „(3)“ …
+
+### Entfernt
+
+- Abschnitt „Letzter Absturz“ in den Einstellungen (der Absturzdialog beim
+  Start bleibt).
+
 ## [0.0.15] – 2026-09-04
 
 ### Behoben
@@ -575,6 +596,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.16]: https://github.com/xtrars/Jdandroid/commit/6db7793
 [0.0.15]: https://github.com/xtrars/Jdandroid/commit/f2c5395
 [0.0.14]: https://github.com/xtrars/Jdandroid/commit/891a924
 [0.0.13]: https://github.com/xtrars/Jdandroid/commit/d958c03

@@ -106,9 +106,12 @@ Dienst an (`DownloadService.send`) bzw. die Linkprüfung.
 interface Hoster {
     val id: String; val displayName: String; val accountType: AccountType
     val accountHint: String; val webLoginUrl: String? get() = null
+    val siteHosts: Set<String>; val supportsFree: Boolean get() = false
     fun matches(url: String): Boolean
     suspend fun checkAccount(account: Account): AccountInfo
     suspend fun resolve(url: String, account: Account?): ResolvedLink
+    suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink   // Standard: nicht unterstützt
+    fun isDirectDownloadUrl(url: String): Boolean                          // Standard: DirectLinks
     suspend fun checkLink(url: String, account: Account?): LinkInfo
 }
 ```
@@ -121,6 +124,36 @@ gemeinsamen `OkHttpClient` und liest Textantworten nie unbegrenzt
 `HosterException(permanent = true)` bedeutet: erneuter Versuch ohne
 Nutzeraktion ist sinnlos (Datei offline, kein Premium); alles andere gilt als
 vorübergehend und wird von der Engine wiederholt.
+
+**Free-Modus** (Einstellung „Free-Modus“, Standard an): Ohne Premium-Konto
+(`Account.hasPremium()` – ein gültiges Free-Konto zählt nicht, der
+Premium-Weg scheiterte damit dauerhaft) ruft die Engine
+`resolveFree(url, hints)` auf. Zwei Ausnahmen steuern den Ablauf:
+`WaitException(seconds, grund)` – der Eintrag bleibt `QUEUED` mit
+`retryAt = jetzt + Sekunden` und der Meldung „Wartezeit im Free-Modus:
+mm:ss – Grund“ (die Liste zählt live herunter und behält den Grund,
+`attempts` bleibt unverändert); `CaptchaRequiredException(pageUrl, grund,
+cookieUrl, cookies)` – der Eintrag bleibt `QUEUED` mit `retryAt` ein Jahr in
+der Zukunft und der Meldung „Grund – im Menü „Captcha lösen““; Seite und
+Cookies merkt sich `engine/FreeDownloads` prozessweit. Der Menüpunkt
+„Captcha lösen“ öffnet `ui/CaptchaScreen` (Vollbild-WebView, nur Hoster- und
+Captcha-Domains) und setzt die mitgegebenen Session-Cookies erst dort,
+unmittelbar vor dem Laden (Rapidgator: Timer und Freischaltung laufen per
+OkHttp, nur das Captcha im Browser) – so löscht keine andere Browser-Ansicht
+sie vorher, und zwei wartende Einträge überschreiben sich nicht. Erkennt der
+Browser eine **Navigation des Hauptrahmens** auf den Fileserver
+(`Hoster.isDirectDownloadUrl`, Standard in `DirectLinks`: fremder Host plus
+Dateiendung; Unterressourcen werden nie abgefangen, nur gefiltert), wird sie
+nicht geladen, sondern samt Cookies als `FreeHints` hinterlegt;
+`releaseQueued` setzt `retryAt = 0` und der Eintrag startet sofort neu. Ein
+Hoster, der Free umsetzt, setzt `supportsFree = true` (Kontostatus „Free“
+statt „Free (Downloads nicht möglich)“). Einträge, die auf ein Captcha
+warten, halten den Dienst nicht am Leben (`queuedCountDue`). Wartezeiten
+und Backoffs überleben einen Neustart des Dienstes: `pump()` liest das
+kleinste künftige `retryAt` (`nextRetryAt`) und stellt darauf den einen
+Timer der Engine (`armRetryTimer`). Ohne Konto und mit ausgeschaltetem
+Free-Modus scheitert der Eintrag dauerhaft mit „Kein Konto und Free-Modus
+aus“ (mit Free-Konto: „Konto ohne Premium und Free-Modus aus“).
 
 Die Eigenheiten der drei Hoster (ddownload: Turnstile, Kontoseite mit falscher
 Einheit, Weiterleitungsketten; 1fichier: 403 als Flood-Sperre, `user/info`
@@ -473,6 +506,10 @@ liefert. Click'n'Load 2 kommt ohne den Dienst aus.
 - Umbau des Dienstes auf User-Initiated Data Transfer Jobs (Android 14+):
   der Vordergrunddienst mit Typwechsel deckt den Bedarf, das 6-h-Limit wird
   sauber behandelt.
-- Free-Downloads mit Captcha und Wartezeit.
+- Free-Downloads: der gemeinsame Mechanismus (Wartezeit, Captcha im
+  Browser, Direktlink-Übernahme) und `resolveFree` für ddownload, Rapidgator
+  und 1fichier sind umgesetzt; eine Begrenzung auf einen Free-Download je
+  Hoster und IP übernimmt die Engine nicht (die Hoster melden das als
+  Wartezeit).
 - Ein Free-Fallback für die DLC-Entschlüsselung ohne den JDownloader-Dienst
   ist technisch nicht möglich (der Schlüssel liegt serverseitig).

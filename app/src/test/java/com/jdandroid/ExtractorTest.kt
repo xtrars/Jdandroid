@@ -286,4 +286,35 @@ class ExtractorTest {
         assertTrue(calls.all { it.second == 1500L })
         assertEquals(calls.map { it.first }, calls.map { it.first }.sorted())
     }
+
+    @Test
+    fun flachEntpackenIgnoriertOrdnerUndNummeriertDoppelteNamen() {
+        val src = tmp.newFolder("src-flat")
+        File(src, "a").mkdirs(); File(src, "b/c").mkdirs()
+        File(src, "a/film.mkv").writeText("eins")
+        File(src, "b/c/film.mkv").writeText("zwei")
+        File(src, "b/info.txt").writeText("drei")
+        val zip = File(tmp.root, "flat.zip")
+        ZipFile(zip).apply { addFolder(File(src, "a")); addFolder(File(src, "b")) }
+
+        val flat = tmp.newFolder("out-flat")
+        Extractor.extract(zip, flat, emptyList(), flat = true)
+        val names = flat.listFiles()!!.map { it.name }.sorted()
+        assertEquals(listOf("film (2).mkv", "film.mkv", "info.txt"), names)
+        assertFalse(File(flat, "a").exists())
+
+        val nested = tmp.newFolder("out-nested")
+        Extractor.extract(zip, nested, emptyList(), flat = false)
+        assertTrue(File(nested, "a/film.mkv").exists())
+        assertTrue(File(nested, "b/c/film.mkv").exists())
+    }
+
+    @Test
+    fun zielnameFlachAusPfadMitBackslash() {
+        val dir = tmp.newFolder("t")
+        val used = HashSet<String>()
+        assertEquals("x.rar", Extractor.targetFile(dir, "ordner\\unter\\x.rar", true, used).name)
+        assertEquals("x (2).rar", Extractor.targetFile(dir, "anders/x.rar", true, used).name)
+        assertEquals(File(dir, "anders/x.rar").path, Extractor.targetFile(dir, "anders/x.rar", false, used).path)
+    }
 }

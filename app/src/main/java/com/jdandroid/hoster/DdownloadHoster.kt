@@ -20,9 +20,16 @@ import java.util.concurrent.TimeUnit
 /**
  * ddownload.com – XFileSharing-Hoster. Login über Benutzername/Passwort
  * (Session-Cookie), Premium-Direktdownload über die zweistufige
- * Download-Form. Free-Downloads (Wartezeit/Captcha) werden nicht unterstützt.
+ * Download-Form. Free-Downloads laufen über [resolveFree]: Sperren und
+ * Wartezeiten liest die App selbst von der Seite, das Cloudflare-Turnstile
+ * im Download-Formular ist nur im eingebetteten Browser lösbar.
  */
-class DdownloadHoster : Hoster {
+class DdownloadHoster internal constructor(
+    /** Adresse der Website; Tests ersetzen sie durch einen lokalen Server. */
+    private val siteBase: String
+) : Hoster {
+
+    constructor() : this("https://ddownload.com")
 
     override val id = "ddownload"
     override val displayName = "ddownload"
@@ -36,9 +43,10 @@ class DdownloadHoster : Hoster {
             "der Login verlangt ein CAPTCHA und geht nur im Browser."
     override val webLoginUrl = "https://ddownload.com/login.html"
 
-    private val apiBase = "https://api-v2.ddownload.com/api"
+    /** Free-Downloads (Wartezeit + Turnstile im Browser) sind umgesetzt. */
+    override val supportsFree = true
 
-    private val siteBase = "https://ddownload.com"
+    private val apiBase = "https://api-v2.ddownload.com/api"
 
     /** Tageskontingent von ddownload Premium laut Anbieter (200 GB). */
     private val DAILY_QUOTA = 200L shl 30
@@ -94,7 +102,7 @@ class DdownloadHoster : Hoster {
         Regex("""https?://(?!www\.)[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)(?::\d+)?/[^\s"'<>]+""")
 
     /** Hauptdomains, auf denen nie eine Datei liegt (nur Seiten). */
-    private val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
+    override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
     /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
     private val browserUa: String
@@ -352,7 +360,7 @@ class DdownloadHoster : Hoster {
             trafficTotal = trafficTotal,
             trafficUnlimited = traffic.unlimited,
             statusText = buildString {
-                append(if (premium) tier else "Free (Downloads nicht möglich)")
+                append(if (premium) tier else freeStatusText)
                 if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar")
             }
         )
@@ -474,7 +482,7 @@ class DdownloadHoster : Hoster {
             trafficLeft = left,
             trafficTotal = total,
             trafficUnlimited = unlimited,
-            statusText = if (premium) "Premium" else "Free (Downloads nicht möglich)"
+            statusText = if (premium) "Premium" else freeStatusText
         )
     }
 
@@ -591,6 +599,240 @@ class DdownloadHoster : Hoster {
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(direct, fileName)
         }
+
+    /**
+     * Free-Modus ohne Konto. Ablauf ohne Nutzer: Dateiseite holen, Offline,
+     * Wartung, Premium-Grenzen und Sperren (data-wait-seconds bzw. "You have
+     * to wait …") auswerten. Dann die Captcha-Art: ein XFS-Span-Captcha loest
+     * die App selbst und schickt nach dem Countdown das Free-Formular ab;
+     * Turnstile, reCAPTCHA, hCaptcha und Bild-Captchas gehen nur im Browser
+     * ([CaptchaRequiredException] mit der Dateiseite). Kommt aus dem Browser
+     * ein abgefangener Direktlink ([FreeHints.direktUrlAusBrowser]), wird er
+     * samt Cookies und Browser-Kennung uebernommen: cf_clearance ist an die
+     * Kennung gebunden, mit der es ausgestellt wurde.
+     */
+    override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
+        withContext(Dispatchers.IO) {
+            val code = fileCode(url)
+            val pageUrl = "$siteBase/$code"
+            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
+                return@withContext ResolvedLink(
+                    direct,
+                    fileNameFromUrl(direct),
+                    headers = freeHeaders(pageUrl, hints.cookies)
+                )
+            }
+
+            val client = clientFor(0L)
+            // Formular aus einem frueheren Versuch (langer Countdown): Seite
+            // nicht neu laden, sonst begaenne der Countdown von vorn
+            val session = freeSessions[code]?.takeUnless { it.expired }
+            val form: Map<String, String>
+            val fileName: String?
+            val fileSize: Long
+            val countdown: Int
+            if (session != null) {
+                form = session.form
+                fileName = session.fileName
+                fileSize = session.fileSize
+                countdown = ((session.readyAt - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+            } else {
+                val page = client.fetch(pageUrl, referer = siteBase)
+                checkBlocked(page)
+                if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
+                    throw HosterException("Datei ist offline", true)
+                }
+                if (page.code !in 200..299) {
+                    throw HosterException("ddownload: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+                }
+                checkFreeBlockers(page.body)
+                fileName = pageFileName(page.body)
+                fileSize = pageFileSize(page.body)
+
+                val captchaFields = when (val captcha = DdownloadFreePage.captcha(page.body)) {
+                    is FreeCaptcha.Span -> mapOf("code" to captcha.code)
+                    FreeCaptcha.None -> emptyMap()
+                    is FreeCaptcha.Browser -> throw CaptchaRequiredException(
+                        pageUrl, "ddownload: Captcha (${captcha.kind}) – nur im Browser lösbar"
+                    )
+                    is FreeCaptcha.Image -> throw CaptchaRequiredException(
+                        pageUrl, "ddownload: Bild-Captcha – nur im Browser lösbar"
+                    )
+                }
+                form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
+                countdown = DdownloadFreePage.countdownSeconds(page.body)
+                if (countdown > MAX_INLINE_COUNTDOWN) {
+                    // Formular samt Startzeitpunkt merken; der naechste Versuch schickt es ab
+                    freeSessions[code] = FreeSession(
+                        form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
+                    )
+                }
+            }
+
+            // Countdown vor dem Download: kurz im Prozess abwarten, lange
+            // Zeiten als Wartezeit an die Engine zurueckgeben (Formular bleibt
+            // in [freeSessions])
+            if (countdown > MAX_INLINE_COUNTDOWN) {
+                throw WaitException(countdown + 1, WAIT_TEXT)
+            }
+            if (countdown > 0) kotlinx.coroutines.delay((countdown + 1) * 1000L)
+
+            // Formular ist verbraucht: ein weiterer Versuch laedt die Seite neu
+            freeSessions.remove(code)
+            var resp = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
+            checkBlocked(resp)
+            var direct: String? = null
+            var currentUrl = pageUrl
+            var hops = 0
+            while (direct == null && hops++ < 6) {
+                if (resp.code in 200..299 && resp.isFile) { direct = resp.finalUrl; break }
+                if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
+                    val target = resolveLocation(currentUrl, resp.location!!)
+                    if (isFileServerUrl(target)) { direct = target; break }
+                    resp = client.fetch(target, referer = currentUrl, followRedirects = false)
+                    currentUrl = target
+                    checkBlocked(resp)
+                    continue
+                }
+                direct = extractDirectLink(resp.body)
+                break
+            }
+            if (direct.isNullOrBlank()) {
+                val body = resp.body
+                when {
+                    DdownloadFreePage.isWrongCaptcha(body) -> throw CaptchaRequiredException(
+                        pageUrl, "ddownload: Captcha abgelehnt – bitte im Browser lösen"
+                    )
+                    DdownloadFreePage.isExpiredSession(body) -> throw HosterException(
+                        "ddownload: Download-Sitzung abgelaufen – wird erneut versucht", permanent = false
+                    )
+                    DdownloadFreePage.isSkippedCountdown(body) -> throw WaitException(
+                        countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, "ddownload: Countdown nicht eingehalten"
+                    )
+                }
+                checkFreeBlockers(body)
+                // Unbekannte Antwort: ein neuer Versuch kostet nichts, daher nie endgueltig
+                throw HosterException("ddownload: kein Direktlink erhalten (HTTP ${resp.code})", permanent = false)
+            }
+            ResolvedLink(
+                direct,
+                fileName ?: fileNameFromUrl(direct),
+                fileSize,
+                headers = freeHeaders(pageUrl, cookieHeader(0L, direct))
+            )
+        }
+
+    /**
+     * Zwischenstand eines Free-Ablaufs je Dateicode bei langem Countdown: das
+     * gelesene Formular (Kennung "rand", geloestes Span-Captcha), Name und
+     * Groesse sowie der Zeitpunkt, ab dem das Formular abgeschickt werden
+     * darf. Die Cookies liegen im Speicher des Free-Clients (clientFor(0)).
+     * Ohne diesen Zwischenstand luede jeder Folgeversuch die Seite neu, der
+     * Countdown stuende wieder auf demselben Wert und der Eintrag kreiste
+     * ohne Fortschritt (die Versuche zaehlt eine Wartezeit nicht).
+     */
+    private class FreeSession(
+        val form: Map<String, String>,
+        val fileName: String?,
+        val fileSize: Long,
+        val readyAt: Long
+    ) {
+        /** Lange nach dem Startzeitpunkt nicht abgeschickt: Kennung vermutlich ungueltig, neu laden. */
+        val expired: Boolean get() = System.currentTimeMillis() > readyAt + GRACE_MS
+
+        private companion object {
+            /** So lange nach dem Startzeitpunkt gilt ein gemerktes Formular noch. */
+            const val GRACE_MS = 10L * 60 * 1000
+        }
+    }
+
+    private val freeSessions = java.util.concurrent.ConcurrentHashMap<String, FreeSession>()
+
+    /** Countdowns bis hierhin laufen im Prozess ab; laengere werden zur Wartezeit der Engine. */
+    private val MAX_INLINE_COUNTDOWN = 180
+
+    /** Grund der Wartezeit vor dem Free-Download (der Countdown steht in der Engine-Meldung). */
+    private val WAIT_TEXT = "ddownload: Countdown vor dem Free-Download"
+
+    /** Mindestwartezeit nach einer Sperre ohne konkrete Zeitangabe (Sekunden). */
+    private val MIN_RETRY_WAIT = 60
+
+    /** Sperre ohne genaue Zeit ("daily limit", "too many"): eine Stunde. */
+    private val LIMIT_FALLBACK_WAIT = 60 * 60
+
+    /** Grund einer Sperre; die Restzeit zaehlt die Engine-Meldung selbst herunter. */
+    private fun waitText(@Suppress("UNUSED_PARAMETER") seconds: Int): String =
+        "ddownload: Sperre bis zum nächsten Free-Download"
+
+    /**
+     * Dauerhafte und zeitliche Sperren der Free-Seite: Wartung (vorübergehend),
+     * nur Premium (dauerhaft), Wartezeit aus der Seite (+1 s Reserve) oder
+     * Limit ohne Zeitangabe (eine Stunde).
+     */
+    private fun checkFreeBlockers(html: String) {
+        if (DdownloadFreePage.isMaintenance(html)) {
+            throw HosterException("ddownload: Server in Wartung – später erneut", permanent = false)
+        }
+        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException("ddownload: $it", true) }
+        val wait = DdownloadFreePage.waitSeconds(html)
+        if (wait > 0) throw WaitException(wait + 1, waitText(wait + 1))
+        if (DdownloadFreePage.isLimitWithoutTime(html)) {
+            throw WaitException(LIMIT_FALLBACK_WAIT, "ddownload: Download-Limit erreicht – in einer Stunde erneut")
+        }
+    }
+
+    /**
+     * Felder des Free-Formulars (op=download2, method_free="Free Download",
+     * referer = Dateiseite) plus Captcha-Felder; die Kennung "rand" kommt
+     * von der Seite.
+     */
+    internal fun freeDownloadForm(
+        html: String,
+        code: String,
+        pageUrl: String,
+        captchaFields: Map<String, String> = emptyMap()
+    ): Map<String, String> {
+        val block = formBlock(html) ?: html
+        val inputs = hiddenInputs(block).toMutableMap()
+        inputs["op"] = "download2"
+        inputs["id"] = inputs["id"]?.ifBlank { code } ?: code
+        inputs.putIfAbsent("rand", "")
+        inputs["referer"] = pageUrl
+        inputs["method_free"] = "Free Download"
+        inputs["method_premium"] = ""
+        inputs.remove("adblock_detected")?.let { inputs["adblock_detected"] = "0" }
+        inputs.putAll(captchaFields)
+        return inputs
+    }
+
+    /**
+     * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung (cf_clearance
+     * ist daran gebunden), Referer der Dateiseite und die Cookies, falls der
+     * Fileserver sie verlangt.
+     */
+    internal fun freeHeaders(pageUrl: String, cookies: String?): Map<String, String> {
+        val headers = LinkedHashMap<String, String>()
+        headers["User-Agent"] = browserUa
+        headers["Referer"] = pageUrl
+        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        return headers
+    }
+
+    /** Cookie-Header aus dem OkHttp-Speicher fuer [url]; null ohne passende Cookies. */
+    private fun cookieHeader(accountId: Long, url: String): String? {
+        val http = url.toHttpUrlOrNull() ?: return null
+        val store = cookieStores[accountId] ?: return null
+        val now = System.currentTimeMillis()
+        return synchronized(store) {
+            store.filter { it.matches(http) && it.expiresAt > now }
+                .joinToString("; ") { "${it.name}=${it.value}" }
+        }.ifBlank { null }
+    }
+
+    /** Dateiname aus dem letzten Pfadteil einer Fileserver-Adresse (nur mit Endung). */
+    internal fun fileNameFromUrl(url: String): String? =
+        url.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.trim()
+            ?.takeIf { it.isNotEmpty() && Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it) }
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
@@ -728,11 +970,6 @@ class DdownloadHoster : Hoster {
             .firstOrNull { it.value.contains("op\"", true) && it.value.contains("download", true) }
             ?.value
 
-    private val assetExtensions = setOf(
-        "html", "htm", "php", "css", "js", "png", "jpg", "jpeg", "gif",
-        "svg", "ico", "woff", "woff2", "ttf", "webp", "json", "xml", "cgi"
-    )
-
     /**
      * Gilt fuer Adressen mit Dateinamen auf einem anderen Host als der
      * Hauptdomain: Fileserver (Subdomain, auch mit Port wie :183, auch unter
@@ -741,12 +978,21 @@ class DdownloadHoster : Hoster {
      * und /login.html fallen durch Host- und Endungspruefung heraus.
      */
     internal fun isFileServerUrl(url: String): Boolean {
+        if (DirectLinks.isDirectDownloadUrl(url, siteHosts)) return true
+        // Fileserver-Subdomain mit Download-Pfad, auch ohne Dateiendung
+        // (z.B. /cgi-bin/dl.cgi/<token>): so antwortet das Free-Formular
         val http = url.toHttpUrlOrNull() ?: return false
-        if (http.host.lowercase() in siteHosts) return false
-        val last = http.pathSegments.lastOrNull().orEmpty()
-        val ext = last.substringAfterLast('.', "").lowercase()
-        return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
+        val host = http.host.lowercase()
+        if (host in siteHosts || host in serviceHosts) return false
+        if (!Regex("""^[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)$""").matches(host)) return false
+        return Regex("""^/(?:cgi-bin/dl\.cgi|d|files)/[^/]+""").containsMatchIn(http.encodedPath) &&
+            http.pathSegments.lastOrNull().orEmpty().isNotEmpty()
     }
+
+    /** Subdomains mit Seiten oder API, nie mit Dateien. */
+    private val serviceHosts = setOf("my.ddownload.com", "api-v2.ddownload.com", "my.ddl.to")
+
+    override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
 
     /** Location-Header (auch relativ) gegen die Seitenadresse aufloesen. */
     private fun resolveLocation(base: String, location: String): String =

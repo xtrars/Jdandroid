@@ -277,6 +277,22 @@ fun MainScreen(
         return
     }
 
+    // Captcha-Ansicht des Free-Modus: ebenfalls ganzer Bildschirm
+    val captcha by downloadVm.captcha.collectAsStateWithLifecycle()
+    captcha?.let { request ->
+        CaptchaScreen(
+            pageUrl = request.page.url,
+            cookieUrl = request.page.cookieUrl,
+            cookies = request.page.cookies,
+            hosterName = request.hoster.displayName,
+            siteHosts = request.hoster.siteHosts,
+            isDirectDownloadUrl = request.hoster::isDirectDownloadUrl,
+            onCancel = { downloadVm.cancelCaptcha() },
+            onDirectLink = { url, cookies -> downloadVm.completeCaptcha(url, cookies) }
+        )
+        return
+    }
+
     Scaffold(
         // Die Insets behandeln die inneren Bildschirme (eigene TopAppBar) und
         // die NavigationBar selbst - sonst kaeme der Abstand doppelt.

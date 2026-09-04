@@ -44,6 +44,7 @@ xz = { group = "org.tukaani", name = "xz", version = "1.12" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # Fuer JVM-Tests der SQL-Abfragen (ArchiveSetsTest); dieselbe Version nutzt der Room-Compiler
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 
