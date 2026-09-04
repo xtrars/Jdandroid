@@ -6,15 +6,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,18 +29,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,22 +46,22 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
@@ -99,12 +102,21 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
     }
 }
 
+/**
+ * Kontenliste. Der Dialog "Konto hinzufuegen" wird ueber [showAdd] von der
+ * MainActivity gesteuert (Plus-Knopf in der aeusseren Scaffold), damit die
+ * Snackbar den Knopf nicht verdeckt.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
-    val accounts by vm.accounts.collectAsState()
-    var showAdd by remember { mutableStateOf(false) }
-    val message by vm.message.collectAsState()
+fun AccountsScreen(
+    vm: AccountViewModel,
+    showAdd: Boolean,
+    onShowAddChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accounts by vm.accounts.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
     // Solange die Kontenansicht sichtbar ist (Tab offen, App im Vordergrund),
     // jede Minute den Stand beim Hoster nachladen; beim Oeffnen sofort.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -125,16 +137,16 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
-        topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Konto hinzufügen")
-            }
-        }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) }
     ) { padding ->
+        // Seitliche Insets (Displayausschnitt, Querformat) freihalten
+        val content = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
         if (accounts.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
+            Box(content.padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "Noch keine Konten.\n\nMit + einen Premium-Account oder API-Key " +
                         "hinterlegen, damit Downloads starten können.",
@@ -144,9 +156,10 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
             }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(padding),
+                content,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp)
+                // Unten Platz fuer den Plus-Knopf, damit er die letzte Karte nicht verdeckt
+                contentPadding = PaddingValues(start = 14.dp, top = 14.dp, end = 14.dp, bottom = 88.dp)
             ) {
                 items(accounts, key = { it.id }) { account -> AccountRow(account, vm) }
             }
@@ -154,7 +167,7 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
     }
 
     if (showAdd) {
-        AddAccountDialog(vm, onDismiss = { showAdd = false })
+        AddAccountDialog(vm, onDismiss = { onShowAddChange(false) })
     }
 }
 
@@ -162,7 +175,7 @@ fun AccountsScreen(vm: AccountViewModel, modifier: Modifier = Modifier) {
 private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val isPremium = account.valid && (
         account.premiumUntil > System.currentTimeMillis() ||
             (account.premiumUntil == 0L && account.statusText?.startsWith("Premium") == true)
@@ -188,10 +201,13 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Farben aus dem Schema statt fester Werte: passen zu Hell/Dunkel
+                    // und zu Material You (tertiaer = ok/Premium, sekundaer = gueltig
+                    // ohne Premium, error = ungueltig)
                     val (icon, tint) = when {
-                        isPremium -> Icons.Default.CheckCircle to Color(0xFF2E7D32)
-                        account.valid -> Icons.Default.Error to Color(0xFFEF6C00)
-                        account.lastChecked > 0 -> Icons.Default.Error to MaterialTheme.colorScheme.error
+                        isPremium -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.tertiary
+                        account.valid -> JdIcons.Error to MaterialTheme.colorScheme.secondary
+                        account.lastChecked > 0 -> JdIcons.Error to MaterialTheme.colorScheme.error
                         else -> Icons.Default.Refresh to MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
@@ -265,11 +281,12 @@ private fun TrafficLine(account: Account) {
 
 @Composable
 private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
-    var selected by remember { mutableStateOf<Hoster?>(null) }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
-    val hoster = selected
+    // Eingaben ueberleben Drehen; der Hoster wird ueber seine ID gesichert
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var apiKey by rememberSaveable { mutableStateOf("") }
+    val hoster = vm.hosters.firstOrNull { it.id == selectedId }
     val valid = hoster != null && if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
         username.isNotBlank() && password.isNotBlank()
     } else {
@@ -302,8 +319,8 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                 vm.hosters.forEach { h ->
                     HosterSelectCard(
                         hoster = h,
-                        selected = selected?.id == h.id,
-                        onClick = { selected = h }
+                        selected = selectedId == h.id,
+                        onClick = { selectedId = h.id }
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -340,7 +357,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             value = password,
                             onValueChange = { password = it },
                             label = { Text("Passwort") },
-                            leadingIcon = { Icon(Icons.Default.Key, null) },
+                            leadingIcon = { Icon(JdIcons.Key, null) },
                             visualTransformation = PasswordVisualTransformation(),
                             // Passwort-Tastatur: keine Autokorrektur, kein Leerzeichen nach Punkt
                             keyboardOptions = KeyboardOptions(
@@ -355,7 +372,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             value = apiKey,
                             onValueChange = { apiKey = it },
                             label = { Text("API-Key") },
-                            leadingIcon = { Icon(Icons.Default.Key, null) },
+                            leadingIcon = { Icon(JdIcons.Key, null) },
                             // Wie die Browser-Adresszeile: keine Autokorrektur, keine Leerzeichen
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Uri,
@@ -401,15 +418,18 @@ private fun HosterSelectCard(hoster: Hoster, selected: Boolean, onClick: () -> U
         if (selected) hosterColor(hoster.id) else MaterialTheme.colorScheme.outlineVariant,
         label = "border"
     )
+    // selectable statt onClick: Screenreader melden "ausgewaehlt" und die
+    // Rolle Optionsfeld, wie bei einer Einfachauswahl ueblich
     Card(
-        onClick = onClick,
         border = BorderStroke(if (selected) 2.dp else 1.dp, border),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) MaterialTheme.colorScheme.surfaceVariant
             else MaterialTheme.colorScheme.surface
         ),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             HosterAvatar(hoster)

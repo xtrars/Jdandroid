@@ -19,6 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
 /**
@@ -118,6 +121,82 @@ fun MetaRow(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVari
             text,
             style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
             color = color
+        )
+    }
+}
+
+/**
+ * Symbole, die nicht im schlanken material-icons-core enthalten sind. Die
+ * Pfaddaten entsprechen den Material-Symbolen (24-dp-Raster), damit das
+ * Erscheinungsbild dem der uebrigen Icons entspricht - ohne das grosse
+ * icons-extended-Paket (mehrere MB) einzubinden.
+ */
+object JdIcons {
+    private fun icon(name: String, pathData: String): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).addPath(pathData = addPathNodes(pathData), fill = SolidColor(Color.Black)).build()
+
+    /** Pfeil nach unten auf einer Linie: Downloads. */
+    val Download: ImageVector by lazy {
+        icon("Download", "M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z")
+    }
+
+    /** Kettenglied: Linksammler. */
+    val Link: ImageVector by lazy {
+        icon(
+            "Link",
+            "M3.9,12c0,-1.71 1.39,-3.1 3.1,-3.1h4V7H7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5h4v-1.9H7" +
+                "c-1.71,0 -3.1,-1.39 -3.1,-3.1zM8,13h8v-2H8v2zM17,7h-4v1.9h4c1.71,0 3.1,1.39 3.1,3.1" +
+                "s-1.39,3.1 -3.1,3.1h-4V17h4c2.76,0 5,-2.24 5,-5s-2.24,-5 -5,-5z"
+        )
+    }
+
+    /** Zwei Balken: Pause. */
+    val Pause: ImageVector by lazy {
+        icon("Pause", "M6,19h4V5H6v14zM14,5v14h4V5h-4z")
+    }
+
+    /** Geoeffneter Ordner: Datei waehlen. */
+    val FolderOpen: ImageVector by lazy {
+        icon(
+            "FolderOpen",
+            "M20,6h-8l-2,-2H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8" +
+                "c0,-1.1 -0.9,-2 -2,-2zM20,18H4V8h16v10z"
+        )
+    }
+
+    /** Kreis mit Ausrufezeichen: Fehler. */
+    val Error: ImageVector by lazy {
+        icon(
+            "Error",
+            "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM13,17h-2v-2h2v2z" +
+                "M13,13h-2V7h2v6z"
+        )
+    }
+
+    /** Kreis mit Fragezeichen: unbekannt / nicht geprueft. */
+    val Help: ImageVector by lazy {
+        icon(
+            "Help",
+            "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM13,19h-2v-2h2v2z" +
+                "M15.07,11.25l-0.9,0.92C13.45,12.9 13,13.5 13,15h-2v-0.5c0,-1.1 0.45,-2.1 1.17,-2.83" +
+                "l1.24,-1.26c0.37,-0.36 0.59,-0.86 0.59,-1.41 0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2H8" +
+                "c0,-2.21 1.79,-4 4,-4s4,1.79 4,4c0,0.88 -0.36,1.68 -0.93,2.25z"
+        )
+    }
+
+    /** Schluessel: Passwort / API-Key. */
+    val Key: ImageVector by lazy {
+        icon(
+            "Key",
+            "M21,10h-8.35C11.83,7.67 9.61,6 7,6c-3.31,0 -6,2.69 -6,6s2.69,6 6,6c2.61,0 4.83,-1.67 " +
+                "5.65,-4H13l2,2 2,-2 2,2 4,-4.04L21,10zM7,15c-1.65,0 -3,-1.35 -3,-3s1.35,-3 3,-3 " +
+                "3,1.35 3,3 -1.35,3 -3,3z"
         )
     }
 }

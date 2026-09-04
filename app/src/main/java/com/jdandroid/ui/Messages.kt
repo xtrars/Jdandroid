@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -113,7 +112,7 @@ private fun JdSnackbar(data: SnackbarData, kind: MessageKind) {
                     tint = accent, modifier = Modifier.size(22.dp)
                 )
                 MessageKind.ERROR -> Icon(
-                    Icons.Default.Error, contentDescription = null,
+                    JdIcons.Error, contentDescription = null,
                     tint = accent, modifier = Modifier.size(22.dp)
                 )
                 MessageKind.INFO -> Icon(

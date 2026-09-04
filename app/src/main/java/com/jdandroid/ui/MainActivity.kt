@@ -2,44 +2,43 @@ package com.jdandroid.ui
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
@@ -67,7 +66,11 @@ class MainActivity : ComponentActivity() {
         // werden die System-Insets nicht sauber eingerichtet und Leisten,
         // FABs oder Buttons koennen hinter den Systemleisten liegen.
         enableEdgeToEdge()
-        if (Build.VERSION.SDK_INT >= 33) {
+        // Nur beim ersten Start und nur, wenn die Berechtigung fehlt: sonst
+        // erscheint der Systemdialog bei jedem Drehen erneut.
+        if (Build.VERSION.SDK_INT >= 33 && savedInstanceState == null &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         // Nur beim ersten Start: nach einer Neuerstellung (Drehen, Dunkelmodus-
@@ -91,11 +94,16 @@ class MainActivity : ComponentActivity() {
         val settings = (application as JdApp).settings
         // Gespeicherten Modus synchron lesen: sonst zeigt der erste Frame das
         // Systemschema und springt danach um (Blitz bei jedem Kaltstart).
-        val initialMode = runBlocking { settings.themeMode.first() }
-        val initialDynamic = runBlocking { settings.dynamicColors.first() }
+        // Ein einziger blockierender Aufruf; schlaegt das Lesen fehl, gilt
+        // das Systemschema statt eines Absturzes beim Start.
+        val (initialMode, initialDynamic) = try {
+            runBlocking { settings.themeMode.first() to settings.dynamicColors.first() }
+        } catch (e: Exception) {
+            "system" to false
+        }
         setContent {
-            val modeKey by settings.themeMode.collectAsState(initial = initialMode)
-            val dynamic by settings.dynamicColors.collectAsState(initial = initialDynamic)
+            val modeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = initialMode)
+            val dynamic by settings.dynamicColors.collectAsStateWithLifecycle(initialValue = initialDynamic)
             val mode = ThemeMode.fromKey(modeKey)
             val dark = isDarkFor(mode)
             // Systemleisten zur gewaehlten Helligkeit passend einfaerben - auch
@@ -189,13 +197,41 @@ fun MainScreen(
     // damit direkt im Bundle sicherbar)
     var tab by rememberSaveable { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
-    val autoStart by (context.applicationContext as JdApp).settings.autoStartLinks.collectAsState(initial = false)
-    // Ein DLC gehoert in den Linksammler (bei Sofortstart in die Downloads):
-    // dorthin wechseln, die Meldung erscheint dort
-    LaunchedEffect(dlcContent) { if (dlcContent != null) tab = if (autoStart) Tab.Downloads else Tab.Collector }
+    val settings = (context.applicationContext as JdApp).settings
+    val downloadVm: DownloadViewModel = viewModel()
+    val accountVm: AccountViewModel = viewModel()
+
+    // Die Dialoge "Links hinzufuegen" und "Konto hinzufuegen" werden von hier
+    // aus geoeffnet (Plus-Knopf der aeusseren Scaffold, geteilter Text) und
+    // ueberleben Drehen und Tabwechsel.
+    var showAddLinks by rememberSaveable { mutableStateOf(false) }
+    var addLinksPrefill by rememberSaveable { mutableStateOf("") }
+    var showAddAccount by rememberSaveable { mutableStateOf(false) }
+
+    // Ein DLC wird unabhaengig vom offenen Tab importiert (der Linksammler
+    // ist bei Sofortstart gar nicht aufgebaut); danach dorthin wechseln, wo
+    // die Links landen.
+    LaunchedEffect(dlcContent) {
+        if (dlcContent != null) {
+            downloadVm.importDlc(dlcContent)
+            onDlcConsumed()
+            tab = if (settings.currentAutoStartLinks()) Tab.Downloads else Tab.Collector
+        }
+    }
     // Geteilter Text oeffnet den Dialog im Linksammler - also dorthin wechseln,
     // sonst passiert bei offenem Konten-/Einstellungs-Tab sichtbar nichts
-    LaunchedEffect(sharedText) { if (sharedText != null) tab = Tab.Collector }
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            addLinksPrefill = sharedText
+            showAddLinks = true
+            onSharedTextConsumed()
+            tab = Tab.Collector
+        }
+    }
+    // Zurueck fuehrt erst zu den Downloads, dann aus der App. Die Bildschirme
+    // registrieren eigene Handler (Suche schliessen, Browser-Login) spaeter
+    // und haben damit Vorrang.
+    BackHandler(enabled = tab != Tab.Downloads) { tab = Tab.Downloads }
 
     // Zentrale Meldungen (DLC-Import, Kontofehler, ...): eine Fortschrittsmeldung
     // bleibt stehen, bis die naechste Meldung sie abloest.
@@ -215,16 +251,20 @@ fun MainScreen(
     crashReport?.let { report ->
         CrashDialog(report = report, onDismiss = { crashReport = null })
     }
-    val downloadVm: DownloadViewModel = viewModel()
-    val accountVm: AccountViewModel = viewModel()
 
     // Browser-Login ersetzt vorruebergehend den ganzen Bildschirm, damit die
     // System-Insets greifen und die Schaltflaechen sichtbar bleiben.
-    val webLoginHoster by accountVm.webLogin.collectAsState()
+    val webLoginHoster by accountVm.webLogin.collectAsStateWithLifecycle()
     val webLoginUrl = webLoginHoster?.webLoginUrl
     if (webLoginUrl != null) {
+        val webLoginStatus by accountVm.webLoginStatus.collectAsStateWithLifecycle()
+        val webLoginCookies by accountVm.webLoginCookies.collectAsStateWithLifecycle()
         WebLoginScreen(
             loginUrl = webLoginUrl,
+            status = webLoginStatus,
+            detectedCookies = webLoginCookies,
+            onStatusChange = { accountVm.setWebLoginStatus(it) },
+            onCookiesDetected = { accountVm.setWebLoginCookies(it) },
             onCancel = { accountVm.cancelWebLogin() },
             onAccept = { accountVm.completeWebLogin(it) }
         )
@@ -236,6 +276,19 @@ fun MainScreen(
         // die NavigationBar selbst - sonst kaeme der Abstand doppelt.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { JdSnackbarHost(messageHost) },
+        // Plus-Knopf in der aeusseren Scaffold: so schiebt die Snackbar den
+        // Knopf nach oben statt ihn zu verdecken.
+        floatingActionButton = {
+            when (tab) {
+                Tab.Collector -> FloatingActionButton(
+                    onClick = { addLinksPrefill = ""; showAddLinks = true }
+                ) { Icon(Icons.Default.Add, contentDescription = "Links hinzufügen") }
+                Tab.Accounts -> FloatingActionButton(
+                    onClick = { showAddAccount = true }
+                ) { Icon(Icons.Default.Add, contentDescription = "Konto hinzufügen") }
+                else -> {}
+            }
+        },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->
@@ -245,8 +298,8 @@ fun MainScreen(
                         icon = {
                             Icon(
                                 when (t) {
-                                    Tab.Downloads -> Icons.Default.Download
-                                    Tab.Collector -> Icons.Default.Link
+                                    Tab.Downloads -> JdIcons.Download
+                                    Tab.Collector -> JdIcons.Link
                                     Tab.Accounts -> Icons.Default.Person
                                     Tab.Settings -> Icons.Default.Settings
                                 },
@@ -260,14 +313,44 @@ fun MainScreen(
         }
     ) { padding ->
         val modifier = Modifier.padding(padding)
-        when (tab) {
-            Tab.Downloads -> DownloadsScreen(downloadVm, modifier)
-            Tab.Collector -> LinkGrabberScreen(
-                downloadVm, dlcContent, onDlcConsumed, sharedText, onSharedTextConsumed,
-                onLinksStarted = { tab = Tab.Downloads }, modifier = modifier
+        // Zustand je Tab (Suche, Filter, zugeklappte Pakete, Scrollposition)
+        // beim Tabwechsel behalten statt jedes Mal neu aufzubauen
+        val holder = rememberSaveableStateHolder()
+        holder.SaveableStateProvider(tab.name) {
+            when (tab) {
+                Tab.Downloads -> DownloadsScreen(downloadVm, modifier)
+                Tab.Collector -> LinkGrabberScreen(downloadVm, modifier)
+                Tab.Accounts -> AccountsScreen(
+                    accountVm,
+                    showAdd = showAddAccount,
+                    onShowAddChange = { showAddAccount = it },
+                    modifier = modifier
+                )
+                Tab.Settings -> SettingsScreen(modifier)
+            }
+        }
+    }
+
+    if (showAddLinks) {
+        // key: neue Vorbelegung (geteilter Text) setzt den Dialogtext zurueck
+        key(addLinksPrefill) {
+            AddLinksDialog(
+                initialText = addLinksPrefill,
+                onDismiss = { showAddLinks = false },
+                onAdd = { text, pkg ->
+                    downloadVm.addLinks(text, pkg) { added, toCollector ->
+                        if (added > 0) {
+                            AppMessages.success(
+                                if (toCollector) "$added Link(s) in den Linksammler übernommen"
+                                else "$added Link(s) gestartet"
+                            )
+                            if (!toCollector) tab = Tab.Downloads
+                        } else {
+                            AppMessages.info("Keine neuen Links – alle bereits vorhanden")
+                        }
+                    }
+                }
             )
-            Tab.Accounts -> AccountsScreen(accountVm, modifier)
-            Tab.Settings -> SettingsScreen(modifier)
         }
     }
 }

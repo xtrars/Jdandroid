@@ -8,25 +8,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,84 +45,48 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jdandroid.container.ContainerFiles
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.OnlineState
 import com.jdandroid.hoster.HosterRegistry
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 /**
  * Linksammler wie im JDownloader: neue Links landen hier, werden online
  * geprueft (Name, Groesse, verfuegbar?) und erst auf "Starten" in die
- * Download-Liste uebernommen. DLC-Dateien werden hier importiert, die
- * Rueckmeldung erscheint als Snackbar in diesem Bildschirm.
+ * Download-Liste uebernommen. Der Dialog "Links hinzufuegen" sowie der
+ * DLC-Import per "Oeffnen mit" laufen tab-unabhaengig in der MainActivity;
+ * hier bleibt der DLC-Dateiwaehler in der Titelleiste.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LinkGrabberScreen(
     vm: DownloadViewModel,
-    dlcContent: String?,
-    onDlcConsumed: () -> Unit,
-    sharedText: String?,
-    onSharedTextConsumed: () -> Unit,
-    onLinksStarted: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val groups by vm.collectorGroups.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
-    var prefill by remember { mutableStateOf("") }
-
-    // Geteilter Text (Browser -> Teilen) oeffnet den Dialog mit Vorbelegung
-    LaunchedEffect(sharedText) {
-        if (sharedText != null) {
-            prefill = sharedText
-            showAddDialog = true
-            onSharedTextConsumed()
-        }
-    }
+    val groups by vm.collectorGroups.collectAsStateWithLifecycle()
     val total = groups.sumOf { it.items.size }
     val offline = groups.sumOf { g -> g.items.count { it.online == OnlineState.OFFLINE } }
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // DLC ueber "Oeffnen mit"/Teilen: kommt aus der MainActivity hierher
-    LaunchedEffect(dlcContent) {
-        if (dlcContent != null) {
-            vm.importDlc(dlcContent)
-            onDlcConsumed()
-        }
-    }
-
-    // DLC aus der App heraus waehlen (Systemdialog; DLC hat keinen MIME-Typ)
+    // DLC aus der App heraus waehlen (Systemdialog; DLC hat keinen MIME-Typ).
+    // Lesen und Import laufen im ViewModel, damit Drehen oder ein Tabwechsel
+    // waehrend des Lesens nichts abbricht.
     val dlcPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch(Dispatchers.IO) {
-            val result = runCatching { ContainerFiles.readText(context.contentResolver, uri) }
-            val content = result.getOrNull()
-            when {
-                content == null -> AppMessages.error(
-                    result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
-                )
-                !ContainerFiles.looksLikeDlc(content) ->
-                    AppMessages.error("Die gewählte Datei ist kein DLC-Container")
-                else -> vm.importDlc(content)
-            }
-        }
+        if (uri != null) vm.importDlcFromUri(context.contentResolver, uri)
     }
 
     Scaffold(
         modifier = modifier,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Linksammler") },
                 colors = jdTopBarColors(),
                 actions = {
                     IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "DLC-Datei importieren")
+                        Icon(JdIcons.FolderOpen, contentDescription = "DLC-Datei importieren")
                     }
                     IconButton(onClick = { vm.recheckCollected() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Erneut prüfen")
@@ -135,15 +96,15 @@ fun LinkGrabberScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { prefill = ""; showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Links hinzufügen")
-            }
         }
     ) { padding ->
+        // Seitliche Insets (Displayausschnitt, Querformat) freihalten
+        val content = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
         if (groups.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
+            Box(content.padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "Der Linksammler ist leer.\n\nNeue Links (Einfügen, Teilen, DLC über das " +
                         "Ordner-Symbol, Click'n'Load) erscheinen hier, werden online geprüft " +
@@ -155,9 +116,10 @@ fun LinkGrabberScreen(
             }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(padding),
+                content,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(12.dp)
+                // Unten Platz fuer den Plus-Knopf, damit er die letzte Zeile nicht verdeckt
+                contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 88.dp)
             ) {
                 if (offline > 0) {
                     item(key = "offline-hint") {
@@ -180,36 +142,14 @@ fun LinkGrabberScreen(
                     }
                     item(key = "cgap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
                 }
-                // Platz fuer den Plus-Knopf, damit er die letzte Zeile nicht verdeckt
-                item(key = "fab-space") { Spacer(Modifier.height(72.dp)) }
             }
         }
-    }
-
-    if (showAddDialog) {
-        AddLinksDialog(
-            initialText = prefill,
-            onDismiss = { showAddDialog = false },
-            onAdd = { text, pkg ->
-                vm.addLinks(text, pkg) { added, toCollector ->
-                    if (added > 0) {
-                        AppMessages.success(
-                            if (toCollector) "$added Link(s) in den Linksammler übernommen"
-                            else "$added Link(s) gestartet"
-                        )
-                        if (!toCollector) onLinksStarted()
-                    } else {
-                        AppMessages.info("Keine neuen Links – alle bereits vorhanden")
-                    }
-                }
-            }
-        )
     }
 }
 
 @Composable
 private fun CollectorPackageHeader(group: DownloadGroup, vm: DownloadViewModel) {
-    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val online = group.items.count { it.online == OnlineState.ONLINE }
     val checking = group.items.count { it.online == OnlineState.CHECKING }
     val known = group.items.filter { it.fileSize > 0 }.sumOf { it.fileSize }
@@ -299,14 +239,14 @@ private fun OnlineIcon(state: Int) {
             tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp)
         )
         OnlineState.OFFLINE -> Icon(
-            Icons.Default.Error, contentDescription = "Offline",
+            JdIcons.Error, contentDescription = "Offline",
             tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)
         )
         OnlineState.CHECKING -> CircularProgressIndicator(
             modifier = Modifier.size(20.dp), strokeWidth = 2.dp
         )
         else -> Icon(
-            Icons.Default.Help, contentDescription = "Nicht geprüft",
+            JdIcons.Help, contentDescription = "Nicht geprüft",
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)
         )
     }

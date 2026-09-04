@@ -1,18 +1,37 @@
 package com.jdandroid.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
-private val Context.dataStore by preferencesDataStore(name = "settings")
+// Eine beschaedigte Einstellungsdatei (z.B. nach Stromausfall beim Schreiben)
+// darf die App nicht bei jedem Start abstuerzen lassen: sie wird durch leere
+// Voreinstellungen ersetzt.
+private val Context.dataStore by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 class SettingsRepository(private val context: Context) {
+
+    /**
+     * Alle Flows leiten sich hiervon ab: ein Lesefehler liefert leere
+     * Voreinstellungen statt den Sammler (und damit die Oberflaeche) zu beenden.
+     */
+    private val prefs: Flow<Preferences> = context.dataStore.data.catch { e ->
+        if (e is IOException) emit(emptyPreferences()) else throw e
+    }
 
     private val keyMaxConcurrent = intPreferencesKey("max_concurrent")
     private val keyExportToDownloads = booleanPreferencesKey("export_to_downloads")
@@ -29,49 +48,49 @@ class SettingsRepository(private val context: Context) {
     private val keyDynamicColors = booleanPreferencesKey("dynamic_colors")
 
     val maxConcurrent: Flow<Int> =
-        context.dataStore.data.map { it[keyMaxConcurrent] ?: 2 }
+        prefs.map { it[keyMaxConcurrent] ?: 2 }
 
     val exportToDownloads: Flow<Boolean> =
-        context.dataStore.data.map { it[keyExportToDownloads] ?: true }
+        prefs.map { it[keyExportToDownloads] ?: true }
 
     val autoExtract: Flow<Boolean> =
-        context.dataStore.data.map { it[keyAutoExtract] ?: true }
+        prefs.map { it[keyAutoExtract] ?: true }
 
     val deleteArchiveAfterExtract: Flow<Boolean> =
-        context.dataStore.data.map { it[keyDeleteArchive] ?: false }
+        prefs.map { it[keyDeleteArchive] ?: false }
 
     /** Eintraege eines Archivs nach erfolgreichem Entpacken aus der Liste entfernen (wie JDownloader). */
     val removeLinksAfterExtract: Flow<Boolean> =
-        context.dataStore.data.map { it[keyRemoveAfterExtract] ?: true }
+        prefs.map { it[keyRemoveAfterExtract] ?: true }
 
     /** Passwortliste, ein Passwort pro Zeile. */
     val passwordList: Flow<String> =
-        context.dataStore.data.map { it[keyPasswords] ?: "" }
+        prefs.map { it[keyPasswords] ?: "" }
 
     /** Globales Download-Limit in KB/s, 0 = unbegrenzt. */
     val speedLimitKbps: Flow<Int> =
-        context.dataStore.data.map { it[keySpeedLimit] ?: 0 }
+        prefs.map { it[keySpeedLimit] ?: 0 }
 
     /** Downloads nur über nicht-getaktete Verbindungen (WLAN). */
     val wifiOnly: Flow<Boolean> =
-        context.dataStore.data.map { it[keyWifiOnly] ?: false }
+        prefs.map { it[keyWifiOnly] ?: false }
 
     /**
      * Neue Links sofort starten statt sie im Linksammler zu sammeln.
      * Standard aus - wie im JDownloader landen Links erst im Linksammler.
      */
     val autoStartLinks: Flow<Boolean> =
-        context.dataStore.data.map { it[keyAutoStart] ?: false }
+        prefs.map { it[keyAutoStart] ?: false }
 
     /** Per Storage Access Framework gewaehlter Zielordner (Tree-URI), null = Downloads/JDAndroid. */
     val downloadTreeUri: Flow<String?> =
-        context.dataStore.data.map { it[keyDownloadTree]?.ifBlank { null } }
+        prefs.map { it[keyDownloadTree]?.ifBlank { null } }
 
     /** "system", "light" oder "dark". */
-    val themeMode: Flow<String> = context.dataStore.data.map { it[keyThemeMode] ?: "system" }
+    val themeMode: Flow<String> = prefs.map { it[keyThemeMode] ?: "system" }
 
     /** Material-You-Farben vom Hintergrundbild (ab Android 12); aus = eigene Palette. */
-    val dynamicColors: Flow<Boolean> = context.dataStore.data.map { it[keyDynamicColors] ?: false }
+    val dynamicColors: Flow<Boolean> = prefs.map { it[keyDynamicColors] ?: false }
 
     suspend fun setThemeMode(value: String) {
         context.dataStore.edit { it[keyThemeMode] = value }
@@ -106,7 +125,7 @@ class SettingsRepository(private val context: Context) {
 
     /** Click'n'Load-Server (Port 9666) aktiv. */
     val clickNLoadEnabled: Flow<Boolean> =
-        context.dataStore.data.map { it[keyClickNLoad] ?: false }
+        prefs.map { it[keyClickNLoad] ?: false }
 
     suspend fun currentMaxConcurrent(): Int = maxConcurrent.first()
 

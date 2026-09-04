@@ -1,69 +1,67 @@
 package com.jdandroid.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.FilterChip
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jdandroid.container.ContainerFiles
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.hoster.HosterRegistry
@@ -118,17 +116,30 @@ private enum class ListFilter(val label: String, val matches: (DownloadItem) -> 
     FAILED("Fehler", { it.status == DownloadStatus.FAILED || it.status == DownloadStatus.OFFLINE })
 }
 
+/** Zugeklappte Pakete ueber Drehen/Tabwechsel behalten: nur die IDs sichern. */
+private val collapsedSaver = listSaver<SnapshotStateMap<Long, Boolean>, Long>(
+    save = { map -> map.filterValues { it }.keys.toList() },
+    restore = { ids -> mutableStateMapOf<Long, Boolean>().apply { ids.forEach { put(it, true) } } }
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
     vm: DownloadViewModel,
     modifier: Modifier = Modifier
 ) {
-    val allGroups by vm.groups.collectAsState()
-    val collapsed = remember { mutableStateMapOf<Long, Boolean>() }
-    var searchOpen by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(ListFilter.ALL) }
+    val allGroups by vm.groups.collectAsStateWithLifecycle()
+    val collapsed = rememberSaveable(saver = collapsedSaver) { mutableStateMapOf<Long, Boolean>() }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf(ListFilter.ALL) }
+
+    // Zurueck schliesst zuerst die Suche (vor dem Tabwechsel der MainActivity)
+    BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
+    // Suchfeld beim Oeffnen direkt fokussieren, damit die Tastatur erscheint
+    val searchFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(searchOpen) { if (searchOpen) searchFocus.requestFocus() }
 
     // Suche und Filter wirken auf Eintraege; Pakete ohne Treffer verschwinden
     val groups = remember(allGroups, query, filter) {
@@ -148,7 +159,7 @@ fun DownloadsScreen(
     Scaffold(
         modifier = modifier,
         // Untere Systemleiste behandelt bereits die NavigationBar der MainActivity
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Downloads") },
@@ -166,14 +177,25 @@ fun DownloadsScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // Seitliche Insets (Displayausschnitt, Querformat) freihalten
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+        ) {
         if (searchOpen) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 placeholder = { Text("Dateiname oder Paket suchen") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .focusRequester(searchFocus)
             )
         }
         Row(
@@ -241,8 +263,8 @@ private fun PackageHeader(
     onToggle: () -> Unit,
     vm: DownloadViewModel
 ) {
-    var renaming by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var renaming by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
 
     PackageCard {
         Column(Modifier.padding(start = 2.dp, end = 4.dp, top = 6.dp, bottom = 10.dp)) {
@@ -282,7 +304,7 @@ private fun PackageHeader(
                         else vm.startPackage(group.pkg.id)
                     }) {
                         Icon(
-                            if (group.active) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (group.active) JdIcons.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (group.active) "Paket pausieren"
                             else "Paket starten"
                         )
@@ -313,7 +335,7 @@ private fun PackageHeader(
     }
 
     if (renaming) {
-        var name by remember { mutableStateOf(group.pkg.name) }
+        var name by rememberSaveable { mutableStateOf(group.pkg.name) }
         AlertDialog(
             onDismissRequest = { renaming = false },
             title = { Text("Paket umbenennen") },
@@ -343,7 +365,7 @@ private fun DownloadRow(
     modifier: Modifier = Modifier
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
-    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     if (confirmDelete) {
         ConfirmDeleteDialog(
             title = "Download löschen?",
@@ -412,7 +434,7 @@ private fun DownloadRow(
                 when (item.status) {
                     DownloadStatus.RUNNING, DownloadStatus.QUEUED ->
                         IconButton(onClick = { vm.pause(item.id) }) {
-                            Icon(Icons.Default.Pause, contentDescription = "Pause")
+                            Icon(JdIcons.Pause, contentDescription = "Pause")
                         }
                     DownloadStatus.PAUSED ->
                         IconButton(onClick = { vm.resume(item) }) {
