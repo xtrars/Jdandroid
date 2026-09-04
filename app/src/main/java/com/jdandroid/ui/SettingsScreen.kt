@@ -370,6 +370,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     "einen Premium-Account bzw. API-Key (Tab \"Konten\").",
                 style = MaterialTheme.typography.bodySmall
             )
+            Spacer(Modifier.height(12.dp))
+            // Installierte Version, damit bei Rueckfragen klar ist, welche APK laeuft
+            val version = remember {
+                runCatching {
+                    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+                    "JDAndroid ${info.versionName} (${androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info)})"
+                }.getOrDefault("JDAndroid")
+            }
+            Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
         }
     }

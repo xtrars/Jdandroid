@@ -55,6 +55,19 @@ class DdownloadHoster : Hoster {
         val asKb = raw * 1024
         return if (asKb <= 4.0 * DAILY_QUOTA) asKb.toLong() else raw.toLong()
     }
+
+    /**
+     * Plausibilitaet: Ein Rest oberhalb des Vierfachen des Tageskontingents
+     * kann nur eine falsch beschriftete Einheit sein (KB als MB gelesen ergab
+     * 193,9 TiB statt 193,9 GiB). Dann so lange durch 1024 teilen, bis der
+     * Wert ins Kontingent passt.
+     */
+    internal fun plausibleQuota(bytes: Long): Long {
+        var v = bytes
+        var guard = 0
+        while (v > 4 * DAILY_QUOTA && guard++ < 4) v /= 1024
+        return v
+    }
     /**
      * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
      * dass laengere Pfade (z.B. /register.html) als Code gelesen werden.
@@ -261,7 +274,19 @@ class DdownloadHoster : Hoster {
             }
         }
 
-        val traffic = parseTraffic(html)
+        val parsed = parseTraffic(html)
+        val traffic = parsed.copy(
+            left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
+            total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
+        )
+        // Erkannten Wert immer festhalten: so laesst sich eine falsche Einheit
+        // anhand des Seitenausschnitts nachvollziehen
+        com.jdandroid.Diagnostics.sink?.invoke(
+            "ddownload_account_parse",
+            "ddownload-Kontoseite: erkanntes Kontingent",
+            "rest=${parsed.left} (plausibel ${traffic.left}) gesamt=${parsed.total} unbegrenzt=${parsed.unlimited}\n" +
+                parsed.snippet.take(1200)
+        )
         if (traffic.left < 0 && !traffic.unlimited) {
             // Nicht lesbar: Seitenausschnitt fuer die Diagnose ablegen (nur Text,
             // keine Cookies/Zugangsdaten), damit das Muster nachgezogen werden kann.
@@ -375,7 +400,7 @@ class DdownloadHoster : Hoster {
         )
         val left = when {
             unlimited -> -1L
-            premiumLeft != null -> quotaToBytes(premiumLeft)
+            premiumLeft != null -> plausibleQuota(quotaToBytes(premiumLeft))
             else -> {
                 // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()

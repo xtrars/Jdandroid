@@ -86,3 +86,20 @@ class DdownloadQuotaUnitTest {
         assertEquals(193L shl 30, ddl.quotaToBytes(raw))
     }
 }
+
+class DdownloadPlausibilityTest {
+    private val ddl = DdownloadHoster()
+
+    @Test
+    fun tebibyteWerdenAufGibibyteZurueckgefuehrt() {
+        val wrong = (193.9 * (1L shl 40)).toLong()
+        val fixed = ddl.plausibleQuota(wrong)
+        assertTrue("$fixed", fixed in (193L shl 30)..(195L shl 30))
+    }
+
+    @Test
+    fun plausibleWerteBleibenUnveraendert() {
+        assertEquals(150L shl 30, ddl.plausibleQuota(150L shl 30))
+        assertEquals(0L, ddl.plausibleQuota(0L))
+    }
+}
