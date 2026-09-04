@@ -25,6 +25,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.0.11] – 2026-09-04
+
+### Hinzugefügt
+
+- Kontenansicht zeigt die Symbole der Hoster (Rapidgator, 1fichier, ddownload)
+  statt Anfangsbuchstaben; Herkunft und Hinweis in `THIRD_PARTY_NOTICES.md`.
+
 ## [0.0.10] – 2026-09-04
 
 ### Geändert
@@ -539,6 +546,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.0.11]: https://github.com/xtrars/Jdandroid/commit/e839f09
 [0.0.10]: https://github.com/xtrars/Jdandroid/commit/ceef892
 [0.0.9]: https://github.com/xtrars/Jdandroid/commit/f8e4331
 [0.0.8]: https://github.com/xtrars/Jdandroid/commit/f23de7f

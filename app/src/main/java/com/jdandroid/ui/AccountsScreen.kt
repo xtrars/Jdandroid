@@ -2,6 +2,7 @@ package com.jdandroid.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,7 +58,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
@@ -87,19 +91,47 @@ private fun hosterColor(@Suppress("UNUSED_PARAMETER") id: String): Color =
 
 @Composable
 private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
+    // Symbole der Hoster (aus deren oeffentlichen Website-Icons, siehe
+    // THIRD_PARTY_NOTICES.md). Der Hintergrund gehoert zum jeweiligen Logo,
+    // nicht zum Farbschema: Rapidgators Pfeil ist weiss und braucht eine
+    // dunkle Kachel, ddownload bringt sein Blau selbst mit.
+    val icon = hosterIcon(hoster.id)
+    val background = when (hoster.id) {
+        "rapidgator" -> Color(0xFF1B1B1F)
+        "ddownload" -> Color.Transparent
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
     Box(
         Modifier
             .size(size.dp)
-            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+            .clip(CircleShape)
+            .background(if (icon != null) background else MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            hoster.displayName.first().uppercase(),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
+        if (icon != null) {
+            Image(
+                painterResource(icon),
+                contentDescription = hoster.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(if (hoster.id == "ddownload") size.dp else (size * 0.78f).dp)
+            )
+        } else {
+            Text(
+                hoster.displayName.first().uppercase(),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
+}
+
+/** Symbol je Hoster; null, wenn keines hinterlegt ist (dann Anfangsbuchstabe). */
+private fun hosterIcon(id: String): Int? = when (id) {
+    "rapidgator" -> com.jdandroid.R.drawable.hoster_rapidgator
+    "onefichier" -> com.jdandroid.R.drawable.hoster_onefichier
+    "ddownload" -> com.jdandroid.R.drawable.hoster_ddownload
+    else -> null
 }
 
 /**

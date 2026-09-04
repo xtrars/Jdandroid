@@ -88,3 +88,11 @@ Bei jeder Änderung an `gradle/libs.versions.toml` oder an den Abhängigkeiten i
 nachziehen. Die Lizenz eines Artefakts steht im `<licenses>`-Block seiner
 POM-Datei im Gradle-Cache
 (`~/.gradle/caches/modules-2/files-2.1/<Gruppe>/<Name>/<Version>/…/*.pom`).
+
+## Hoster-Symbole
+
+Die Symbole der Hoster in der Kontenansicht (`app/src/main/res/drawable-nodpi/hoster_*.png`)
+stammen aus den öffentlichen Website-Icons von rapidgator.net, 1fichier.com und
+ddownload.com. Sie sind Kennzeichen der jeweiligen Betreiber und werden
+ausschließlich zur Identifikation des Dienstes verwendet; sie stehen nicht
+unter der Projektlizenz. Auf Wunsch eines Betreibers werden sie entfernt.

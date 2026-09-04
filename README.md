@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.0.10](https://img.shields.io/badge/Version-0.0.10-informational.svg)
+![Version 0.0.11](https://img.shields.io/badge/Version-0.0.11-informational.svg)
 
 ## English summary
 
@@ -25,7 +25,7 @@ per-package progress, Material You theming, Click'n'Load server bound to
 
 **Install.** No store release. Download the newest APK from
 [`release/`](release/) (currently
-[`JDAndroid-0.0.10.apk`](release/JDAndroid-0.0.10.apk)), allow installation
+[`JDAndroid-0.0.11.apk`](release/JDAndroid-0.0.11.apk)), allow installation
 from unknown sources for your browser or file manager, and open the file.
 Updates install over previous versions because every APK is signed with the
 same key. Requires Android 8.0 (API 26) or newer.
@@ -48,7 +48,7 @@ Click'n'Load-2-Protokoll und das DLC-Dateiformat, dessen Entschlüsselung über
 den Webdienst des JDownloader-Projekts läuft. „JDownloader“ ist ein Name der
 AppWork GmbH; JDAndroid steht in keiner Verbindung zu AppWork.
 
-**Fertige APK:** [`release/JDAndroid-0.0.10.apk`](release/JDAndroid-0.0.10.apk)
+**Fertige APK:** [`release/JDAndroid-0.0.11.apk`](release/JDAndroid-0.0.11.apk)
 (signiert, installierbar ab Android 8.0; Update über ältere Versionen möglich)
 
 ## Bildschirmfotos
@@ -187,16 +187,16 @@ Versionen:
 
 | Version | Datei |
 |---|---|
-| **0.0.10** (aktuell) | [`release/JDAndroid-0.0.10.apk`](release/JDAndroid-0.0.10.apk) |
+| **0.0.11** (aktuell) | [`release/JDAndroid-0.0.11.apk`](release/JDAndroid-0.0.11.apk) |
+| 0.0.10 | [`release/JDAndroid-0.0.10.apk`](release/JDAndroid-0.0.10.apk) |
 | 0.0.9 | [`release/JDAndroid-0.0.9.apk`](release/JDAndroid-0.0.9.apk) |
 | 0.0.8 | [`release/JDAndroid-0.0.8.apk`](release/JDAndroid-0.0.8.apk) |
 | 0.0.7 | [`release/JDAndroid-0.0.7.apk`](release/JDAndroid-0.0.7.apk) |
-| 0.0.6 | [`release/JDAndroid-0.0.6.apk`](release/JDAndroid-0.0.6.apk) |
 
 Die Versionsnummern wurden am 04.09.2026 von `1.5.7` auf `0.0.1`
 zurückgesetzt („0.0.x, solange die App nicht veröffentlicht ist“). Der
-interne `versionCode` zählt weiter hoch (1.5.7 = 23, 0.0.10 = 34), deshalb
-lässt sich 0.0.10 problemlos über 1.5.7 installieren. Einzelheiten stehen im
+interne `versionCode` zählt weiter hoch (1.5.7 = 23, 0.0.11 = 35), deshalb
+lässt sich 0.0.11 problemlos über 1.5.7 installieren. Einzelheiten stehen im
 [CHANGELOG](CHANGELOG.md).
 
 1. APK auf dem Gerät herunterladen (GitHub → `release/` → Datei → „Download raw file“).
