@@ -46,7 +46,6 @@ class SettingsRepository(private val context: Context) {
     private val keyAutoStart = booleanPreferencesKey("auto_start_links")
     private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
-    private val keyDynamicColors = booleanPreferencesKey("dynamic_colors")
 
     val maxConcurrent: Flow<Int> =
         prefs.map { it[keyMaxConcurrent] ?: 2 }
@@ -114,15 +113,8 @@ class SettingsRepository(private val context: Context) {
     /** "system", "light" oder "dark". */
     val themeMode: Flow<String> = prefs.map { it[keyThemeMode] ?: "system" }
 
-    /** Material-You-Farben vom Hintergrundbild (ab Android 12); aus = eigene Palette. */
-    val dynamicColors: Flow<Boolean> = prefs.map { it[keyDynamicColors] ?: false }
-
     suspend fun setThemeMode(value: String) {
         context.dataStore.edit { it[keyThemeMode] = value }
-    }
-
-    suspend fun setDynamicColors(value: Boolean) {
-        context.dataStore.edit { it[keyDynamicColors] = value }
     }
 
     suspend fun currentAutoStartLinks(): Boolean = autoStartLinks.first()

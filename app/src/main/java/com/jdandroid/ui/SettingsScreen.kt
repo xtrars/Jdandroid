@@ -134,7 +134,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             SectionTitle("Darstellung")
             SettingsGroup {
                 val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
-                val dynamic by settings.dynamicColors.collectAsStateWithLifecycle(initialValue = false)
                 Spacer(Modifier.height(6.dp))
                 Text("Hell / Dunkel", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(6.dp))
@@ -146,14 +145,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
                         ) { Text(m.label) }
                     }
-                }
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    SettingSwitch(
-                        title = "Farben vom Hintergrundbild (Material You)",
-                        subtitle = "Aus: eigene Petrol-Palette der App",
-                        checked = dynamic,
-                        onChange = { v -> scope.launch { settings.setDynamicColors(v) } }
-                    )
                 }
                 Spacer(Modifier.height(4.dp))
             }

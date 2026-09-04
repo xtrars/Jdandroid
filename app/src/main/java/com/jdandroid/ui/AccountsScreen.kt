@@ -78,25 +78,22 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Markenfarbe je Hoster für Avatare/Akzente. */
-private fun hosterColor(id: String): Color = when (id) {
-    "rapidgator" -> Color(0xFF2E7D32)
-    "onefichier" -> Color(0xFF1565C0)
-    "ddownload" -> Color(0xFF6A1B9A)
-    else -> Color(0xFF455A64)
-}
+/** Akzent fuer Avatare und Auswahl: Material-You-Primaerfarbe statt Markenfarben. */
+@Composable
+private fun hosterColor(@Suppress("UNUSED_PARAMETER") id: String): Color =
+    MaterialTheme.colorScheme.primary
 
 @Composable
 private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
     Box(
         Modifier
             .size(size.dp)
-            .background(hosterColor(hoster.id), CircleShape),
+            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Text(
             hoster.displayName.first().uppercase(),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )

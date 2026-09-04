@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -98,14 +99,13 @@ class MainActivity : ComponentActivity() {
         // Systemschema und springt danach um (Blitz bei jedem Kaltstart).
         // Ein einziger blockierender Aufruf; schlaegt das Lesen fehl, gilt
         // das Systemschema statt eines Absturzes beim Start.
-        val (initialMode, initialDynamic) = try {
-            runBlocking { settings.themeMode.first() to settings.dynamicColors.first() }
+        val initialMode = try {
+            runBlocking { settings.themeMode.first() }
         } catch (e: Exception) {
-            "system" to false
+            "system"
         }
         setContent {
             val modeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = initialMode)
-            val dynamic by settings.dynamicColors.collectAsStateWithLifecycle(initialValue = initialDynamic)
             val mode = ThemeMode.fromKey(modeKey)
             val dark = isDarkFor(mode)
             // Systemleisten zur gewaehlten Helligkeit passend einfaerben - auch
@@ -114,14 +114,17 @@ class MainActivity : ComponentActivity() {
                 val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                 else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-                // Fensterhintergrund mitziehen, damit beim Drehen kein heller
-                // Streifen unter der Oberflaeche aufblitzt
-                window.setBackgroundDrawable(
-                    android.graphics.drawable.ColorDrawable(if (dark) 0xFF0F1417.toInt() else 0xFFF6F9FB.toInt())
-                )
             }
-            JdTheme(mode = mode, dynamicColors = dynamic) {
-                Surface(color = MaterialTheme.colorScheme.background) {
+            JdTheme(mode = mode) {
+                // Fensterhintergrund in der Schemafarbe, damit beim Drehen kein
+                // andersfarbiger Streifen unter der Oberflaeche aufblitzt
+                val background = MaterialTheme.colorScheme.background
+                LaunchedEffect(background) {
+                    window.setBackgroundDrawable(
+                        android.graphics.drawable.ColorDrawable(background.toArgb())
+                    )
+                }
+                Surface(color = background) {
                     MainScreen(
                         sharedText = sharedText.value,
                         onSharedTextConsumed = { sharedText.value = null },
