@@ -209,8 +209,13 @@ if (funde.length === 0) {
   return { confirmed: [], refuted: [], fixed: [], build: 'nicht noetig - keine Funde' }
 }
 
+// Modi fuer aufgeteilte Laeufe: nurVerifizieren (Ergebnis zurueckgeben, nichts aendern),
+// nurBeheben (Funde gelten als bereits bestaetigt).
+const nurVerifizieren = !!(args && args.nurVerifizieren)
+const nurBeheben = !!(args && args.nurBeheben)
+
 phase('Verifizieren')
-const geprueft = await parallel(
+const geprueft = nurBeheben ? funde.map(f => ({ ...f, confirmed: true, verdicts: [] })) : await parallel(
   funde.map((f, i) => () =>
     parallel(
       ['Korrektheit', 'Relevanz im echten Ablauf'].map(linse => () =>
@@ -233,6 +238,12 @@ const geprueft = await parallel(
 const bestaetigt = geprueft.filter(Boolean).filter(f => f.confirmed)
 const widerlegt = geprueft.filter(Boolean).filter(f => !f.confirmed)
 log(`${bestaetigt.length} bestaetigt, ${widerlegt.length} widerlegt`)
+if (nurVerifizieren) {
+  return {
+    confirmed: bestaetigt.map(f => ({ title: f.title, file: f.file, line: f.line, severity: f.severity, scenario: f.scenario, fix: f.fix })),
+    refuted: widerlegt.map(f => ({ title: f.title, file: f.file, reasons: f.verdicts })),
+  }
+}
 
 phase('Beheben')
 // Nacheinander, gruppiert nach Datei: parallele Aenderungen an derselben Datei wuerden kollidieren.
