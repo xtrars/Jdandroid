@@ -108,7 +108,7 @@ class SettingsRepository(private val context: Context) {
     val speedLimitMbit: Flow<Double> =
         prefs.map { p ->
             p[keySpeedLimitMbit]
-                ?: p[keySpeedLimitKbps]?.let { kbps -> kbps * 1024.0 * 8 / 1_000_000 }
+                ?: p[keySpeedLimitKbps]?.let { kbps -> kbpsToMbit(kbps) }
                 ?: 0.0
         }
 
@@ -197,6 +197,9 @@ class SettingsRepository(private val context: Context) {
     companion object {
         /** Upper bound of the stored password list; every extraction tries all entries. */
         const val MAX_STORED_PASSWORDS = 200
+
+        /** Legacy limit in KiB/s as Mbit/s. */
+        fun kbpsToMbit(kbps: Int): Double = kbps * 1024.0 * 8 / 1_000_000
 
         /** Bytes per second for a limit in Mbit/s (0 = unlimited). */
         fun mbitToBytesPerSecond(mbit: Double): Long =

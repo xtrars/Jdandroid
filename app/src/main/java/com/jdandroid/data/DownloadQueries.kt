@@ -18,6 +18,15 @@ object DownloadQueries {
             "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END " +
             "WHERE id = :id AND status = 'COLLECTED'"
 
+    /**
+     * "Wi-Fi only" on a metered network: a running entry goes back to the
+     * queue with the [DownloadNotes.WAITING_WIFI] code, never a translated
+     * text. Only RUNNING rows, so a completion in progress is left alone.
+     */
+    const val REQUEUE_IF_RUNNING =
+        "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
+            "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
+
     /** "Resume all": paused and failed entries in one step, nothing else. */
     const val REQUEUE_PAUSED_AND_FAILED =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +

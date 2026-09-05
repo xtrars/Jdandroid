@@ -226,6 +226,34 @@ class ExtractorTest {
     }
 
     @Test
+    fun mehrteiliges7zWirdUeberAlleTeileEntpackt() {
+        val whole = File(tmp.root, "whole.7z")
+        val a = (1..3000).joinToString(" ") { "zeile$it" }
+        val b = "kurz"
+        SevenZOutputFile(whole).use { out ->
+            for ((name, text) in listOf("a.txt" to a, "b.txt" to b)) {
+                out.putArchiveEntry(SevenZArchiveEntry().apply { this.name = name })
+                out.write(text.toByteArray())
+                out.closeArchiveEntry()
+            }
+        }
+        // Split like 7-Zip's -v switch: raw bytes cut into equal volumes
+        val bytes = whole.readBytes()
+        whole.delete()
+        val dir = tmp.newFolder("vol7z")
+        val size = (bytes.size + 2) / 3
+        bytes.toList().chunked(size).forEachIndexed { i, chunk ->
+            File(dir, "set.7z.%03d".format(i + 1)).writeBytes(chunk.toByteArray())
+        }
+        assertEquals(3, dir.list()!!.size)
+
+        val dest = tmp.newFolder("out-vol7z")
+        assertNull(Extractor.extract(File(dir, "set.7z.001"), dest, emptyList()))
+        assertEquals(a, File(dest, "a.txt").readText())
+        assertEquals(b, File(dest, "b.txt").readText())
+    }
+
+    @Test
     fun findPrimaryVolumeBevorzugtErstenTeil() {
         val dir = tmp.newFolder("prim")
         listOf("film.part3.rar", "film.part2.rar", "film.part1.rar", "film.mkv").forEach {

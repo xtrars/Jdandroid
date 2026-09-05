@@ -2,6 +2,7 @@ package com.jdandroid.data
 
 import com.jdandroid.JdApp
 import com.jdandroid.R
+import com.jdandroid.hoster.AccountInfo
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.launch
@@ -28,38 +29,60 @@ object AccountRefresher {
             val dao = app.db.accountDao()
             val (account, upgradeError) = upgradeSecrets(dao, dao.byId(accountId) ?: return)
             val hoster = HosterRegistry.byId(account.hosterId) ?: return
-            val updated = try {
-                val info = hoster.checkAccount(account)
-                account.copy(
-                    valid = info.valid,
-                    premiumUntil = info.premiumUntil,
-                    trafficLeft = info.trafficLeft,
-                    trafficTotal = info.trafficTotal,
-                    trafficUnlimited = info.trafficUnlimited,
-                    statusText = statusWithUpgradeError(info.statusText, upgradeError),
-                    lastChecked = System.currentTimeMillis()
-                )
+            val result = try {
+                Result.success(hoster.checkAccount(account))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Only a permanent failure (wrong password, banned account,
-                // undecryptable credentials) invalidates the account; a network
-                // outage or Cloudflare must not push all downloads of the
-                // hoster into "no premium account".
-                val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
-                account.copy(
-                    valid = if (permanent) false else account.valid,
-                    statusText = (e.message ?: app.getString(R.string.service_account_check_failed)).let {
-                        if (!permanent && account.valid) app.getString(R.string.service_account_status_temporary, it)
-                        else it
-                    },
-                    lastChecked = System.currentTimeMillis()
-                )
+                Result.failure(e)
             }
-            dao.update(updated)
+            dao.update(
+                applyCheckResult(
+                    account, result, upgradeError, System.currentTimeMillis(),
+                    checkFailedText = app.getString(R.string.service_account_check_failed),
+                    temporaryText = { app.getString(R.string.service_account_status_temporary, it) }
+                )
+            )
         } finally {
             inFlight.remove(accountId)
         }
+    }
+
+    /**
+     * Account record after a check. Only a permanent failure (wrong password,
+     * banned account, undecryptable credentials) invalidates the account; a
+     * network outage or Cloudflare must not push all downloads of the hoster
+     * into "no premium account".
+     */
+    internal fun applyCheckResult(
+        account: Account,
+        result: Result<AccountInfo>,
+        upgradeError: String?,
+        now: Long,
+        checkFailedText: String,
+        temporaryText: (String) -> String
+    ): Account {
+        val info = result.getOrNull()
+        if (info != null) {
+            return account.copy(
+                valid = info.valid,
+                premiumUntil = info.premiumUntil,
+                trafficLeft = info.trafficLeft,
+                trafficTotal = info.trafficTotal,
+                trafficUnlimited = info.trafficUnlimited,
+                statusText = statusWithUpgradeError(info.statusText, upgradeError),
+                lastChecked = now
+            )
+        }
+        val e = result.exceptionOrNull()
+        val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
+        return account.copy(
+            valid = if (permanent) false else account.valid,
+            statusText = (e?.message ?: checkFailedText).let {
+                if (!permanent && account.valid) temporaryText(it) else it
+            },
+            lastChecked = now
+        )
     }
 
     /**
