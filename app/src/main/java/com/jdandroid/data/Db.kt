@@ -228,10 +228,7 @@ interface DownloadDao {
     suspend fun pauseActiveInPackage(packageId: Long)
 
     /** "Wi-Fi only": send a running download back to the queue. */
-    @Query(
-        "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
-            "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
-    )
+    @Query(DownloadQueries.REQUEUE_IF_RUNNING)
     suspend fun requeueIfRunning(id: Long)
 
     /** Completes only if the entry was not paused or deleted meanwhile. */

@@ -1,6 +1,7 @@
 package com.jdandroid.engine
 
 import com.jdandroid.core.FreeMode
+import com.jdandroid.data.Account
 import com.jdandroid.data.AccountDao
 import com.jdandroid.data.DownloadDao
 import com.jdandroid.data.DownloadItem
@@ -30,13 +31,27 @@ internal class FreeFlow(
      */
     suspend fun resolve(id: Long, item: DownloadItem, hoster: Hoster): ResolvedLink {
         val account = accountDao.validForHoster(item.hosterId)
-        val premium = account?.takeIf { it.hasPremium() }
-        return when {
-            premium != null -> hoster.resolve(item.url, premium)
-            settings.currentFreeMode() ->
-                hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
-            account != null -> throw HosterException(FreeMode.noPremiumMessage(), true)
-            else -> throw HosterException(FreeMode.disabledMessage(), true)
+        return when (choosePath(account, settings.currentFreeMode())) {
+            FreePath.PREMIUM -> hoster.resolve(item.url, account!!)
+            FreePath.FREE -> hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
+            FreePath.NO_PREMIUM_ERROR -> throw HosterException(FreeMode.noPremiumMessage(), true)
+            FreePath.DISABLED_ERROR -> throw HosterException(FreeMode.disabledMessage(), true)
+        }
+    }
+
+    internal companion object {
+        /**
+         * A premium account always wins, even with free mode on; a valid
+         * account without premium is an error unless free mode is on.
+         */
+        fun choosePath(account: Account?, freeMode: Boolean, now: Long = System.currentTimeMillis()): FreePath {
+            val valid = account?.takeIf { it.valid }
+            return when {
+                valid?.hasPremium(now) == true -> FreePath.PREMIUM
+                freeMode -> FreePath.FREE
+                valid != null -> FreePath.NO_PREMIUM_ERROR
+                else -> FreePath.DISABLED_ERROR
+            }
         }
     }
 
@@ -65,3 +80,6 @@ internal class FreeFlow(
         )
     }
 }
+
+/** Outcome of the premium-or-free decision for one resolve attempt. */
+internal enum class FreePath { PREMIUM, FREE, NO_PREMIUM_ERROR, DISABLED_ERROR }
