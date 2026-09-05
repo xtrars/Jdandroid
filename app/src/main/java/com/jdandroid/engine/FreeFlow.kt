@@ -13,11 +13,10 @@ import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.ResolvedLink
 
 /**
- * Ablauf ohne Premium: Wahl zwischen Premium- und Free-Weg beim Aufloesen,
- * Wartezeiten des Hosters und Captcha-Halt. Der Eintrag bleibt dabei QUEUED
- * mit einem retryAt in der Zukunft; pump() der Engine ueberspringt ihn bis
- * dahin und stellt den Timer. Den prozessweiten Zustand (Captcha-Seite,
- * Hinweise aus dem Browser) verwaltet [FreeDownloads].
+ * Premium-or-free decision when resolving a link, plus hoster wait times and
+ * captcha holds. A waiting entry stays QUEUED with a future retryAt; the
+ * engine's pump() skips it until then and arms the timer. Process-wide state
+ * (captcha page, browser hints) lives in [FreeDownloads].
  */
 internal class FreeFlow(
     private val dao: DownloadDao,
@@ -25,11 +24,9 @@ internal class FreeFlow(
     private val settings: SettingsRepository
 ) {
     /**
-     * Link aufloesen: nur ein Premium-Konto nimmt den Premium-Weg, ein
-     * gueltiges Free-Konto wuerde dort dauerhaft scheitern ("benoetigt
-     * Premium"). Ohne Premium der Free-Modus mit Wartezeiten und ggf.
-     * Captcha; die Hinweise aus der Captcha-Ansicht (Direktlink, Cookies)
-     * gelten fuer genau diesen Versuch.
+     * Only a premium account takes the premium path; a valid free account
+     * would fail there permanently. Browser hints (direct link, cookies)
+     * apply to this one attempt.
      */
     suspend fun resolve(id: Long, item: DownloadItem, hoster: Hoster): ResolvedLink {
         val account = accountDao.validForHoster(item.hosterId)
@@ -44,11 +41,9 @@ internal class FreeFlow(
     }
 
     /**
-     * Der Hoster verlangt eine Wartezeit. Der Eintrag bleibt QUEUED mit
-     * retryAt nach Ablauf (nextQueued prueft retryAt). Kein Fehlversuch -
-     * Warten ist kein Fehler. Gespeichert wird der Code [FreeMode.WAIT_CODE]
-     * samt Grund des Hosters ("Tageslimit erreicht"); die Anzeige baut daraus
-     * Countdown und Text.
+     * Keeps the entry QUEUED with retryAt after the hoster's wait time; this
+     * does not count as a failed attempt. The note stores [FreeMode.WAIT_CODE]
+     * plus the hoster's reason, from which the UI builds countdown and text.
      */
     suspend fun scheduleWait(id: Long, seconds: Int, reason: String?) {
         val item = dao.byId(id) ?: return
@@ -57,11 +52,9 @@ internal class FreeFlow(
     }
 
     /**
-     * Captcha noetig. Der Eintrag bleibt QUEUED, aber mit retryAt weit in der
-     * Zukunft - erst "Captcha loesen" (Browser) gibt ihn wieder frei. Seite
-     * und Session-Cookies merkt sich [FreeDownloads] prozessweit; gespeichert
-     * wird der Code [FreeMode.CAPTCHA_CODE] samt Grund des Hosters (Passwort,
-     * Turnstile).
+     * Keeps the entry QUEUED with retryAt far in the future; only solving the
+     * captcha in the browser releases it. Page and session cookies go to
+     * [FreeDownloads], the note stores [FreeMode.CAPTCHA_CODE] plus the reason.
      */
     suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
         val item = dao.byId(id) ?: return

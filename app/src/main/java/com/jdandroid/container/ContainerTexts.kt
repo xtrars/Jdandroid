@@ -4,16 +4,15 @@ import com.jdandroid.core.Texts
 import java.util.Locale
 
 /**
- * Nutzersichtbare Texte der Container-Schicht (Click'n'Load-Server, DLC),
- * die keinen Android-Context hat. Auf dem Geraet loest [Texts] den
- * Schluessel als String-Ressource aus `strings_service.xml` in der
- * Geraetesprache auf; ohne Provider (JVM-Unit-Tests) kommt der deutsche
- * Standardtext aus der Map hier. Jeder Schluessel steht wortgleich in
- * `res/values/strings_service.xml` und uebersetzt in `res/values-en/…`
- * (geprueft von `ContainerTextsTest`).
+ * User-visible texts of the container layer (Click'n'Load server, DLC), which
+ * has no Android context. On the device [Texts] resolves the key as a string
+ * resource from `strings_service.xml` in the device language; without a
+ * provider (JVM unit tests) the German default from this map is used. Every
+ * key exists verbatim in `res/values/strings_service.xml` and translated in
+ * `res/values-en/…` (checked by `ContainerTextsTest`).
  *
- * Mengen: [Texts] kennt nur String-Ressourcen, keine Plurals - daher je ein
- * Schluessel fuer Einzahl (`…_one`) und Mehrzahl (`…_other`), siehe [quantity].
+ * Quantities: [Texts] knows only string resources, no plurals, hence one key
+ * each for singular (`…_one`) and plural (`…_other`), see [quantity].
  */
 internal object ContainerTexts {
 
@@ -47,7 +46,7 @@ internal object ContainerTexts {
         "service_dlc_file_unreadable" to "Datei nicht lesbar"
     )
 
-    /** Text zu [key] in der Geraetesprache, sonst der deutsche Standardtext. */
+    /** Text for [key] in the device language, else the German default. */
     fun t(key: String, vararg args: Any): String {
         val resolved = Texts.t(key, *args)
         if (resolved != key) return resolved
@@ -55,7 +54,7 @@ internal object ContainerTexts {
         return if (args.isEmpty()) raw else String.format(Locale.getDefault(), raw, *args)
     }
 
-    /** Einzahl/Mehrzahl-Schluessel nach [count] waehlen; [count] ist das erste Argument. */
+    /** Picks the singular/plural key by [count]; [count] is the first argument. */
     fun quantity(keyOne: String, keyOther: String, count: Int, vararg args: Any): String =
         t(if (count == 1) keyOne else keyOther, count, *args)
 }

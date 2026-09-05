@@ -77,14 +77,11 @@ import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.hoster.HosterRegistry
 
-/** Trennzeichen zwischen den Angaben einer Meta-Zeile. */
 private const val SEPARATOR = " · "
 
 /**
- * Uebersetzt gespeicherte Vermerk-Codes ([DownloadNotes], Free-Modus-Vermerke
- * aus [FreeMode]) erst bei der Anzeige; fremde Texte (Hoster-Meldungen)
- * bleiben unveraendert. [retryAt] und [now] braucht nur der Free-Modus fuer
- * die Restzeit.
+ * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
+ * foreign texts such as hoster messages pass through unchanged.
  */
 @Composable
 private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String = when (note) {
@@ -93,7 +90,6 @@ private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String =
     else -> FreeMode.displayText(note, retryAt, now) ?: note
 }
 
-/** Rueckfrage vor unwiderruflichem Loeschen. */
 @Composable
 fun ConfirmDeleteDialog(
     title: String,
@@ -114,7 +110,6 @@ fun ConfirmDeleteDialog(
     )
 }
 
-/** Filter der Download-Liste (V5). */
 private enum class ListFilter(val label: Int, val matches: (DownloadItem) -> Boolean) {
     ALL(R.string.downloads_filter_all, { true }),
     ACTIVE(R.string.downloads_filter_active, { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING }),
@@ -123,7 +118,7 @@ private enum class ListFilter(val label: Int, val matches: (DownloadItem) -> Boo
     FAILED(R.string.downloads_filter_failed, { it.status == DownloadStatus.FAILED || it.status == DownloadStatus.OFFLINE })
 }
 
-/** Zugeklappte Pakete ueber Drehen/Tabwechsel behalten: nur die IDs sichern. */
+/** Saves collapsed packages across rotation and tab switches as a list of ids. */
 private val collapsedSaver = listSaver<SnapshotStateMap<Long, Boolean>, Long>(
     save = { map -> map.filterValues { it }.keys.toList() },
     restore = { ids -> mutableStateMapOf<Long, Boolean>().apply { ids.forEach { put(it, true) } } }
@@ -141,14 +136,13 @@ fun DownloadsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(ListFilter.ALL) }
 
-    // Zurueck schliesst zuerst die Suche (vor dem Tabwechsel der MainActivity)
+    // Registered after the MainActivity handler, so it takes precedence.
     BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
-    // Suchfeld beim Oeffnen direkt fokussieren, damit die Tastatur erscheint
     val searchFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(searchOpen) { if (searchOpen) searchFocus.requestFocus() }
 
-    // Suche und Filter wirken auf Eintraege; Pakete ohne Treffer verschwinden
+    // Packages without a matching item disappear.
     val groups = remember(allGroups, query, filter) {
         val q = query.trim().lowercase()
         allGroups.mapNotNull { g ->
@@ -162,10 +156,9 @@ fun DownloadsScreen(
         }
     }
 
-
     Scaffold(
         modifier = modifier,
-        // Untere Systemleiste behandelt bereits die NavigationBar der MainActivity
+        // The MainActivity's NavigationBar already handles the bottom inset.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
@@ -190,7 +183,6 @@ fun DownloadsScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                // Seitliche Insets (Displayausschnitt, Querformat) freihalten
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
         ) {
         if (searchOpen) {
@@ -263,7 +255,7 @@ fun DownloadsScreen(
 
 }
 
-/** Kopfzeile eines Pakets: Name, Gesamtfortschritt und Paketaktionen. */
+/** Package header: name, overall progress and package actions. */
 @Composable
 private fun PackageHeader(
     group: DownloadGroup,
@@ -293,7 +285,6 @@ private fun PackageHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    // Jede Angabe ist ein eigener uebersetzter Baustein; zusammengesetzt mit SEPARATOR
                     val parts = buildList {
                         add(pluralStringResource(R.plurals.downloads_file_count, group.items.size, group.items.size))
                         add(pluralStringResource(R.plurals.downloads_summary_finished, group.finished, group.finished))
@@ -319,8 +310,7 @@ private fun PackageHeader(
                     MetaRow(parts.joinToString(SEPARATOR))
                 }
                 if (group.pkg.id != 0L) {
-                    // Eine Aktion direkt (Start/Pause), alles Weitere im Menue -
-                    // sonst wird die Zeile mit Symbolen ueberladen
+                    // One direct action (start/pause); everything else goes in the menu.
                     IconButton(onClick = {
                         if (group.active) vm.pausePackage(group.pkg.id)
                         else vm.startPackage(group.pkg.id)
@@ -417,14 +407,14 @@ private fun PackageHeader(
 @Composable
 private fun DownloadRow(
     item: DownloadItem,
-    /** Entpack-Stand in Prozent (live), -1 = unbekannt. */
+    /** Live extraction percent, -1 = unknown. */
     extractPercent: Int,
     vm: DownloadViewModel,
     modifier: Modifier = Modifier
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    // Free-Modus: Wartezeit live herunterzaehlen, Captcha-Eintrag erkennen
+    // Free mode: live countdown of the wait time.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val freeWaiting = item.status == DownloadStatus.QUEUED && FreeMode.isWaitMessage(item.errorMessage)
     val captchaHold = item.status == DownloadStatus.QUEUED &&
@@ -533,7 +523,6 @@ private fun DownloadRow(
                 }
                 DownloadStatus.QUEUED -> when {
                     freeWaiting && item.retryAt > now -> {
-                        // Countdown laeuft in der Oberflaeche; der Grund stammt aus der gespeicherten Meldung
                         val remaining = FreeMode.formatWait(FreeMode.remainingSeconds(item.retryAt, now))
                         val reason = FreeMode.waitReason(item.errorMessage)
                         if (reason == null) stringResource(R.string.downloads_free_wait, remaining)

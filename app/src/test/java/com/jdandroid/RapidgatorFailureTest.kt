@@ -6,9 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Nur ein abgelaufener Token (401 ausserhalb des Logins) darf einen erneuten
- * Login auslösen. Sperren, Limits und Serverfehler sind vorübergehend, aber
- * kein Grund, die Session zu verwerfen (Loginzähler, Parallel-Session-Limit).
+ * Only an expired token (401 outside login) may trigger a new login. Blocks,
+ * limits and server errors are temporary but no reason to drop the session
+ * (login counter, parallel-session limit).
  */
 class RapidgatorFailureTest {
 

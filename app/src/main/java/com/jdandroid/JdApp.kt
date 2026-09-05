@@ -20,9 +20,9 @@ import kotlinx.coroutines.launch
 class JdApp : Application() {
 
     /**
-     * Hintergrundarbeit, die keinen Bildschirm braucht (z.B. Link-Pruefung).
-     * Mit Exception-Handler: ein voller Speicher (SQLiteFullException) darf
-     * die App nicht beenden, sondern wird als Meldung angezeigt.
+     * Scope for background work without a screen (e.g. link checks). The
+     * exception handler turns failures such as SQLiteFullException into a
+     * message instead of a crash.
      */
     val appScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + backgroundErrors(this, R.string.service_scope_background)
@@ -36,27 +36,23 @@ class JdApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install(this)
-        // Texte der Engine/Hoster-Schicht in der Geraetesprache aufloesen
         Texts.install(ResourceTexts(this))
-        // WebView-Kennung im Hintergrund holen (laedt den WebView-Provider)
+        // Off the main thread: this loads the WebView provider.
         Thread {
             com.jdandroid.hoster.Http.browserUserAgent =
                 runCatching { android.webkit.WebSettings.getDefaultUserAgent(this) }.getOrNull()
         }.start()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "jdandroid.db")
             .addMigrations(*AppDatabase.ALL_MIGRATIONS)
-            // Fruehe Entwicklungsstaende (Version 1-4) werden neu aufgebaut;
-            // ab Version 5 migrieren Updates verlustfrei.
+            // Early schema versions are rebuilt; later ones migrate losslessly.
             .fallbackToDestructiveMigrationFrom(true, *AppDatabase.DESTRUCTIVE_FROM)
-            // Nur bei einer aelteren App-Version als der Datenbank neu aufbauen
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsRepository(this)
-        // Die Datenschicht kennt den Download-Dienst nicht; der Start beim
-        // Einreihen wird hier (Kompositionswurzel) verdrahtet.
+        // The data layer does not know the download service; wire it up here.
         LinkSink.onQueued = { DownloadService.send(it, DownloadService.ACTION_PUMP) }
         createNotificationChannel()
-        // Beim Prozess-Ende haengen gebliebene Linkpruefungen zuruecksetzen
+        // Link checks interrupted by a process death would otherwise stay "checking".
         appScope.launch { db.downloadDao().resetChecking() }
     }
 
@@ -83,10 +79,9 @@ class JdApp : Application() {
         const val CHANNEL_EVENTS = "events"
 
         /**
-         * Unbehandelte Fehler in Hintergrund-Coroutinen als Meldung statt
-         * Absturz. [whereRes] ist der Bereichsname; er wird erst im Fehlerfall
-         * aufgeloest, weil der Handler in Feld-Initialisierern entsteht, wenn
-         * der Context noch nicht angebunden ist.
+         * Reports uncaught coroutine errors as a message instead of a crash.
+         * [whereRes] is resolved lazily: the handler is created in field
+         * initializers, before the context is attached.
          */
         fun backgroundErrors(context: Context, whereRes: Int) = CoroutineExceptionHandler { _, e ->
             val where = context.getString(whereRes)

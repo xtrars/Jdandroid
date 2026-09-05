@@ -41,9 +41,8 @@ import com.jdandroid.R
 import java.io.ByteArrayInputStream
 
 /**
- * Host-Filter des Login-Browsers: nur die Login-Domain (inkl. Subdomains) und
- * die Cloudflare-Challenge. Gilt fuer Navigationen und Subressourcen
- * (Bilder, Skripte, Iframes) gleichermassen.
+ * Host filter of the login browser: the login domain with subdomains and the
+ * Cloudflare challenge, for navigations and sub-resources alike.
  */
 internal fun isWebLoginHostAllowed(host: String?, loginHost: String): Boolean {
     val h = host?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
@@ -53,33 +52,22 @@ internal fun isWebLoginHostAllowed(host: String?, loginHost: String): Boolean {
         h == "challenges.cloudflare.com" || h.endsWith(".cloudflare.com")
 }
 
-/**
- * Browser-Session verwerfen: Cookies und WebStorage sind prozessweit, ohne
- * Loeschen blieben Hoster-Cookies auch nach Abbrechen im CookieManager.
- */
+/** Cookies and WebStorage are process-wide; hoster cookies must not linger there. */
 private fun clearWebSession() {
     runCatching { CookieManager.getInstance().removeAllCookies(null) }
     runCatching { WebStorage.getInstance().deleteAllData() }
 }
 
 /**
- * Anmeldung im eingebetteten Browser. Notwendig bei Hostern, deren
- * Login-Formular ein CAPTCHA verlangt (ddownload nutzt Cloudflare Turnstile):
- * headless ist das nicht loesbar. Nach erfolgreicher Anmeldung werden die
- * Session-Cookies uebernommen.
+ * Login in an embedded browser for hosters whose login form requires a
+ * captcha (ddownload uses Cloudflare Turnstile). The WebView only loads the
+ * login domain and the Cloudflare challenge; browser cookies and WebStorage
+ * are cleared after accepting as well as after cancelling.
  *
- * Sicherheit: Die WebView laedt nur Seiten und Subressourcen der Login-Domain
- * und der Cloudflare-Challenge; Drittanbieter-Cookies sind aus, und nach der
- * Uebernahme wie nach dem Abbrechen werden Browser-Cookies und WebStorage
- * geloescht (die Session liegt dann nur noch verschluesselt in der Datenbank).
- *
- * Bewusst ein vollwertiger Bildschirm statt eines Vollbild-Dialogs: nur so
- * greifen die System-Insets zuverlaessig. Die Schaltflaechen sitzen in der
- * Titelleiste und koennen daher nie aus dem sichtbaren Bereich rutschen.
- *
- * Statuszeile und erkannte Session kommen aus dem ViewModel ([status],
- * [detectedCookies]): die WebView selbst ueberlebt kein Drehen, die
- * Erkennung der Anmeldung soll aber nicht verloren gehen.
+ * A full screen rather than a dialog, because only then do the system insets
+ * apply reliably; the buttons live in the top bar and cannot be pushed off
+ * screen. [status] and [detectedCookies] belong to the ViewModel because the
+ * WebView does not survive rotation.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,13 +81,9 @@ fun WebLoginScreen(
     onCancel: () -> Unit,
     onAccept: (cookies: String) -> Unit
 ) {
-    // Referenz auf die aktuelle WebView fuer die Zurueck-Taste (zuerst in der
-    // Seitenhistorie zurueck, erst dann den Login abbrechen).
     var webView by remember { mutableStateOf<WebView?>(null) }
     val context = LocalContext.current
 
-    // Abbrechen: Browser-Session verwerfen, sonst bleiben die Hoster-Cookies
-    // im globalen CookieManager liegen.
     fun cancel() {
         clearWebSession()
         onCancel()
@@ -115,7 +99,7 @@ fun WebLoginScreen(
     fun cookiesFor(url: String): String? =
         CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }
 
-    /** XFileSharing setzt xfss/xfsts nach erfolgreichem Login. */
+    /** XFileSharing sets xfss/xfsts after a successful login. */
     fun looksLoggedIn(cookies: String?): Boolean =
         cookies != null && Regex("""\bxfs(s|ts)=""").containsMatchIn(cookies)
 
@@ -123,14 +107,11 @@ fun WebLoginScreen(
 
     fun accept(cookies: String) {
         onAccept(cookies)
-        // Browser-Session nach der Uebernahme entfernen: die Session bleibt
-        // nur noch verschluesselt in der App gespeichert.
         clearWebSession()
     }
 
     Scaffold(
-        // Tastatur-Insets mitnehmen, damit das Login-Formular ueber der
-        // Bildschirmtastatur bleibt statt dahinter zu verschwinden.
+        // Include the IME so the form stays above the keyboard.
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
@@ -165,7 +146,7 @@ fun WebLoginScreen(
                 factory = { context ->
                     CookieManager.getInstance().setAcceptCookie(true)
                     WebView(context).apply {
-                        // JavaScript ist fuer die Cloudflare-Challenge zwingend
+                        // Required by the Cloudflare challenge.
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.allowFileAccess = false
@@ -188,10 +169,8 @@ fun WebLoginScreen(
                                 return true
                             }
 
-                            // Subressourcen fremder Hosts (Bilder, Skripte,
-                            // Iframes) leer beantworten; shouldOverrideUrlLoading
-                            // greift nur bei Navigationen. Laeuft auf einem
-                            // Hintergrund-Thread, daher ohne Statusmeldung.
+                            // Sub-resources bypass shouldOverrideUrlLoading; runs
+                            // on a background thread, hence no status update.
                             override fun shouldInterceptRequest(
                                 view: WebView?,
                                 request: WebResourceRequest?
@@ -214,8 +193,7 @@ fun WebLoginScreen(
                         webView = this
                     }
                 },
-                // Beim Verlassen (Abbrechen, Uebernehmen, Drehen) die WebView
-                // sauber beenden, sonst laeuft sie samt Renderer weiter.
+                // Otherwise the WebView and its renderer keep running.
                 onRelease = { view ->
                     if (webView === view) webView = null
                     view.stopLoading()

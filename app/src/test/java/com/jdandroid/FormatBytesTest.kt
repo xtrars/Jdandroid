@@ -7,12 +7,12 @@ import org.junit.Before
 import org.junit.Test
 import java.util.Locale
 
-/** Groessenangaben sind 1024-basiert und liegen in der Kernschicht (auch fuer Benachrichtigungen). */
+/** Sizes are 1024-based. */
 class FormatBytesTest {
 
     private lateinit var previous: Locale
 
-    /** Das Dezimalzeichen folgt der Sprache; die Erwartungen unten sind deutsch. */
+    /** The decimal separator follows the locale; expectations below are German. */
     @Before
     fun deutscheSprache() {
         previous = Locale.getDefault()

@@ -4,23 +4,21 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
 /**
- * Meldungen an den Nutzer ("DLC wird importiert", "3 Links übernommen",
- * Fehler beim Speichern eines Kontos) laufen ueber einen zentralen Kanal.
- * Er liegt bewusst unterhalb der Oberflaeche: Engine und Hintergrunddienste
- * melden hierhin, ohne die UI-Schicht zu kennen; die Darstellung uebernimmt
- * die MainActivity.
+ * Central channel for user-facing messages. It sits below the UI layer so
+ * the engine and background services can post without knowing it; the
+ * MainActivity renders them.
  */
 enum class MessageKind { INFO, PROGRESS, SUCCESS, ERROR }
 
 data class AppMessage(val text: String, val kind: MessageKind = MessageKind.INFO)
 
 object AppMessages {
-    // replay = 1: eine Meldung, die vor dem Aufbau der Oberflaeche entsteht
-    // (z.B. "keine DLC-Datei" beim Kaltstart per Intent), geht nicht verloren.
+    // replay = 1: a message posted before the UI exists (e.g. a cold start
+    // via intent) is not lost.
     private val _events = MutableSharedFlow<AppMessage>(replay = 1, extraBufferCapacity = 16)
     val events: SharedFlow<AppMessage> = _events
 
-    /** Nach der Anzeige aufrufen, damit die Meldung nicht erneut erscheint. */
+    /** Call after display so the message is not replayed. */
     fun markShown() = _events.resetReplayCache()
 
     fun post(text: String, kind: MessageKind = MessageKind.INFO) {

@@ -6,9 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Sicherung gegen den behobenen OutOfMemoryError: Antworten, die keine
- * Textinhalte sind (z.B. die Datei selbst nach einer Weiterleitung), dürfen
- * nicht als String in den Speicher gelesen werden.
+ * Non-text responses (e.g. the file itself after a redirect) must never be
+ * read into memory as a string (OutOfMemoryError).
  */
 class DdownloadResponseTest {
 

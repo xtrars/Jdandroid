@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Konten (AccountsScreen), Hauptrahmen (MainActivity: Tabs, Plus-Knopf,
-         Meldungen) und ViewModels. Schluessel: accounts_<bedeutung>. -->
+    <!-- Accounts (AccountsScreen), main frame (MainActivity: tabs, plus button,
+         messages) and view models. Keys: accounts_<meaning>. -->
 
-    <!-- Kontenliste -->
+    <!-- Account list -->
     <string name="accounts_title">Konten</string>
     <string name="accounts_empty_hint">Noch keine Konten.\n\nMit + einen Premium-Account oder API-Key hinterlegen, damit Downloads starten können.</string>
     <string name="accounts_api_key_stored">API-Key hinterlegt</string>
@@ -16,13 +16,13 @@
     <string name="accounts_delete_text">%1$s: %2$s wird entfernt. Downloads dieses Hosters können danach nicht mehr starten.</string>
     <string name="accounts_api_key">API-Key</string>
 
-    <!-- Restmenge: Text plus Alter der Angabe -->
+    <!-- Remaining traffic: text plus age of the reading -->
     <string name="accounts_traffic_unlimited">unbegrenzt</string>
     <string name="accounts_traffic_unknown">Restmenge unbekannt</string>
     <string name="accounts_traffic_age_minutes">%1$s · vor %2$d min</string>
     <string name="accounts_traffic_age_hours">%1$s · vor %2$d h</string>
 
-    <!-- Dialog „Konto hinzufügen" -->
+    <!-- "Add account" dialog -->
     <string name="accounts_add_title">Konto hinzufügen</string>
     <string name="accounts_choose_hoster">Hoster wählen</string>
     <string name="accounts_username_label">Benutzername / E-Mail</string>
@@ -34,13 +34,13 @@
     <string name="accounts_selected">Ausgewählt</string>
     <string name="accounts_web_login_initial">Bitte anmelden – inklusive \"Ich bin kein Roboter\".</string>
 
-    <!-- Hauptrahmen: Tabs und Plus-Knopf -->
+    <!-- Main frame: tabs and plus button -->
     <string name="accounts_tab_downloads">Downloads</string>
     <string name="accounts_tab_collector">Linksammler</string>
     <string name="accounts_tab_settings">Einstellungen</string>
     <string name="accounts_add_links">Links hinzufügen</string>
 
-    <!-- Meldungen nach dem Hinzufügen von Links -->
+    <!-- Messages after adding links -->
     <plurals name="accounts_links_collected">
         <item quantity="one">%1$d Link in den Linksammler übernommen</item>
         <item quantity="other">%1$d Links in den Linksammler übernommen</item>
@@ -51,7 +51,7 @@
     </plurals>
     <string name="accounts_no_new_links">Keine neuen Links – alle bereits vorhanden</string>
 
-    <!-- DLC-Import -->
+    <!-- DLC import -->
     <string name="accounts_not_dlc_opened">Die geöffnete Datei ist kein DLC-Container.</string>
     <string name="accounts_not_dlc_chosen">Die gewählte Datei ist kein DLC-Container</string>
     <string name="accounts_dlc_read_failed">DLC-Datei konnte nicht gelesen werden</string>
@@ -73,7 +73,7 @@
     <string name="accounts_dlc_import_failed">DLC-Import fehlgeschlagen</string>
     <string name="accounts_dlc_invalid">DLC-Import fehlgeschlagen: Datei ist kein gültiger Container</string>
 
-    <!-- Pakete -->
+    <!-- Packages -->
     <string name="accounts_no_package">Ohne Paket</string>
     <string name="accounts_no_finished_archives">Keine fertigen Archive in diesem Paket</string>
 </resources>

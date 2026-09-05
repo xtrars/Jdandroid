@@ -10,11 +10,9 @@ import java.sql.DriverManager
 import java.sql.PreparedStatement
 
 /**
- * Grundlage fuer JVM-Tests der DAO-Abfragen: eine echte SQLite-Datenbank mit
- * dem exportierten Room-Schema (app/schemas, hoechste Version - wird die
- * Datenbank erhoeht, laufen die Tests automatisch gegen das neue Schema).
- * Zwei Pakete (1 "A", 2 "B") liegen bereit; [item] legt Eintraege wie die
- * App an, archiveKey aus dem Dateinamen abgeleitet.
+ * Base for JVM tests of DAO queries: a real SQLite database with the latest
+ * exported Room schema (app/schemas). Two packages (1 "A", 2 "B") exist;
+ * [item] creates entries like the app does, archiveKey derived from the name.
  */
 abstract class SchemaDbTest {
 
@@ -24,8 +22,7 @@ abstract class SchemaDbTest {
     fun openDb() {
         db = DriverManager.getConnection("jdbc:sqlite::memory:")
         val schema = latestSchema().readText()
-        // Alle CREATE-Anweisungen des Schemas (Tabellen und Indizes); jede
-        // Anweisung gehoert zur zuletzt genannten Tabelle
+        // Every CREATE statement belongs to the most recently named table
         var table = ""
         Regex(""""(tableName|createSql)":\s*"([^"]+)"""").findAll(schema).forEach { m ->
             when (m.groupValues[1]) {
@@ -56,7 +53,7 @@ abstract class SchemaDbTest {
         ).use { it.executeUpdate() }
     }
 
-    /** Benannte Parameter (:name) wie in Room binden: Nummer nach erstem Auftreten. */
+    /** Binds named parameters (:name) like Room: numbered by first occurrence. */
     protected fun bind(sql: String, vararg params: Pair<String, Any?>): PreparedStatement {
         val values = params.toMap()
         val names = Regex(""":(\w+)""").findAll(sql).map { it.groupValues[1] }.distinct().toList()
@@ -79,14 +76,13 @@ abstract class SchemaDbTest {
             st.executeQuery().use { rs -> generateSequence { if (rs.next()) rs.getLong("id") else null }.toList() }
         }
 
-    /** Eine Spalte eines Eintrags als Text (NULL -> null). */
     protected fun column(id: Long, column: String): String? =
         bind("SELECT $column FROM downloads WHERE id = :id", "id" to id).use { st ->
             st.executeQuery().use { rs -> rs.next(); rs.getString(1) }
         }
 
     private companion object {
-        /** Hoechste N.json unter app/schemas - numerisch sortiert, nicht als Text. */
+        /** Highest N.json under app/schemas, sorted numerically. */
         fun latestSchema(): File =
             listOf("schemas", "app/schemas")
                 .map { File(it, "com.jdandroid.data.AppDatabase") }

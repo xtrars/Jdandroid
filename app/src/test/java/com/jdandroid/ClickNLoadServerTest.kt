@@ -21,20 +21,20 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * End-to-End-Test des Click'n'Load-Servers: startet ihn wie in der App und
- * sendet exakt die Anfragen, die eine Browser-Seite mit CnL-Button schickt.
+ * End-to-end test of the Click'n'Load server: starts it like the app and
+ * sends exactly the requests a browser page with a CnL button sends.
  */
 class ClickNLoadServerTest {
 
     private lateinit var server: ClickNLoadServer
-    // Der Server-Thread schreibt hinein, der Testthread liest: thread-sicher halten
+    // Written by the server thread, read by the test thread
     private val received = CopyOnWriteArrayList<CnlRequest>()
     private var port = 0
 
     @Before
     fun start() {
-        // Port 0 = freier Port statt 9666, damit der Test nicht mit einer
-        // laufenden App oder einem parallelen Testlauf kollidiert
+        // Port 0 = free port, so the test does not collide with a running app
+        // or a parallel test run
         server = ClickNLoadServer(port = 0) { request -> received.add(request) }
         server.start()
         port = server.listeningPort
@@ -49,7 +49,7 @@ class ClickNLoadServerTest {
     fun testserverBelegtFreienPortStatt9666() {
         assertTrue("Port muss vergeben sein", port > 0)
         assertTrue("Port darf nicht der feste App-Port sein", port != ClickNLoadServer.PORT)
-        // Ein zweiter Server (paralleler Testlauf) muss gleichzeitig starten koennen
+        // A second server (parallel test run) must start concurrently
         val second = ClickNLoadServer(port = 0) { }
         try {
             second.start()
@@ -107,7 +107,7 @@ class ClickNLoadServerTest {
         return Reply(code, "$contentType|$text", responseHeaders)
     }
 
-    /** Schickt rohe Bytes an den Server und liefert die komplette Antwort. */
+    /** Sends raw bytes to the server and returns the complete response. */
     private fun raw(request: String): String = Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = 5000
         socket.getOutputStream().write(request.toByteArray())
@@ -133,7 +133,7 @@ class ClickNLoadServerTest {
     fun jdcheckWirdAlsJavascriptAusgeliefert() {
         val reply = request("/jdcheck.js")
         assertEquals(200, reply.code)
-        // Browser fuehren text/html nicht als Script aus -> Seite saehe die App nicht
+        // Browsers do not execute text/html as script; the page would not see the app
         assertTrue("MIME muss JavaScript sein, war: ${reply.body}", reply.body.contains("javascript"))
         assertTrue(reply.body.contains("jdownloader=true"))
     }
@@ -171,8 +171,8 @@ class ClickNLoadServerTest {
 
     @Test
     fun rohesPlusImBase64WirdRepariert() {
-        // Manche Seiten senden "crypted" ohne URL-Kodierung: "+" kommt dann
-        // als Leerzeichen an. Erst ein Base64 mit "+" erzeugen ...
+        // Some pages send "crypted" without URL encoding, so "+" arrives as a
+        // space. First produce a Base64 containing "+" ...
         var links = "https://rapidgator.net/file/aaa111/x.rar"
         var crypted = encrypt(links)
         var salt = 0
@@ -180,7 +180,7 @@ class ClickNLoadServerTest {
             links = "https://rapidgator.net/file/aaa111/x${salt++}.rar"
             crypted = encrypt(links)
         }
-        // ... und es unkodiert schicken (nur jk kodiert, das enthaelt kein "+")
+        // ... then send it unencoded (only jk encoded, it contains no "+")
         val body = "crypted=$crypted&jk=${enc(jk)}"
         val reply = request("/flash/addcrypted2", body)
 
@@ -198,7 +198,7 @@ class ClickNLoadServerTest {
 
     @Test
     fun leereAnfrageMeldetFailed() {
-        // Wie JDownloader: die Seite soll "fehlgeschlagen" anzeigen statt Erfolg
+        // The page should show "failed" instead of success
         val reply = request("/flash/add", "urls=")
         assertEquals(400, reply.code)
         assertTrue(reply.body.contains("failed"))
@@ -215,7 +215,7 @@ class ClickNLoadServerTest {
 
     @Test
     fun preflightLiefertPrivateNetworkHeader() {
-        // Chrome "Local Network Access": OPTIONS muss 204 mit diesen Headern liefern
+        // Chrome "Local Network Access": OPTIONS must answer 204 with these headers
         val reply = request(
             "/flash/addcrypted2", method = "OPTIONS",
             headers = mapOf(
@@ -227,8 +227,8 @@ class ClickNLoadServerTest {
         assertEquals(204, reply.code)
         assertEquals(listOf("true"), reply.headers["access-control-allow-private-network"])
         assertEquals(listOf("true"), reply.headers["access-control-allow-local-network"])
-        // HttpURLConnection unterdrueckt den Origin-Header (restricted header),
-        // daher hier nur pruefen, dass der Server ueberhaupt einen Origin freigibt
+        // HttpURLConnection suppresses the Origin header (restricted header),
+        // so only check that the server allows some origin at all
         assertNotNull(reply.headers["access-control-allow-origin"])
         assertNotNull(reply.headers["access-control-allow-methods"])
         assertTrue(received.isEmpty())
@@ -236,7 +236,7 @@ class ClickNLoadServerTest {
 
     @Test
     fun preflightSpiegeltOriginUndAngefragteHeader() {
-        // Rohe Anfrage, weil HttpURLConnection den Origin-Header unterdrueckt
+        // Raw request because HttpURLConnection suppresses the Origin header
         val answer = raw(
             "OPTIONS /flash/addcrypted2 HTTP/1.1\r\n" +
                 "Host: 127.0.0.1:$port\r\n" +
@@ -287,7 +287,7 @@ class ClickNLoadServerTest {
         assertEquals(404, reply.code)
         assertTrue(reply.body.contains("not found"))
         assertTrue(received.isEmpty())
-        // Auch der Fehler traegt CORS-Header
+        // The error carries CORS headers too
         assertNotNull(reply.headers["access-control-allow-origin"])
     }
 
@@ -309,7 +309,7 @@ class ClickNLoadServerTest {
 
     @Test
     fun mehrereAnfragenParallel() {
-        // Thread-Pool: mehrere gleichzeitige Clients bekommen alle eine Antwort
+        // Thread pool: concurrent clients all get an answer
         val threads = (1..8).map {
             Thread { assertEquals(200, request("/jdcheck.js").code) }.apply { start() }
         }
@@ -319,9 +319,9 @@ class ClickNLoadServerTest {
 
     @Test
     fun dlcContainerLaeuftUeberDenDlcPfad() {
-        // /flash/addcrypted ohne jk = kompletter DLC-Container. Ein zu kurzer
-        // Container wird vor jedem Netzzugriff abgelehnt; die Statuszeile
-        // belegt, dass der DLC-Zweig (nicht CnL 2) gewaehlt wurde.
+        // /flash/addcrypted without jk = complete DLC container. A too short
+        // container is rejected before any network access; the status line
+        // proves the DLC branch (not CnL 2) was taken.
         val reply = request("/flash/addcrypted", "crypted=${enc("QUJDREVGRw==")}")
         assertEquals(400, reply.code)
         assertTrue(reply.body.contains("failed"))
@@ -332,8 +332,8 @@ class ClickNLoadServerTest {
 
     @Test
     fun zuGrosserKoerperWirdMit413Abgelehnt() {
-        // Der Server darf einen angekuendigten 3-MiB-Koerper gar nicht erst
-        // lesen (OOM-Schutz), sondern sofort mit 413 antworten.
+        // The server must not read an announced 3 MiB body at all (OOM
+        // protection) but answer 413 immediately.
         val length = 3L * 1024 * 1024
         assertTrue(length > ClickNLoadServer.MAX_BODY_BYTES)
         val statusLine = Socket("127.0.0.1", port).use { socket ->
@@ -379,7 +379,7 @@ class ClickNLoadServerTest {
 
     @Test
     fun getMitUrlsParameterWirdUebernommen() {
-        // Aeltere Seiten schicken die Links als GET-Parameter statt im Formular
+        // Older pages send the links as GET parameters instead of a form
         val urls = "https://1fichier.com/?abc123\nhttps://rg.to/file/dd44/y.zip"
         val reply = request("/flash/add?urls=${enc(urls)}")
         assertEquals(200, reply.code)

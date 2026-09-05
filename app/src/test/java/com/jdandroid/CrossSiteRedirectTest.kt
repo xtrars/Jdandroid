@@ -11,7 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Weiterleitungen des Dateiabrufs: Cookie und Referer bleiben nur innerhalb der Hoster-Domain. */
+/** Cookie and Referer survive redirects only within the hoster domain. */
 class CrossSiteRedirectTest {
 
     @Test

@@ -16,13 +16,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Standardverhalten der Free-Schnittstelle: [Hoster.isDirectDownloadUrl]
- * ohne eigene Umsetzung, [Hoster.resolveFree] ohne Unterstuetzung.
- */
+/** Default behaviour of the free interface: [Hoster.isDirectDownloadUrl] and [Hoster.resolveFree] without overrides. */
 class DirectLinksTest {
 
-    /** Minimaler Hoster, der nur die Pflichtteile der Schnittstelle liefert. */
+    /** Minimal hoster implementing only the mandatory parts. */
     private val hoster = object : Hoster {
         override val id = "test"
         override val displayName = "Test"

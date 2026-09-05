@@ -1,22 +1,23 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
+
 /**
- * Einordnung eines Hinweistexts der Rapidgator-Website im Free-Modus
- * (Dateiseite oder "code" der Ajax-Antworten).
+ * Classification of a notice text of the Rapidgator website in free mode
+ * (file page or "code" of the Ajax replies).
  */
 internal sealed class RapidgatorBlock {
-    /** Wartezeit in Sekunden (inklusive Reserve) mit uebersetzter Meldung (Texts.t). */
+    /** Wait in seconds (including margin) with a translated message (Texts.t). */
     data class Wait(val seconds: Int, val text: String) : RapidgatorBlock()
 
-    /** Ohne Premium nicht ladbar - erneuter Versuch ist sinnlos. */
+    /** Not downloadable without premium; retrying is pointless. */
     data class Permanent(val text: String) : RapidgatorBlock()
 
-    /** Timer wurde nicht anerkannt: Ablauf von vorn beginnen. */
+    /** Timer was not accepted: restart the flow. */
     object Restart : RapidgatorBlock()
 }
 
-/** Die JavaScript-Variablen der Dateiseite, die den Free-Ablauf steuern. */
+/** The JavaScript variables of the file page that drive the free flow. */
 internal data class RapidgatorFreeVars(
     val fid: String,
     val secs: Int,
@@ -26,22 +27,22 @@ internal data class RapidgatorFreeVars(
 )
 
 /**
- * Reine Auswertung der Rapidgator-Dateiseite und der Ajax-Antworten im
- * Free-Modus (ohne Netz, ohne Android), damit jede Regel gegen echte
- * Seitenausschnitte pruefbar bleibt.
+ * Pure parsing of the Rapidgator file page and the Ajax replies in free mode
+ * (no network, no Android), so every rule stays testable against real page
+ * snippets.
  *
- * Aufbau (Stand 09/2026): Name in `Downloading: </strong><a href="">…</a>`,
- * Groesse in `File size: <strong>1 GB</strong>`, der Ablauf als
- * JavaScript-Variablen (`var secs = 180; var fid = …; var startTimerUrl =
- * '/download/AjaxStartTimer'`). `AjaxStartTimer` antwortet
- * `{"state":"started","sid":"…"}`, `AjaxGetDownloadLink` mit
- * `{"state":"done"}`; Fehler stehen als `{"state":"error","code":"…"}`.
+ * Layout (as of 09/2026): name in `Downloading: </strong><a href="">…</a>`,
+ * size in `File size: <strong>1 GB</strong>`, the flow as JavaScript
+ * variables (`var secs = 180; var fid = …; var startTimerUrl =
+ * '/download/AjaxStartTimer'`). `AjaxStartTimer` answers
+ * `{"state":"started","sid":"…"}`, `AjaxGetDownloadLink` `{"state":"done"}`;
+ * errors come as `{"state":"error","code":"…"}`.
  */
 internal object RapidgatorFreePage {
 
     private val ic = RegexOption.IGNORE_CASE
 
-    /** Datei-Kennung (32 Hex oder Zahl) und optionaler Namensteil aus dem Link. */
+    /** File id (32 hex or number) and optional name segment from the link. */
     fun fileIdAndName(url: String): Pair<String, String?>? =
         Regex("""/file/([a-f0-9]{32}|\d+)(?:/([^/?#\s]+\.html))?""", ic).find(url)
             ?.let { it.groupValues[1] to it.groupValues[2].ifBlank { null } }
@@ -52,7 +53,7 @@ internal object RapidgatorFreePage {
             ?: Regex("""<title>\s*Download file\s+([^<]+?)\s*</title>""", ic)
                 .find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** Groesse in Byte (1024-basiert), -1 wenn nicht angegeben. */
+    /** Size in bytes (1024-based), -1 if not stated. */
     fun fileSize(html: String): Long {
         val m = Regex("""File size:\s*<strong>\s*([\d.,]+)\s*([KMGT]?B)\s*</strong>""", ic).find(html)
             ?: return -1
@@ -71,14 +72,14 @@ internal object RapidgatorFreePage {
         return (number * factor).toLong()
     }
 
-    /** MD5 der Datei, falls die Seite eine zeigt (auf der Free-Seite meist nicht). */
+    /** MD5 of the file if the page shows one (usually not on the free page). */
     fun md5(html: String): String? =
         Regex(""">\s*MD5\s*:\s*([A-Fa-f0-9]{32})<""").find(html)?.groupValues?.get(1)?.lowercase()
 
     private fun jsVar(html: String, name: String): String? =
         Regex("""var\s+$name\s*=\s*'?([^';]*)'?\s*;""").find(html)?.groupValues?.get(1)?.trim()
 
-    /** null, wenn die Seite keinen Free-Ablauf anbietet (kein fid / keine Timer-Adresse). */
+    /** null if the page offers no free flow (no fid / no timer address). */
     fun freeVars(html: String): RapidgatorFreeVars? {
         val fid = jsVar(html, "fid")?.takeIf { it.isNotEmpty() && it != "0" } ?: return null
         val start = jsVar(html, "startTimerUrl")?.takeIf { it.isNotEmpty() } ?: return null
@@ -91,17 +92,17 @@ internal object RapidgatorFreePage {
     fun isOffline(html: String): Boolean =
         Regex(""">\s*(?:404 File not found|Error 404|File not found)\s*<""", ic).containsMatchIn(html)
 
-    /** Seite enthaelt das Captcha-Formular (Turnstile oder Altlasten). */
+    /** Page contains the captcha form (Turnstile or legacy). */
     fun hasCaptchaForm(html: String): Boolean =
         Regex("""id=["']captchaform["']|DownloadCaptchaForm\[verifyCode]""", ic).containsMatchIn(html)
 
-    /** Antwort von AjaxStartTimer / AjaxGetDownloadLink. */
+    /** Reply of AjaxStartTimer / AjaxGetDownloadLink. */
     data class AjaxReply(val state: String, val sid: String?, val code: String?)
 
     /**
-     * Die Ajax-Antworten sind flache JSON-Objekte mit Zeichenketten
-     * (`{"state":"error","code":"You didn`t wait …","0":"step3"}`); ein
-     * einfacher Feldabgriff reicht und bleibt ohne JSON-Bibliothek testbar.
+     * The Ajax replies are flat JSON objects of strings
+     * (`{"state":"error","code":"You didn`t wait …","0":"step3"}`); a simple
+     * field grab suffices and stays testable without a JSON library.
      */
     fun ajaxReply(json: String): AjaxReply? {
         fun field(name: String): String? =
@@ -114,7 +115,7 @@ internal object RapidgatorFreePage {
         s.replace("\\/", "/").replace("\\\"", "\"").replace("\\n", " ").replace("\\\\", "\\")
 
     /**
-     * Direktlink aus der Seite nach geloestem Captcha
+     * Direct link from the page after the solved captcha
      * (`https://pr5.rapidgator.net//?r=download/index&session_id=…`).
      */
     fun directLink(html: String): String? =
@@ -123,9 +124,9 @@ internal object RapidgatorFreePage {
             ?: Regex("""return\s+'(https?://[A-Za-z0-9_-]+\.rapidgator\.net/[^']*)';""").find(html)?.groupValues?.get(1)
 
     /**
-     * Hinweistexte der Website. Reihenfolge: erst die eindeutigen Muster mit
-     * Zeitangabe, dann die pauschalen Limits; Premium-Grenzen sind endgueltig.
-     * Die feste Tabellenzeile "1 file per 120 minutes" ist kein Fehler.
+     * Website notice texts. Order: the specific patterns with a time first,
+     * then the generic limits; premium limits are permanent. The fixed table
+     * row "1 file per 120 minutes" is not an error.
      */
     fun classify(text: String): RapidgatorBlock? {
         val t = text.replace('`', '\'').replace("&#039;", "'")
@@ -171,8 +172,8 @@ internal object RapidgatorFreePage {
     }
 
     /**
-     * Free-Sperre auf der Dateiseite: nur der sichtbare Text zaehlt, damit
-     * die Muster nicht in Skripten oder Kommentaren anschlagen.
+     * Free block on the file page: only the visible text counts, so the
+     * patterns do not match inside scripts or comments.
      */
     fun pageBlock(html: String): RapidgatorBlock? = classify(visibleText(html))
 

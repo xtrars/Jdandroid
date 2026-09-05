@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Eine ueber Click'n'Load eingegangene Anfrage: Links plus die Zusatzdaten,
- * die das Protokoll mitliefert (Paketname, Entpack-Passwoerter, Ursprung).
+ * A request received via Click'n'Load: links plus the extra data the protocol
+ * carries (package name, extraction passwords, origin).
  */
 data class CnlRequest(
     val urls: List<String>,
@@ -30,18 +30,16 @@ data class CnlRequest(
 )
 
 /**
- * Lokaler Click'n'Load-2-Server auf Port 9666 (Tests: [port] 0 = freier
- * Port, der echte steht in [listeningPort]). Browser-Seiten mit
- * "Click'n'Load"-Button senden die (verschlüsselten) Links hierher;
- * sie werden lokal entschlüsselt und über [onRequest] eingereiht.
+ * Local Click'n'Load 2 server on port 9666 (tests: [port] 0 = free port, the
+ * real one is in [listeningPort]). Browser pages with a "Click'n'Load" button
+ * send their (encrypted) links here; they are decrypted locally and queued
+ * via [onRequest].
  *
- * Eigener Mini-HTTP-Server auf [ServerSocket]: ein Akzeptor-Thread nimmt
- * Verbindungen an, ein kleiner Thread-Pool beantwortet sie. Jede Antwort
- * schliesst die Verbindung (kein Keep-Alive) - fuer die wenigen Anfragen
- * einer CnL-Seite reicht das, und es haelt den Code klein.
- *
- * Funktioniert mit Browsern auf demselben Gerät (localhost) – wie beim
- * JDownloader am Desktop. Der Server bindet ausschliesslich an Loopback.
+ * Minimal HTTP server on a [ServerSocket]: one acceptor thread takes
+ * connections, a small thread pool answers them. Every response closes the
+ * connection (no keep-alive), which is enough for the few requests of a CnL
+ * page. The server binds to loopback only, so it works with browsers on the
+ * same device, like JDownloader on the desktop.
  */
 class ClickNLoadServer(
     private val hostname: String = LOOPBACK,
@@ -52,15 +50,15 @@ class ClickNLoadServer(
     private var acceptor: Thread? = null
     private var workers: ExecutorService? = null
 
-    /** Tatsaechlich gebundener Port (bei [port] 0 der vom System gewaehlte), -1 ohne Socket. */
+    /** Actually bound port (with [port] 0 the one chosen by the system), -1 without a socket. */
     val listeningPort: Int
         get() = serverSocket?.localPort ?: -1
 
-    /** True, solange der Akzeptor lauscht. */
+    /** True while the acceptor is listening. */
     val isAlive: Boolean
         get() = acceptor?.isAlive == true && serverSocket?.isClosed == false
 
-    /** Bindet den Socket und startet Akzeptor und Pool; wirft bei belegtem Port. */
+    /** Binds the socket and starts acceptor and pool; throws if the port is taken. */
     @Synchronized
     fun start() {
         check(serverSocket == null) { "server already running" }
@@ -75,7 +73,7 @@ class ClickNLoadServer(
         acceptor = thread(name = "cnl-acceptor", isDaemon = true) { acceptLoop(socket, pool) }
     }
 
-    /** Schliesst den Socket; laufende Anfragen werden abgebrochen. Mehrfach aufrufbar. */
+    /** Closes the socket; running requests are aborted. May be called repeatedly. */
     @Synchronized
     fun stop() {
         runCatching { serverSocket?.close() }
@@ -92,7 +90,7 @@ class ClickNLoadServer(
             val client = try {
                 socket.accept()
             } catch (e: IOException) {
-                // Socket geschlossen (stop) oder voruebergehender Fehler
+                // Socket closed (stop) or transient error
                 if (socket.isClosed) return
                 continue
             }
@@ -118,7 +116,7 @@ class ClickNLoadServer(
                 out.write(response.toBytes())
                 out.flush()
             } catch (e: IOException) {
-                // Client hat abgebrochen oder Lesezeit ueberschritten - nichts zu tun
+                // Client aborted or read timeout: nothing to do
             }
         }
     }
@@ -127,16 +125,16 @@ class ClickNLoadServer(
         var outcome = ContainerTexts.t("service_cnl_result_ok")
         val response = try {
             when {
-                // CORS-Preflight: neuere Chrome-Versionen (Local Network Access)
-                // fragen vor fetch/XHR an localhost per OPTIONS nach.
+                // CORS preflight: recent Chrome versions (Local Network Access)
+                // ask via OPTIONS before fetch/XHR to localhost.
                 request.method == "OPTIONS" -> {
                     outcome = ContainerTexts.t("service_cnl_result_preflight")
                     Response(Status.NO_CONTENT, MIME_PLAINTEXT, "")
                 }
                 request.path == "/jdcheck.js" -> Response(
-                    // Muss als JavaScript ausgeliefert werden: bei text/html
-                    // verweigern Browser die Ausfuehrung und die Seite haelt den
-                    // Downloadmanager fuer nicht vorhanden.
+                    // Must be served as JavaScript: with text/html browsers
+                    // refuse to execute it and the page assumes there is no
+                    // download manager.
                     Status.OK, "text/javascript",
                     "jdownloader=true; var jd_version='JDAndroid';"
                 )
@@ -150,7 +148,7 @@ class ClickNLoadServer(
                     outcome = note
                     resp
                 }
-                // Wurzel als Lebenszeichen (wie bisher), alles andere ist unbekannt
+                // Root as a liveness check; everything else is unknown
                 request.path == "/" -> Response(Status.OK, MIME_HTML, "JDAndroid")
                 else -> {
                     outcome = ContainerTexts.t("service_cnl_result_unknown_path")
@@ -171,27 +169,27 @@ class ClickNLoadServer(
     }
 
     private fun Response.withCors(request: Request): Response {
-        // Origin zurueckspiegeln, sonst lehnt der Browser Antworten mit
-        // Credentials ab; ohne Origin (Formular-POST) bleibt "*".
+        // Mirror the Origin, otherwise the browser rejects responses with
+        // credentials; without an Origin (form POST) "*" remains.
         headers["Access-Control-Allow-Origin"] = request.headers["origin"] ?: "*"
         headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        // Angefragte Header spiegeln, sonst scheitert der Preflight an einem
-        // Header, den die Seite zusaetzlich sendet
+        // Mirror the requested headers, otherwise the preflight fails on a
+        // header the page sends in addition
         headers["Access-Control-Allow-Headers"] =
             request.headers["access-control-request-headers"]?.ifBlank { null }
                 ?: "Content-Type, X-Requested-With"
-        // Chrome: aelterer Name (Private Network Access) und neuer Name
-        // (Local Network Access, ab Chrome 138) - beide setzen
+        // Chrome: older name (Private Network Access) and newer name (Local
+        // Network Access, Chrome 138+); set both
         headers["Access-Control-Allow-Private-Network"] = "true"
         headers["Access-Control-Allow-Local-Network"] = "true"
         headers["Access-Control-Max-Age"] = "86400"
         return this
     }
 
-    /** Antwort plus Kurzbeschreibung des Ergebnisses fuer die Statuszeile. */
+    /** Response plus a short description of the outcome for the status line. */
     private fun handleAdd(request: Request, input: InputStream): Pair<Response, String> {
-        // Jede im Browser geoeffnete Seite darf hierher senden: die Groesse
-        // begrenzen, sonst laesst ein 50-MB-Koerper die App per OOM abstuerzen.
+        // Any page open in the browser may post here: limit the size,
+        // otherwise a 50 MB body crashes the app with an OOM.
         val length = request.headers["content-length"]?.trim()?.toLongOrNull()
         if (length != null && length > MAX_BODY_BYTES) {
             return Response(Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n") to
@@ -202,7 +200,7 @@ class ClickNLoadServer(
             val body = readBody(input, length ?: 0L)
             val contentType = request.headers["content-type"].orEmpty().lowercase(Locale.ROOT)
             if (contentType.startsWith(MIME_FORM)) {
-                // GET-Parameter behalten Vorrang vor gleichnamigen Formularfeldern
+                // GET parameters take precedence over form fields of the same name
                 decodeParams(body).forEach { (k, v) -> params.putIfAbsent(k, v) }
             }
         }
@@ -212,10 +210,10 @@ class ClickNLoadServer(
         val plainUrls = params["urls"] ?: params["links"]
 
         val links = when {
-            // Click'n'Load 2: AES-verschluesselte Linkliste, Schluessel in jk
+            // Click'n'Load 2: AES-encrypted link list, key in jk
             !crypted.isNullOrBlank() && !jk.isNullOrBlank() ->
                 ContainerDecrypter.decryptClickNLoad(crypted, jk)
-            // Aeltere Variante (/flash/addcrypted): kompletter DLC-Container
+            // Older variant (/flash/addcrypted): a complete DLC container
             !crypted.isNullOrBlank() ->
                 ContainerDecrypter.decryptDlc(crypted)
             !plainUrls.isNullOrBlank() ->
@@ -224,8 +222,8 @@ class ClickNLoadServer(
         }
 
         if (links.isEmpty()) {
-            // Wie JDownloader: die Seite zeigt dann "fehlgeschlagen" statt
-            // faelschlich Erfolg zu melden.
+            // Like JDownloader: the page then shows "failed" instead of
+            // wrongly reporting success.
             val note = if (crypted.isNullOrBlank() && plainUrls.isNullOrBlank()) {
                 val fields = params.keys.joinToString(",")
                     .ifBlank { ContainerTexts.t("service_cnl_result_no_fields") }
@@ -234,8 +232,8 @@ class ClickNLoadServer(
             return Response(Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n") to note
         }
 
-        // Paketname und Passwoerter kappen: eine Seite darf die Passwortliste
-        // nicht unbegrenzt fuellen (jede Extraktion probiert alle Eintraege)
+        // Cap package name and passwords: a page must not fill the password
+        // list without limit (every extraction tries all entries)
         val passwords = params["passwords"].orEmpty()
             .split('\n', '\r')
             .map { it.trim().take(MAX_PASSWORD_LENGTH) }
@@ -256,7 +254,7 @@ class ClickNLoadServer(
         )
     }
 
-    /** Liest genau [length] Bytes (ohne Content-Length: nichts); bricht bei kurzem Strom ab. */
+    /** Reads exactly [length] bytes (nothing without Content-Length); stops on a short stream. */
     private fun readBody(input: InputStream, length: Long): String {
         if (length <= 0) return ""
         val buffer = ByteArray(length.toInt())
@@ -269,7 +267,7 @@ class ClickNLoadServer(
         return String(buffer, 0, read, Charsets.UTF_8)
     }
 
-    /** HTTP-Status mit Text, wie er in der Statuszeile steht. */
+    /** HTTP status with the text used in the status line. */
     enum class Status(val code: Int, val text: String) {
         OK(200, "OK"),
         NO_CONTENT(204, "No Content"),
@@ -280,12 +278,12 @@ class ClickNLoadServer(
         INTERNAL_ERROR(500, "Internal Server Error")
     }
 
-    /** Fehler beim Parsen, der direkt als Antwort an den Client geht. */
+    /** Parse error that goes straight back to the client as the response. */
     private class HttpError(val status: Status, val text: String) : Exception(text)
 
     /**
-     * Geparste Anfrage: Methode, Pfad ohne Query, GET-Parameter und Header
-     * (Namen kleingeschrieben, beim ersten Vorkommen bleibt es).
+     * Parsed request: method, path without query, GET parameters and headers
+     * (names lower-cased, first occurrence wins).
      */
     private class Request(
         val method: String,
@@ -326,9 +324,9 @@ class ClickNLoadServer(
             private fun headersTooLarge() = HttpError(Status.HEADERS_TOO_LARGE, "headers too large\r\n")
 
             /**
-             * Liest eine CRLF-beendete Zeile als ISO-8859-1, ohne ueber das
-             * Zeilenende hinaus zu lesen (der Koerper folgt direkt). Null
-             * am Stromende, [HttpError] bei zu langer Zeile.
+             * Reads a CRLF-terminated line as ISO-8859-1 without reading past
+             * the line end (the body follows directly). Null at end of stream,
+             * [HttpError] for an overlong line.
              */
             private fun readLine(input: InputStream): String? {
                 val bytes = ByteArrayOutputStream()
@@ -344,7 +342,7 @@ class ClickNLoadServer(
         }
     }
 
-    /** Antwort mit fester Laenge; die Verbindung wird danach geschlossen. */
+    /** Response with a fixed length; the connection is closed afterwards. */
     private class Response(val status: Status, val mimeType: String, body: String) {
         val headers = LinkedHashMap<String, String>()
         private val bodyBytes = body.toByteArray(Charsets.UTF_8)
@@ -384,9 +382,9 @@ class ClickNLoadServer(
         )
 
         /**
-         * Zerlegt "a=1&b=2" in eine Map (erstes Vorkommen gewinnt). "+" wird
-         * wie bei Formularen zum Leerzeichen; Seiten, die Base64 unkodiert
-         * schicken, repariert der Entschluesseler.
+         * Splits "a=1&b=2" into a map (first occurrence wins). "+" becomes a
+         * space as in forms; pages that send unencoded Base64 are repaired by
+         * the decrypter.
          */
         private fun decodeParams(encoded: String): Map<String, String> {
             val result = LinkedHashMap<String, String>()
@@ -403,9 +401,9 @@ class ClickNLoadServer(
             runCatching { URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
 
         /**
-         * Selbsttest aus den Einstellungen: fragt wie ein Browser /jdcheck.js
-         * auf Loopback ab und liefert eine Meldung fuer die Anzeige. Blockiert
-         * (Netzwerk), daher nicht auf dem Hauptthread aufrufen.
+         * Self test from the settings: requests /jdcheck.js on loopback like a
+         * browser and returns a message for display. Blocks (network), so do
+         * not call it on the main thread.
          */
         fun selfTest(port: Int = PORT): String = runCatching {
             val connection = URL("http://$LOOPBACK:$port/jdcheck.js").openConnection() as HttpURLConnection

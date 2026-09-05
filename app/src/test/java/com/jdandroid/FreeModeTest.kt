@@ -7,7 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Reine Logik des Free-Modus: gespeicherte Codes, Wartezeit-Anzeige, retryAt, Captcha-Erkennung. */
 class FreeModeTest {
 
     @Test
@@ -45,23 +44,23 @@ class FreeModeTest {
         assertEquals("FREE_WAIT|Rapidgator: Tageslimit im Free-Modus erreicht", note)
         assertTrue(FreeMode.isWaitMessage(note))
         assertEquals("Rapidgator: Tageslimit im Free-Modus erreicht", FreeMode.waitReason(note))
-        // Die Anzeige zaehlt anhand von retryAt herunter und haengt den Grund an
+        // Display counts down from retryAt and appends the reason
         val now = 5_000_000L
         assertEquals(
             "Wartezeit im Free-Modus: 2:59:00 – Rapidgator: Tageslimit im Free-Modus erreicht",
             FreeMode.displayText(note, now + (3 * 3600 - 60) * 1000L, now)
         )
-        // Ein Grund mit eigenem Gedankenstrich bleibt ganz erhalten
+        // A reason containing a dash is kept whole
         val ip = FreeMode.waitNote("1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde")
         assertEquals("1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde", FreeMode.waitReason(ip))
-        // Ohne Grund nur der Countdown
+        // Without a reason only the countdown
         assertEquals("FREE_WAIT", FreeMode.waitNote(null))
         assertEquals("FREE_WAIT", FreeMode.waitNote("  "))
         assertEquals("Wartezeit im Free-Modus: 01:30", FreeMode.displayText(FreeMode.waitNote(), now + 90_000, now))
         assertNull(FreeMode.waitReason(FreeMode.waitNote()))
         assertNull(FreeMode.waitReason("Fehler – Versuch 2/5 in 20s"))
         assertNull(FreeMode.waitReason(null))
-        // Fremde Vermerke bekommen keinen Anzeigetext
+        // Foreign notes get no display text
         assertNull(FreeMode.displayText("Fehler – Versuch 2/5 in 20s", now + 20_000, now))
         assertNull(FreeMode.displayText(null, 0, now))
     }
@@ -80,7 +79,7 @@ class FreeModeTest {
         assertEquals("Captcha nötig – im Menü „Captcha lösen“", FreeMode.displayText(FreeMode.captchaNote(), 0, 0))
         assertNull(FreeMode.captchaReason(FreeMode.captchaNote()))
         assertTrue(FreeMode.isCaptchaHold(FreeMode.captchaNote(), 0, 0))
-        // Ein Hoster-Text ohne Code ist kein Captcha-Vermerk
+        // A hoster text without code is not a captcha note
         assertFalse(FreeMode.isCaptchaHold("Rapidgator: Captcha (Turnstile) – nur im Browser lösbar", 0, 0))
     }
 
@@ -88,7 +87,7 @@ class FreeModeTest {
     fun retryAtLiegtSekundenInDerZukunft() {
         val now = 1_000_000L
         assertEquals(now + 45_000, FreeMode.retryAt(now, 45))
-        // Mindestens eine Sekunde, sonst wuerde pump() den Eintrag sofort erneut starten
+        // At least one second, otherwise pump() would restart the entry at once
         assertEquals(now + 1_000, FreeMode.retryAt(now, 0))
         assertEquals(now + 1_000, FreeMode.retryAt(now, -5))
     }
@@ -108,7 +107,7 @@ class FreeModeTest {
         val now = 5_000_000L
         assertTrue(FreeMode.isCaptchaHold(FreeMode.captchaNote(), 0, now))
         assertTrue(FreeMode.isCaptchaHold(null, now + FreeMode.CAPTCHA_HOLD_MS, now))
-        // Normale Wartezeit oder Backoff ist kein Captcha
+        // Ordinary wait or backoff is not a captcha
         assertFalse(FreeMode.isCaptchaHold(FreeMode.waitNote(), now + 120_000, now))
         assertFalse(FreeMode.isCaptchaHold("Fehler – Versuch 2/5 in 20s", now + 20_000, now))
         assertFalse(FreeMode.isCaptchaHold(null, 0, now))
@@ -116,7 +115,7 @@ class FreeModeTest {
 
     @Test
     fun captchaHaltLiegtJenseitsDesDienstHorizonts() {
-        // Sonst hielte ein Captcha-Eintrag den Vordergrunddienst dauerhaft am Leben
+        // Otherwise a captcha entry would keep the foreground service alive forever
         assertTrue(FreeMode.CAPTCHA_HOLD_MS > FreeMode.USER_ACTION_HORIZON_MS)
     }
 }

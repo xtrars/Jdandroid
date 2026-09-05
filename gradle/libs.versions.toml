@@ -41,7 +41,7 @@ sevenzipjbinding = { group = "com.github.omicronapps", name = "7-Zip-JBinding-4A
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version = "1.28.0" }
 xz = { group = "org.tukaani", name = "xz", version = "1.12" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
-# Fuer JVM-Tests der SQL-Abfragen (ArchiveSetsTest); dieselbe Version nutzt der Room-Compiler
+# JVM tests of the SQL queries (ArchiveSetsTest); same version as the Room compiler
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
-    <!-- Engine ohne Context (DownloadEngine, Extractor, FreeMode, Format) ueber Texts.t; jeder Schluessel steht wortgleich in core/texts/EngineTexts.kt. Schluessel: engine_<bedeutung>.
-         UnusedResources ist abgeschaltet: die Aufloesung laeuft ueber getIdentifier, Lint sieht keine Verwendung. -->
+    <!-- Engine without a context (DownloadEngine, Extractor, FreeMode, Format) via Texts.t; every key mirrors core/texts/EngineTexts.kt. Keys: engine_<meaning>.
+         UnusedResources is ignored: keys are resolved via getIdentifier, so lint sees no usage. -->
 
-    <!-- Free-Modus: Anzeige der gespeicherten Codes -->
+    <!-- Free mode: display of the stored codes -->
     <string name="engine_free_wait">Wartezeit im Free-Modus: %1$s</string>
     <string name="engine_free_wait_reason">Wartezeit im Free-Modus: %1$s – %2$s</string>
     <string name="engine_free_captcha">Captcha nötig – im Menü „Captcha lösen“</string>
@@ -11,7 +11,7 @@
     <string name="engine_free_disabled">Kein Konto und Free-Modus aus</string>
     <string name="engine_free_no_premium">Konto ohne Premium und Free-Modus aus</string>
 
-    <!-- Download-Ablauf -->
+    <!-- Download flow -->
     <string name="engine_target_folder">Zielordner</string>
     <string name="engine_unknown_hoster">Unbekannter Hoster</string>
     <string name="engine_generic_error">Fehler</string>
@@ -27,7 +27,7 @@
     <string name="engine_download_incomplete">Download unvollständig (%1$s von %2$s)</string>
     <string name="engine_hash_mismatch">Prüfsumme (%1$s) stimmt nicht – Datei wird erneut geladen</string>
 
-    <!-- Archive und Entpacken -->
+    <!-- Archives and extraction -->
     <string name="engine_first_volume_missing_not_extracted">Erstes Archiv-Teil fehlt, nicht entpackt</string>
     <string name="engine_first_volume_missing">Erstes Archiv-Teil fehlt</string>
     <string name="engine_entry_not_found">Eintrag nicht gefunden</string>
@@ -38,7 +38,7 @@
     <string name="engine_archive_part_missing">Archivteil nicht mehr vorhanden: %1$s</string>
     <string name="engine_archive_incomplete_loading">Archiv unvollständig – weitere Teile werden noch geladen</string>
 
-    <!-- Entpacker -->
+    <!-- Extractor -->
     <string name="engine_seven_zip_unavailable">Native 7-Zip-Bibliothek konnte nicht geladen werden (RAR-Entpacken nicht möglich): %1$s</string>
     <string name="engine_unknown_archive_format">Unbekanntes Archivformat: %1$s</string>
     <string name="engine_extract_failed">Entpacken fehlgeschlagen (Passwort nicht in der Liste?): %1$s</string>

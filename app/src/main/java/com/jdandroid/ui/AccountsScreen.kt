@@ -88,16 +88,14 @@ import com.jdandroid.hoster.HosterRegistry
 import java.text.DateFormat
 import java.util.Date
 
-/** Akzent fuer Avatare und Auswahl: Material-You-Primaerfarbe statt Markenfarben. */
+/** Accent for avatars and selection: the Material You primary, not brand colors. */
 @Composable
 private fun hosterColor(@Suppress("UNUSED_PARAMETER") id: String): Color =
     MaterialTheme.colorScheme.primary
 
 @Composable
 private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
-    // Symbole der Hoster (siehe THIRD_PARTY_NOTICES.md). Rapidgator (orange)
-    // und ddownload (blau) fuellen ihre Kachel selbst; die 1fichier-Wuerfel
-    // liegen auf neutraler Flaeche.
+    // Rapidgator and ddownload icons fill their tile; the 1fichier cubes need a surface.
     val icon = hosterIconRes(hoster.id)
     val background = when (hoster.id) {
         "rapidgator", "ddownload" -> Color.Transparent
@@ -128,12 +126,9 @@ private fun HosterAvatar(hoster: Hoster, size: Int = 44) {
     }
 }
 
-
-
 /**
- * Kontenliste. Der Dialog "Konto hinzufuegen" wird ueber [showAdd] von der
- * MainActivity gesteuert (Plus-Knopf in der aeusseren Scaffold), damit die
- * Snackbar den Knopf nicht verdeckt.
+ * Account list. The add dialog is controlled via [showAdd] from the
+ * MainActivity, whose outer Scaffold owns the FAB.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,8 +140,7 @@ fun AccountsScreen(
 ) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
-    // Solange die Kontenansicht sichtbar ist (Tab offen, App im Vordergrund),
-    // jede Minute den Stand beim Hoster nachladen; beim Oeffnen sofort.
+    // Refresh once on open, then every minute while the tab is visible.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -168,7 +162,6 @@ fun AccountsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { TopAppBar(title = { Text(stringResource(R.string.accounts_title)) }, colors = jdTopBarColors()) }
     ) { padding ->
-        // Seitliche Insets (Displayausschnitt, Querformat) freihalten
         val content = Modifier
             .fillMaxSize()
             .padding(padding)
@@ -185,7 +178,7 @@ fun AccountsScreen(
             LazyColumn(
                 content,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                // Unten Platz fuer den Plus-Knopf, damit er die letzte Karte nicht verdeckt
+                // Bottom padding keeps the FAB off the last card.
                 contentPadding = PaddingValues(start = 14.dp, top = 14.dp, end = 14.dp, bottom = 88.dp)
             ) {
                 items(accounts, key = { it.id }) { account -> AccountRow(account, vm) }
@@ -201,7 +194,6 @@ fun AccountsScreen(
 @Composable
 private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
-    // Datum in der Schreibweise der Geraetesprache
     val dateFormat = remember { DateFormat.getDateInstance(DateFormat.MEDIUM) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val isPremium = account.hasPremium()
@@ -220,7 +212,6 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    // Ohne Benutzername: per Browser uebernommene Session oder API-Key
                     account.username ?: stringResource(
                         if (account.cookies != null) R.string.accounts_browser_login
                         else R.string.accounts_api_key_stored
@@ -230,9 +221,7 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Farben aus dem Schema statt fester Werte: passen zu Hell/Dunkel
-                    // und zu Material You (tertiaer = ok/Premium, sekundaer = gueltig
-                    // ohne Premium, error = ungueltig)
+                    // Scheme colors: tertiary = premium, secondary = valid without premium, error = invalid.
                     val (icon, tint) = when {
                         isPremium -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.tertiary
                         account.valid -> JdIcons.Error to MaterialTheme.colorScheme.secondary
@@ -295,12 +284,12 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
     }
 }
 
-/** Verbleibende Restmenge des Kontos; "unbegrenzt" bei Hostern ohne Limit. */
+/** Remaining traffic of the account; "unlimited" for hosters without a limit. */
 @Composable
 private fun TrafficLine(account: Account) {
     val left = account.trafficLeft
-    // Uhr laeuft mit: Konten ohne Limit werden nur alle 15 min neu geprueft,
-    // die Angabe "vor X min" soll trotzdem stimmen
+    // Ticking clock: unlimited accounts are rechecked only every 15 min, but
+    // "X min ago" must stay correct.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -309,8 +298,7 @@ private fun TrafficLine(account: Account) {
         }
     }
     val minutesAgo = ((now - account.lastChecked) / 60_000L).coerceAtLeast(0)
-    // Frisch geprueft braucht keinen Zusatz (der Stand wird ohnehin jede Minute
-    // nachgeladen); nur ein aelterer Stand wird benannt
+    // Only a stale value gets the age suffix.
     val amount = when {
         account.trafficUnlimited -> stringResource(R.string.accounts_traffic_unlimited)
         left >= 0 -> formatBytes(left)
@@ -327,7 +315,6 @@ private fun TrafficLine(account: Account) {
         style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
         color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     )
-    // Balken: Restmenge im Verhaeltnis zum Kontingent (wenn der Hoster es meldet)
     val total = account.trafficTotal
     if (!account.trafficUnlimited && left >= 0 && total > 0) {
         Spacer(Modifier.height(4.dp))
@@ -341,7 +328,6 @@ private fun TrafficLine(account: Account) {
 
 @Composable
 private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
-    // Eingaben ueberleben Drehen; der Hoster wird ueber seine ID gesichert
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -353,13 +339,9 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
         apiKey.isNotBlank()
     }
 
-    // Inhaltshoehe an die Bildschirmhoehe koppeln, damit Titel und Buttons
-    // auch auf kleinen Displays mit offener Tastatur Platz behalten.
+    // Bounded, scrolling content keeps title and buttons visible with the keyboard open.
     val maxContentHeight = windowHeightDp() * 0.45f
 
-    // Standard-AlertDialog: Groesse und Button-Platzierung uebernimmt das
-    // Framework. Dadurch bleiben die Buttons immer im sichtbaren Bereich -
-    // auch bei offener Tastatur und auf kleinen Displays. Der Inhalt scrollt.
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.accounts_add_title), fontWeight = FontWeight.Bold) },
@@ -419,7 +401,6 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             label = { Text(stringResource(R.string.accounts_password_label)) },
                             leadingIcon = { Icon(JdIcons.Key, null) },
                             visualTransformation = PasswordVisualTransformation(),
-                            // Passwort-Tastatur: keine Autokorrektur, kein Leerzeichen nach Punkt
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 autoCorrectEnabled = false
@@ -433,7 +414,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             onValueChange = { apiKey = it },
                             label = { Text(stringResource(R.string.accounts_api_key)) },
                             leadingIcon = { Icon(JdIcons.Key, null) },
-                            // Wie die Browser-Adresszeile: keine Autokorrektur, keine Leerzeichen
+                            // Uri keyboard: no autocorrect, no space after a period.
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Uri,
                                 autoCorrectEnabled = false
@@ -442,7 +423,6 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    // Hoster mit CAPTCHA: Anmeldung im eingebetteten Browser
                     if (h.webLoginUrl != null) {
                         Spacer(Modifier.height(12.dp))
                         OutlinedButton(
@@ -478,8 +458,7 @@ private fun HosterSelectCard(hoster: Hoster, selected: Boolean, onClick: () -> U
         if (selected) hosterColor(hoster.id) else MaterialTheme.colorScheme.outlineVariant,
         label = "border"
     )
-    // selectable statt onClick: Screenreader melden "ausgewaehlt" und die
-    // Rolle Optionsfeld, wie bei einer Einfachauswahl ueblich
+    // selectable instead of onClick: screen readers announce the radio role and state.
     Card(
         border = BorderStroke(if (selected) 2.dp else 1.dp, border),
         shape = RoundedCornerShape(16.dp),

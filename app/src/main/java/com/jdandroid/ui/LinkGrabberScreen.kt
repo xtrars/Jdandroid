@@ -64,11 +64,9 @@ import com.jdandroid.data.OnlineState
 import com.jdandroid.hoster.HosterRegistry
 
 /**
- * Linksammler wie im JDownloader: neue Links landen hier, werden online
- * geprueft (Name, Groesse, verfuegbar?) und erst auf "Starten" in die
- * Download-Liste uebernommen. Der Dialog "Links hinzufuegen" sowie der
- * DLC-Import per "Oeffnen mit" laufen tab-unabhaengig in der MainActivity;
- * hier bleibt der DLC-Dateiwaehler in der Titelleiste.
+ * Link collector: new links are checked online here and moved to the
+ * download list only on "start". The add dialog and the "open with" DLC
+ * import live in the MainActivity, independent of the tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,15 +75,12 @@ fun LinkGrabberScreen(
     modifier: Modifier = Modifier
 ) {
     val groups by vm.collectorGroups.collectAsStateWithLifecycle()
-    // Zugeklappte Pakete ueberleben Drehen und Tabwechsel (nur die IDs gesichert)
     val collapsed = rememberSaveable(saver = collectorCollapsedSaver) { mutableStateMapOf<Long, Boolean>() }
     val total = groups.sumOf { it.items.size }
     val offline = groups.sumOf { g -> g.items.count { it.online == OnlineState.OFFLINE } }
     val context = LocalContext.current
 
-    // DLC aus der App heraus waehlen (Systemdialog; DLC hat keinen MIME-Typ).
-    // Lesen und Import laufen im ViewModel, damit Drehen oder ein Tabwechsel
-    // waehrend des Lesens nichts abbricht.
+    // Reading runs in the ViewModel so rotation or a tab switch does not cancel it.
     val dlcPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -113,7 +108,6 @@ fun LinkGrabberScreen(
             )
         }
     ) { padding ->
-        // Seitliche Insets (Displayausschnitt, Querformat) freihalten
         val content = Modifier
             .fillMaxSize()
             .padding(padding)
@@ -131,7 +125,7 @@ fun LinkGrabberScreen(
             LazyColumn(
                 content,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                // Unten Platz fuer den Plus-Knopf, damit er die letzte Zeile nicht verdeckt
+                // Bottom padding keeps the FAB off the last row.
                 contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 88.dp)
             ) {
                 if (offline > 0) {
@@ -169,7 +163,7 @@ fun LinkGrabberScreen(
     }
 }
 
-/** Zugeklappte Pakete ueber Drehen/Tabwechsel behalten: nur die IDs sichern. */
+/** Saves collapsed packages across rotation and tab switches as a list of ids. */
 private val collectorCollapsedSaver = listSaver<SnapshotStateMap<Long, Boolean>, Long>(
     save = { map -> map.filterValues { it }.keys.toList() },
     restore = { ids -> mutableStateMapOf<Long, Boolean>().apply { ids.forEach { put(it, true) } } }
@@ -203,7 +197,6 @@ private fun CollectorPackageHeader(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
-                // Vollstaendige Formatstrings je Baustein, mit " · " verbunden
                 val parts = buildList {
                     add(pluralStringResource(R.plurals.linkgrabber_link_count, group.items.size, group.items.size))
                     add(pluralStringResource(R.plurals.linkgrabber_online_count, online, online))

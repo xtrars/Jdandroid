@@ -1,16 +1,13 @@
 package com.jdandroid.core.texts
 
 /**
- * Deutsche Standardtexte der Engine (DownloadEngine, Extractor, FreeMode,
- * Format) fuer [com.jdandroid.core.Texts] ohne Android-Context. Jeder
- * Schluessel steht wortgleich in `res/values/strings_engine.xml` und
- * uebersetzt in `res/values-en/strings_engine.xml` (geprueft von `TextsTest`).
- *
- * Schluesselschema: `engine_<bedeutung>`; Platzhalter `%1$s`, `%1$d`.
+ * German fallback texts of the engine layer for [com.jdandroid.core.Texts].
+ * Every key exists verbatim in `res/values/strings_engine.xml` and translated
+ * in `res/values-en/strings_engine.xml` (checked by `TextsTest`).
  */
 object EngineTexts {
     val texts: Map<String, String> = mapOf(
-        // Free-Modus (FreeMode): Anzeige der gespeicherten Codes
+        // FreeMode
         "engine_free_wait" to "Wartezeit im Free-Modus: %1\$s",
         "engine_free_wait_reason" to "Wartezeit im Free-Modus: %1\$s – %2\$s",
         "engine_free_captcha" to "Captcha nötig – im Menü „Captcha lösen“",
@@ -18,7 +15,7 @@ object EngineTexts {
         "engine_free_disabled" to "Kein Konto und Free-Modus aus",
         "engine_free_no_premium" to "Konto ohne Premium und Free-Modus aus",
 
-        // Download-Ablauf (DownloadEngine)
+        // DownloadEngine
         "engine_target_folder" to "Zielordner",
         "engine_unknown_hoster" to "Unbekannter Hoster",
         "engine_generic_error" to "Fehler",
@@ -34,7 +31,7 @@ object EngineTexts {
         "engine_download_incomplete" to "Download unvollständig (%1\$s von %2\$s)",
         "engine_hash_mismatch" to "Prüfsumme (%1\$s) stimmt nicht – Datei wird erneut geladen",
 
-        // Archive und Entpacken (DownloadEngine)
+        // DownloadEngine, archives
         "engine_first_volume_missing_not_extracted" to "Erstes Archiv-Teil fehlt, nicht entpackt",
         "engine_first_volume_missing" to "Erstes Archiv-Teil fehlt",
         "engine_entry_not_found" to "Eintrag nicht gefunden",
@@ -45,7 +42,7 @@ object EngineTexts {
         "engine_archive_part_missing" to "Archivteil nicht mehr vorhanden: %1\$s",
         "engine_archive_incomplete_loading" to "Archiv unvollständig – weitere Teile werden noch geladen",
 
-        // Entpacker (Extractor)
+        // Extractor
         "engine_seven_zip_unavailable" to "Native 7-Zip-Bibliothek konnte nicht geladen werden (RAR-Entpacken nicht möglich): %1\$s",
         "engine_unknown_archive_format" to "Unbekanntes Archivformat: %1\$s",
         "engine_extract_failed" to "Entpacken fehlgeschlagen (Passwort nicht in der Liste?): %1\$s",

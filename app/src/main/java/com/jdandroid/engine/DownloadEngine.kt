@@ -39,20 +39,19 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Fuehrt die eigentlichen Downloads aus: Link aufloesen, Datei mit
- * Range-Resume herunterladen, Fortschritt ueber den [ProgressBus] melden;
- * Abschluss, Entpacken und Export uebernimmt der [ArchiveCoordinator], die
- * Ablageorte kennt [StorageTarget], den Free-Modus-Ablauf der [FreeFlow].
+ * Runs the downloads: resolves links, transfers files with range resume and
+ * reports progress via [ProgressBus]. Completion, extraction and export are
+ * handled by [ArchiveCoordinator], storage locations by [StorageTarget], the
+ * free-mode flow by [FreeFlow].
  *
- * In die Datenbank gehen nur Zustandswechsel (Start, Pause, Fehler,
- * Abschluss, Entpack-Start/-Ende, jeweils mit dem letzten Bytestand) und
- * eine Sicherung des Bytestands hoechstens alle [SAVE_MS]; Live-Werte
- * (Bytes, Geschwindigkeit, Entpack-Prozent) liegen nur im Bus.
+ * Only state changes (with the last byte count) and a byte-count checkpoint
+ * at most every [SAVE_MS] reach the database; live values (bytes, speed,
+ * extraction percent) exist in the bus only.
  */
 class DownloadEngine(
     private val context: Context,
     private val scope: CoroutineScope,
-    /** Monotone Uhr fuer Messungen und Drosselung; Tests koennen sie vorstellen. */
+    /** Monotonic clock for measurements and throttling; tests can advance it. */
     private val clock: Clock = Clock.SYSTEM,
     private val onStateChanged: () -> Unit
 ) {
@@ -60,35 +59,31 @@ class DownloadEngine(
     private val dao = app.db.downloadDao()
     private val accountDao = app.db.accountDao()
 
-    // ConcurrentHashMap: size() wird vom Service-Thread ohne Mutex gelesen
+    // ConcurrentHashMap: size() is read by the service thread without the mutex
     private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
     private val mutex = Mutex()
 
-    /** Letzte Benachrichtigung des Service (monotone Uhr), um Aktualisierungen zu drosseln. */
     @Volatile
     private var lastNotify = clock.nowMillis() - NOTIFY_MS
 
     private val storage = StorageTarget(context, app.settings)
     private val freeFlow = FreeFlow(dao, accountDao, app.settings)
-    /** Abschluss fertiger Downloads, Archiv-Sets und Entpacken. */
     private val archives = ArchiveCoordinator(
         app, dao, app.settings, storage, scope, clock, onStateChanged
     ) { scope.launch { pump() } }
-    /** Abschluss-Sperre des Koordinators, siehe [ArchiveCoordinator.completionMutex]. */
+    /** See [ArchiveCoordinator.completionMutex]. */
     private val completionMutex get() = archives.completionMutex
 
     /**
-     * Startsperre: pump() wartet, bis der Dienst haengen gebliebene Eintraege
-     * zurueckgesetzt hat. Vorher konnte ein frueher pump() (Netzwerk-Callback)
-     * einen Eintrag starten, den requeueRunning() danach erneut einreihte -
-     * derselbe Download lief zweimal.
+     * Start gate: pump() waits until the service has requeued stale entries.
+     * Otherwise an early pump() (network callback) could start an entry that
+     * requeueRunning() then requeues, running the same download twice.
      */
     private val startGate = CompletableDeferred<Unit>()
 
     private val limiter = SpeedLimiter(clock)
 
     init {
-        // Geschwindigkeitslimit aus den Einstellungen live uebernehmen
         scope.launch {
             app.settings.speedLimitMbit.collect {
                 limiter.limitBps = com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it)
@@ -96,34 +91,27 @@ class DownloadEngine(
         }
     }
 
-    /** Laufende Downloads plus laufende Entpackvorgaenge. */
+    /** Running downloads plus running extractions. */
     val activeCount: Int get() = jobs.size + archives.activeCount
 
     fun markReady() { startGate.complete(Unit) }
 
-    /** Nichts laeuft und nichts wartet - unter der Sperre, damit pump() nicht dazwischenfunkt. */
+    /** Nothing runs and nothing is due; under the lock so pump() cannot interleave. */
     suspend fun isIdle(): Boolean = mutex.withLock {
-        // Eintraege, die auf ein Captcha warten, brauchen keinen laufenden
-        // Dienst: "Captcha loesen" startet ihn bei Bedarf neu
+        // Entries held for a captcha need no running service: solving it restarts the service
         jobs.isEmpty() && archives.activeCount == 0 &&
             dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
     }
 
-    /** Summe der aktuellen Geschwindigkeiten, fuer die Benachrichtigung. */
     val totalSpeedBps: Long get() = ProgressBus.totalSpeedBps()
 
-    /**
-     * Geladene Bytes aller offenen Eintraege fuer die Benachrichtigung: fuer
-     * laufende Downloads der Live-Stand aus dem Bus, fuer die uebrigen die
-     * (bei Pause/Fehler gesicherte) Datenbank.
-     */
+    /** Downloaded bytes of all open entries: live bus values for running ones, database for the rest. */
     suspend fun openDownloadedBytes(): Long {
         val live = ProgressBus.state.value
         val liveBytes = live.values.sumOf { it.downloadedBytes.coerceAtLeast(0) }
         return dao.openDownloadedBytesExcept(live.keys.toList() + listOf(-1L)) + liveBytes
     }
 
-    /** Service hoechstens einmal pro Sekunde ueber Fortschritt informieren. */
     private fun notifyProgress() {
         val now = clock.nowMillis()
         if (now - lastNotify >= NOTIFY_MS) {
@@ -132,10 +120,7 @@ class DownloadEngine(
         }
     }
 
-    /**
-     * Getaktete Verbindung bei aktiver WLAN-Beschraenkung? Dann wird nicht
-     * gestartet; die Eintraege bleiben in der Warteschlange.
-     */
+    /** True when "Wi-Fi only" is set and the active network is metered. */
     private fun blockedByMeteredNetwork(wifiOnly: Boolean): Boolean {
         if (!wifiOnly) return false
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
@@ -143,7 +128,7 @@ class DownloadEngine(
         return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
-    /** Startet weitere Downloads, solange Slots frei sind. */
+    /** Starts queued downloads while slots are free and arms the retry timer. */
     suspend fun pump() {
         startGate.await()
         if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
@@ -153,7 +138,7 @@ class DownloadEngine(
         val max = app.settings.currentMaxConcurrent()
         mutex.withLock {
             while (jobs.size < max) {
-                // Bereits laufende Kennungen ausschliessen: nie derselbe Download doppelt
+                // Exclude running ids: never the same download twice
                 val running = jobs.keys.toList() + listOf(-1L)
                 val next = dao.nextQueued(System.currentTimeMillis(), running) ?: break
                 dao.setStatus(next.id, DownloadStatus.RUNNING)
@@ -165,9 +150,8 @@ class DownloadEngine(
     }
 
     /**
-     * Netzwechsel: bei "Nur WLAN" und getakteter Verbindung laufende Downloads
-     * anhalten und zurueck in die Warteschlange legen - sie starten bei
-     * WLAN-Rueckkehr automatisch. Sonst einfach weiter pumpen.
+     * On a metered network with "Wi-Fi only" set, running downloads go back to
+     * the queue and restart automatically when Wi-Fi returns; otherwise pumps.
      */
     suspend fun onNetworkChanged() {
         if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
@@ -178,8 +162,8 @@ class DownloadEngine(
             }
             running.values.forEach { it.cancel() }
             ProgressBus.removeAll(running.keys)
-            // Unter der Abschluss-Sperre: ein Job im NonCancellable-Abschluss
-            // (Datei wird gerade verschoben) darf nicht mehr zurueckgestuft werden
+            // Under the completion lock: a job in its NonCancellable completion
+            // (file being moved) must not be requeued any more
             completionMutex.withLock { running.keys.forEach { dao.requeueIfRunning(it) } }
             onStateChanged()
         } else {
@@ -215,8 +199,8 @@ class DownloadEngine(
         dao.delete(id)
         item?.let {
             tempFile(it).delete()
-            // Archivteile im Paketordner mit entfernen, wenn kein anderer Eintrag
-            // des Pakets dasselbe Archiv referenziert; sonst bleiben sie unsichtbar liegen
+            // Remove archive volumes too unless another entry of the package
+            // references the same archive; they would linger invisibly otherwise
             val key = it.archiveKey
             if (key != null && dao.countByArchiveKey(it.packageId, key) == 0) {
                 archives.archiveDir(it.packageId).listFiles()
@@ -258,8 +242,8 @@ class DownloadEngine(
     }
 
     suspend fun pauseAll() {
-        // Erst die Warteschlange anhalten: die abgebrochenen Jobs rufen in ihrem
-        // finally pump() auf und wuerden sonst sofort die naechsten Eintraege starten.
+        // Pause the queue first: cancelled jobs call pump() in their finally
+        // and would start the next entries right away.
         dao.pauseQueued()
         val running = mutex.withLock {
             val copy = jobs.toMap()
@@ -268,7 +252,7 @@ class DownloadEngine(
         }
         running.values.forEach { it.cancel() }
         ProgressBus.removeAll(running.keys)
-        // Entpackende Eintraege bleiben EXTRACTING (laufen unter NonCancellable weiter)
+        // Extracting entries stay EXTRACTING (they continue NonCancellable)
         completionMutex.withLock { running.keys.forEach { dao.pauseIfActive(it) } }
         onStateChanged()
     }
@@ -281,8 +265,7 @@ class DownloadEngine(
     private suspend fun run(id: Long) {
         try {
             val item = dao.byId(id) ?: return
-            // Liegt das Archiv bereits vollstaendig im Paketordner (z.B. nach
-            // Pause waehrend des Entpackens), nicht erneut laden
+            // Archive already complete in the package folder (e.g. paused during extraction): do not reload
             item.fileName?.let { name ->
                 val existing = File(archives.archiveDir(item.packageId), name)
                 if (item.fileSize > 0 && existing.isFile && existing.length() == item.fileSize) {
@@ -292,7 +275,6 @@ class DownloadEngine(
             }
             val hoster = HosterRegistry.byId(item.hosterId)
                 ?: throw HosterException(Texts.t("engine_unknown_hoster"), true)
-            // Premium- oder Free-Weg (Wartezeiten, Captcha) waehlt der FreeFlow
             val resolved = freeFlow.resolve(id, item, hoster)
 
             var current = dao.byId(id) ?: return
@@ -315,22 +297,20 @@ class DownloadEngine(
                 handleTransientFailure(id, e.message ?: Texts.t("engine_generic_error"))
             }
         } catch (e: com.jdandroid.data.Secrets.SecretsException) {
-            // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
+            // Credentials cannot be decrypted: retrying is pointless
             fail(id, e.message)
         } catch (e: IllegalArgumentException) {
-            // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
+            // Unusable download URL (e.g. relative link)
             fail(id, Texts.t("engine_invalid_download_url", e.message ?: ""))
         } catch (e: Exception) {
-            // Abbruch (Pause/Loeschen) kommt von OkHttp als IOException("Canceled"):
-            // nicht als voruebergehenden Fehler zaehlen, sondern sauber beenden
+            // Cancellation (pause/delete) arrives from OkHttp as IOException("Canceled")
+            // and must not count as a transient failure
             coroutineContext.ensureActive()
-            // Netzwerkfehler und Abbrueche sind typischerweise voruebergehend
             handleTransientFailure(id, e.message ?: e.javaClass.simpleName)
         } finally {
-            // Auch bei Abbruch zuverlaessig austragen: withLock wuerde in einer
-            // abgebrochenen Coroutine bei Konkurrenz sofort werfen
-            // Die Live-Werte der Uebertragung raeumt transfer() selbst weg:
-            // nach dem Abschluss gehoert der Bus-Eintrag ggf. dem Entpacken
+            // NonCancellable: withLock throws immediately in a cancelled coroutine
+            // under contention. transfer() clears its own bus entry, which may
+            // belong to the extraction after completion.
             withContext(NonCancellable) { mutex.withLock { jobs.remove(id) } }
             scope.launch { pump() }
         }
@@ -347,10 +327,8 @@ class DownloadEngine(
     }
 
     /**
-     * Vorübergehende Fehler (Netzwerkabbruch, Serverhänger) werden automatisch
-     * wiederholt - mit exponentiell wachsender Wartezeit, damit ein dauerhaft
-     * gestörter Hoster nicht dauerfeuert. Erst danach gilt der Download als
-     * gescheitert.
+     * Schedules a retry with exponential backoff; after [MAX_ATTEMPTS] the
+     * download fails. The retry itself is started by the timer from pump().
      */
     private suspend fun handleTransientFailure(id: Long, message: String) {
         val item = dao.byId(id) ?: return
@@ -364,24 +342,21 @@ class DownloadEngine(
             id, attempts, System.currentTimeMillis() + backoff,
             Texts.t("engine_retry_scheduled", message, attempts, MAX_ATTEMPTS, backoff / 1000)
         )
-        // Den Folgeversuch stoesst der Timer aus pump() an (run() ruft pump() im finally)
     }
 
-    /** Ausstehender Timer fuer das naechste retryAt und sein Zeitpunkt (unter [timerLock]). */
+    /** Pending timer for the next retryAt and its time; both guarded by [timerLock]. */
     private var retryTimer: Job? = null
     private var retryTimerAt = Long.MAX_VALUE
     private val timerLock = Any()
 
     /**
-     * Timer auf das kleinste kuenftige retryAt stellen (Free-Wartezeit,
-     * Backoff). Ein delay() im Dienst-Scope allein reicht nicht: stirbt der
-     * Prozess waehrend einer stundenlangen Wartezeit, ruft der neue Dienst
-     * nur einmal pump() - nextQueued() liefert den Eintrag noch nicht, und
-     * nichts stiesse ihn nach Ablauf an. Deshalb liest pump() den Zeitpunkt
-     * aus der Datenbank; es laeuft immer nur ein Timer, ein frueherer
-     * Zeitpunkt ersetzt ihn. Captcha-Eintraege (jenseits des Horizonts)
-     * bleiben unberuecksichtigt. retryAt ist ein persistierter Wanduhr-
-     * Zeitstempel, deshalb wird hier bewusst gegen die Wanduhr gerechnet.
+     * Arms a timer for the smallest future retryAt (free wait, backoff). The
+     * time is read from the database rather than kept in a delay(): if the
+     * process dies during an hours-long wait, the new service calls pump()
+     * only once and nothing would trigger the entry after the wait. Only one
+     * timer runs; an earlier time replaces it. Captcha entries beyond the
+     * horizon are ignored. retryAt is a persisted wall-clock timestamp, hence
+     * the wall clock here.
      */
     private suspend fun armRetryTimer() {
         val now = System.currentTimeMillis()
@@ -392,8 +367,8 @@ class DownloadEngine(
             retryTimerAt = next
             retryTimer = scope.launch {
                 kotlinx.coroutines.delay((next - now + RETRY_TIMER_SLACK_MS).coerceAtLeast(0))
-                // Sich selbst austragen, bevor pump() den naechsten Timer stellt:
-                // sonst hielte pump() diesen (noch laufenden) Job fuer den aktuellen
+                // Deregister before pump() arms the next timer, or pump() would
+                // take this still-running job for the current one
                 synchronized(timerLock) {
                     if (retryTimer === coroutineContext[Job]) {
                         retryTimer = null
@@ -417,18 +392,16 @@ class DownloadEngine(
         val builder = Request.Builder()
             .url(directUrl)
             .header("User-Agent", Http.USER_AGENT)
-            // Ohne gzip: sonst fehlt Content-Length und die Vollstaendigkeitspruefung
+            // No gzip: Content-Length and the completeness check would be lost
             .header("Accept-Encoding", "identity")
-        // Vom Hoster mitgegebene Header (Free-Modus: Cookie, Referer); der
-        // Hoster darf dabei auch die Browser-Kennung setzen
+        // Hoster headers (free mode: Cookie, Referer); may override the User-Agent
         headers.forEach { (name, value) -> builder.header(name, value) }
         if (offset > 0) builder.header("Range", "bytes=$offset-")
 
-        // Bei Pause/Loeschen die Verbindung sofort kappen: sonst wirkt der
-        // Abbruch erst nach dem naechsten Socket-Read (bis zu 60 s). Ein
-        // invokeOnCompletion-Handler feuert erst im Endzustand des Jobs - also
-        // erst, wenn der blockierende Read ohnehin zurueck ist. Der Waechter
-        // reagiert dagegen sofort auf den Uebergang nach "cancelling".
+        // Cut the connection at once on pause/delete, or the cancellation takes
+        // effect only after the next socket read (up to 60 s). invokeOnCompletion
+        // fires only in the job's final state, i.e. after the blocking read
+        // returned anyway; the watcher reacts to the "cancelling" transition.
         val call = Http.client.newCall(builder.build())
         val vanished = !coroutineScope {
             val watcher = launch { try { awaitCancellation() } finally { call.cancel() } }
@@ -440,7 +413,6 @@ class DownloadEngine(
         }
         if (vanished) return
 
-        // Integritaet pruefen, wenn der Hoster eine Pruefsumme geliefert hat
         if (expectedHash != null) verifyHash(target, expectedHash)
 
         val finalName = dao.byId(item.id)?.fileName ?: target.name.removeSuffix(".part")
@@ -449,9 +421,9 @@ class DownloadEngine(
     }
 
     /**
-     * Antwort einordnen und die Daten in [initialTarget] schreiben. Liefert
-     * false, wenn der Eintrag zwischenzeitlich geloescht wurde. [onTarget]
-     * meldet eine umbenannte Teildatei (Name kam erst mit der Antwort).
+     * Classifies the response and writes the body to [initialTarget]. Returns
+     * false if the entry was deleted meanwhile. [onTarget] reports a renamed
+     * part file (the name arrived with the response).
      */
     private suspend fun transfer(
         resp: okhttp3.Response,
@@ -468,37 +440,32 @@ class DownloadEngine(
                 offset, item.fileSize
             )
         ) {
-            // 416: angefragter Bereich hinter Dateiende -> Datei war schon vollstaendig.
             ResponseKind.AlreadyComplete -> {
                 dao.saveProgress(item.id, offset, offset)
                 return true
             }
-            // Teildatei zu lang (z.B. Fremdinhalt): muss neu geladen werden
             ResponseKind.RestartMismatch -> {
                 target.delete()
                 throw HosterException(Texts.t("engine_part_size_mismatch"))
             }
             ResponseKind.HttpError -> throw HosterException(Texts.t("engine_http_error", resp.code))
-            // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
-            // niemals als Dateiinhalt speichern - sonst landet die Seite in der
-            // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
+            // Never store HTML as file content: the page would end up in the .part
+            // and be glued to the real remainder on resume
             ResponseKind.HtmlPage -> throw HosterException(
                 Texts.t("engine_html_instead_of_file", resp.request.url.host)
             )
-            // Server ignoriert Range -> von vorn beginnen
             ResponseKind.RangeIgnored -> {
                 target.delete()
                 offset = 0
             }
             ResponseKind.Continue -> Unit
         }
-        val body = resp.body // ab OkHttp 5 nie null
+        val body = resp.body // never null since OkHttp 5
         val total = transferTotal(body.contentLength(), offset, item.fileSize)
 
-        // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
-        // Minuten mit einem nichtssagenden IO-Fehler ab.
+        // Check free space up front, or the download fails minutes later with
+        // an unhelpful IO error
         val needed = if (total > 0) total - offset else 0
-        // StatFs statt File.usableSpace: fragt das Dateisystem direkt
         val free = android.os.StatFs(storage.downloadDir().path).availableBytes
         if (needed > 0 && free in 0 until needed) {
             throw HosterException(
@@ -507,10 +474,8 @@ class DownloadEngine(
             )
         }
 
-        // Dateiname ggf. aus Content-Disposition oder URL ableiten. Der vom
-        // Server gelieferte Name ersetzt einen Platzhalter ohne Endung (z.B.
-        // aus dem Seitentitel der Linkpruefung) - sonst erkennt die App das
-        // Archiv nicht und entpackt nie.
+        // The server-supplied name replaces a placeholder without an extension
+        // (e.g. from the page title), otherwise the archive is never recognised
         var current = dao.byId(item.id) ?: return false
         val serverName = FileNames.fromDisposition(resp.header("Content-Disposition"))
         val candidate = when {
@@ -525,18 +490,13 @@ class DownloadEngine(
         }
 
         var written = offset
-        // Monotone Uhr: eine Zeitkorrektur des Systems darf die Messung nicht verfaelschen
         val startedAt = clock.nowMillis()
         var lastSave = startedAt
         var attemptsReset = false
-        // Start des Ladens: Bytestand und (jetzt bekannte) Groesse einmal
-        // sichern - der einzige Zustandswechsel vor dem Ende der Uebertragung
         dao.saveProgress(item.id, written, total)
-        // Geschwindigkeit als gleitender Durchschnitt ueber SPEED_WINDOW_MS:
-        // der Rohwert einzelner Messintervalle springt stark und liess die
-        // Anzeige flackern. Bytes und Geschwindigkeit gehen alle SAMPLE_MS in
-        // den ProgressBus (nicht in die Datenbank); gesichert wird der
-        // Bytestand hoechstens alle SAVE_MS und beim Verlassen der Schleife.
+        // Speed as a moving average over SPEED_WINDOW_MS; raw per-interval
+        // values jump too much. Bytes and speed go to the bus every SAMPLE_MS,
+        // the byte count is saved at most every SAVE_MS and when leaving the loop.
         val samples = ArrayDeque<Pair<Long, Long>>()
         samples.addLast(startedAt to written)
         try {
@@ -550,8 +510,8 @@ class DownloadEngine(
                         written += read
                         limiter.throttle(read)
                         if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
-                            // Echter Fortschritt: ein wackliges Netz darf einen
-                            // fortsetzbaren Download nicht nach 5 Abbruechen aufgeben
+                            // Real progress: a flaky network must not give up a
+                            // resumable download after MAX_ATTEMPTS drops
                             attemptsReset = true
                             dao.resetAttempts(item.id)
                         }
@@ -575,10 +535,9 @@ class DownloadEngine(
                 }
             }
         } finally {
-            // Letzten Bytestand auch bei Abbruch/Fehler sichern (Pause, Netz weg):
-            // Fortsetzen nutzt zwar die .part-Groesse, die Liste soll aber
-            // nicht auf den Stand von vor 30 s zurueckspringen. Danach die
-            // Live-Werte weg: ab jetzt gilt wieder der Datenbankstand
+            // Save the last byte count even on cancel/failure so the list does
+            // not jump back 30 s (resume uses the .part size anyway), then drop
+            // the live values: the database is authoritative again
             withContext(NonCancellable) {
                 dao.saveProgress(item.id, written, total)
                 ProgressBus.remove(item.id)
@@ -590,21 +549,13 @@ class DownloadEngine(
         return true
     }
 
-    /**
-     * Nachtraegliches Entpacken eines fertigen Downloads (Aktionsmenue), siehe
-     * [ArchiveCoordinator.extractNow]. Wartet die Startsperre ab, damit der
-     * Dienst vorher haengen gebliebene Eintraege zurueckgesetzt hat.
-     */
+    /** See [ArchiveCoordinator.extractNow]; waits for the start gate first. */
     suspend fun extractNow(id: Long): String? {
         startGate.await()
         return archives.extractNow(id)
     }
 
-    /**
-     * Vergleicht die Pruefsumme der Datei mit der vom Hoster gemeldeten. Bei
-     * Abweichung wird die Datei verworfen und der Download (voruebergehender
-     * Fehler) automatisch wiederholt.
-     */
+    /** On a hash mismatch the file is discarded and the download retried as a transient failure. */
     private suspend fun verifyHash(file: File, expected: String) {
         val algorithm = when (expected.length) {
             32 -> "MD5"
@@ -619,45 +570,41 @@ class DownloadEngine(
         }
     }
 
-    /** Neuen Dateinamen speichern und eine vorhandene Teildatei mit umbenennen. */
+    /** Stores the new file name and renames an existing part file along with it. */
     private suspend fun adoptFileName(item: DownloadItem, name: String): DownloadItem {
         val old = tempFile(item)
         val updated = item.copy(fileName = name)
         val renamed = tempFile(updated)
         if (old.path != renamed.path && old.exists()) old.renameTo(renamed)
         dao.renameFile(item.id, name)
-        // Mit bekanntem Namen blockiert dieser Eintrag ein wartendes Archiv-Set
-        // des Pakets vielleicht nicht mehr (z.B. readme.nfo statt part3)
+        // With a known name this entry may no longer block a waiting archive
+        // set of the package (e.g. readme.nfo instead of part3)
         archives.retryWaitingSets(item.packageId)
         return updated
     }
 
     internal companion object {
-        /** Maximale automatische Wiederholversuche je Download. */
         const val MAX_ATTEMPTS = 5
 
-        /** Wartezeit vor dem [attempt]-ten Wiederholversuch: 10 s, 20 s, ... hoechstens 5 min. */
+        /** Wait before the [attempt]-th retry: 10 s, 20 s, ... capped at 5 min. */
         fun backoffMillis(attempt: Int): Long {
             val base = 10_000L shl (attempt - 1).coerceAtMost(5)
             return base.coerceAtMost(5 * 60_000L)
         }
 
-        /** Ab so viel neuem Fortschritt gilt ein Versuch als erfolgreich. */
+        /** New progress after which the attempt counter is reset. */
         const val PROGRESS_RESET_BYTES = 4L * 1024 * 1024
 
-        /** Abstand der Messpunkte fuer die Geschwindigkeit. */
         const val SAMPLE_MS = 500L
 
-        /** Fenster des gleitenden Durchschnitts. */
         const val SPEED_WINDOW_MS = 5_000L
 
-        /** Hoechstens so oft wird der Bytestand waehrend des Ladens in die Datenbank gesichert. */
+        /** Minimum interval between byte-count checkpoints in the database. */
         const val SAVE_MS = 30_000L
 
-        /** Zuschlag auf den Timer fuer retryAt, damit nextQueued() den Eintrag sicher liefert. */
+        /** Slack on the retry timer so nextQueued() definitely returns the entry. */
         const val RETRY_TIMER_SLACK_MS = 500L
 
-        /** Mindestabstand der Benachrichtigungs-Aktualisierung. */
         const val NOTIFY_MS = 1_000L
     }
 }

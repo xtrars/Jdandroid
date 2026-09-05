@@ -4,28 +4,27 @@ import okhttp3.HttpUrl
 import java.io.File
 
 /**
- * Dateinamen aus Server-Antworten ableiten und dateisystemtauglich machen.
- * Einzige Stelle fuer Sanitizer, Content-Disposition-Parser und Laengenlimit -
- * vorher lagen drei abweichende Kopien in Engine, Linkpruefung und Hoster.
+ * Derives file names from server responses and makes them safe for the file
+ * system: sanitizer, Content-Disposition parser and length limit.
  */
 internal object FileNames {
     const val FALLBACK = "download.bin"
 
-    /** Auf Android/ext4 verboten bzw. auf FAT/SAF problematisch. */
+    /** Forbidden on ext4 or problematic on FAT/SAF. */
     private val forbidden = Regex("""[/\\:*?"<>|]""")
 
     private val encodedName = Regex("""filename\*=(?:[Uu][Tt][Ff]-8)?'[^']*'([^;]+)""")
     private val plainName = Regex("""filename="([^"]*)"|filename=([^;]+)""")
 
-    /** Verbotene Zeichen ersetzen, Leerraum und fuehrende Punkte entfernen; leer -> null. */
+    /** Replaces forbidden characters, trims whitespace and leading dots; empty -> null. */
     fun clean(name: String): String? =
         name.replace(forbidden, "_").trim().trimStart('.').ifBlank { null }
 
-    /** Server-gelieferte Namen bereinigen (Pfad-Traversal, verbotene Zeichen, Laenge). */
+    /** Cleans a server-supplied name (path traversal, forbidden characters, length). */
     fun sanitize(name: String, maxBytes: Int = MAX_BYTES): String =
         limitLength(clean(name) ?: FALLBACK, maxBytes)
 
-    /** Dateisysteme erlauben 255 Byte; Endung erhalten, Basis kuerzen (auch bei Multibyte). */
+    /** File systems allow 255 bytes; keeps the extension and shortens the base (multibyte-safe). */
     fun limitLength(name: String, maxBytes: Int = MAX_BYTES): String {
         if (name.toByteArray().size <= maxBytes) return name
         val ext = name.substringAfterLast('.', "").take(10)
@@ -35,9 +34,9 @@ internal object FileNames {
     }
 
     /**
-     * Dateiname aus Content-Disposition, bereinigt; null ohne verwertbaren Namen.
-     * RFC 5987: nur filename*= ist URL-kodiert und hat Vorrang; ein rohes
-     * filename="C++.zip" darf nicht dekodiert werden ("C  .zip", "100%.rar" wuerde werfen).
+     * Sanitized name from Content-Disposition, null without a usable one.
+     * RFC 5987: only filename*= is URL-encoded and takes precedence; a plain
+     * filename="C++.zip" must not be decoded ("C  .zip"; "100%.rar" would throw).
      */
     fun fromDisposition(cd: String?): String? {
         if (cd.isNullOrBlank()) return null
@@ -53,18 +52,16 @@ internal object FileNames {
     }
 
     /**
-     * Name fuer einen Download: Content-Disposition, sonst letztes Pfadsegment
-     * der endgueltigen Adresse (nach Weiterleitungen; Segmente sind bereits
-     * dekodiert, "My%20File.rar" -> "My File.rar"), sonst [FALLBACK].
+     * Content-Disposition, else the last path segment of the final URL
+     * (segments are already decoded), else [FALLBACK].
      */
     fun fromResponse(contentDisposition: String?, url: HttpUrl): String =
         fromDisposition(contentDisposition)
             ?: sanitize(url.pathSegments.lastOrNull { it.isNotBlank() } ?: "")
 
     /**
-     * Ist [candidate] der bessere Dateiname? Ja, wenn bisher keiner bekannt
-     * ist, der bisherige keine Endung traegt oder erst der neue ein Archiv
-     * erkennen laesst.
+     * True when [candidate] should replace [current]: no current name, current
+     * has no extension, or only the candidate identifies an archive.
      */
     fun preferName(current: String?, candidate: String): Boolean {
         if (current == null) return true
@@ -75,10 +72,7 @@ internal object FileNames {
         return ArchiveNames.archiveBase(current) == null && ArchiveNames.archiveBase(candidate) != null
     }
 
-    /**
-     * Liefert einen freien Dateinamen: "film.mkv" -> "film (2).mkv".
-     * Vorher wurde eine bereits vorhandene Datei kommentarlos ueberschrieben.
-     */
+    /** Free file in [dir]: "film.mkv" -> "film (2).mkv". */
     fun uniqueFile(dir: File, fileName: String): File =
         File(dir, uniqueName(fileName) { File(dir, it).exists() })
 

@@ -37,12 +37,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** Ein Paket mit seinen Downloads. */
+/** A package with its downloads and per-item live extraction progress. */
 @Immutable
 data class DownloadGroup(
     val pkg: DownloadPackage,
     val items: List<DownloadItem>,
-    /** Entpack-Stand je Eintrag in Prozent (nur live aus dem [ProgressBus]), fehlend = unbekannt. */
+    /** Extraction percent per item id, live from the [ProgressBus]; absent = unknown. */
     val extractPercents: Map<Long, Int> = emptyMap()
 ) {
     /** Sum of the known file sizes. */
@@ -53,9 +53,8 @@ data class DownloadGroup(
     val finished: Int
     val failed: Int
     val active: Boolean
-    /** Laeuft gerade ein Entpacken in diesem Paket? */
     val extracting: Boolean
-    /** Entpack-Fortschritt in Prozent, -1 = unbekannt. */
+    /** Extraction percent of the package, -1 = unknown. */
     val extractPercent: Int
 
     // Computed once per instance: the header reads these fields on every recomposition.
@@ -96,16 +95,14 @@ data class DownloadGroup(
         this.extractPercent = percent
     }
 
-    /** Entpack-Stand eines Eintrags in Prozent, -1 = unbekannt. */
+    /** Extraction percent of one item, -1 = unknown. */
     fun extractPercent(item: DownloadItem): Int = extractPercents[item.id] ?: -1
 }
 
 /**
- * Gruppiert Eintraege nach Paketen. Eintraege ohne Paket (aeltere Versionen)
- * oder mit einem nicht mehr vorhandenen Paket landen unter [looseName]
- * (uebersetzt vom Aufrufer) - sonst waeren sie in keiner Gruppe und damit
- * unsichtbar. Der Entpack-Stand steht nicht in der Datenbank und wird aus
- * [live] an die Gruppe gehaengt.
+ * Groups items by package. Items without a package or with a missing package
+ * go under [looseName], otherwise they would be invisible. Extraction
+ * progress is not stored in the database and comes from [live].
  */
 internal fun groupDownloads(
     items: List<DownloadItem>,
@@ -129,9 +126,9 @@ internal fun groupDownloads(
 }
 
 /**
- * Live-Werte aus dem [ProgressBus] ueber die Datenbank-Eintraege legen.
- * Eintraege ohne Live-Werte bleiben dieselbe Instanz; -1 im Live-Wert
- * bedeutet "Datenbankwert behalten" (z.B. Bytestand waehrend des Entpackens).
+ * Overlays [ProgressBus] values onto database items. Items without live
+ * values keep their instance; -1 in a live value means "keep the database
+ * value" (e.g. bytes while extracting).
  */
 internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProgress>): List<DownloadItem> {
     if (live.isEmpty()) return items
@@ -144,7 +141,7 @@ internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProg
     }
 }
 
-/** Ein Eintrag, dessen Captcha gerade im Browser geloest wird (Seite samt Hoster-Cookies). */
+/** An item whose captcha is being solved in the browser. */
 data class CaptchaRequest(val id: Long, val page: CaptchaPage, val hoster: Hoster)
 
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
@@ -154,14 +151,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val packageDao = jdApp.db.packageDao()
 
-    /** Offene Captcha-Ansicht (Free-Modus), null = keine. */
     private val _captcha = MutableStateFlow<CaptchaRequest?>(null)
     val captcha: StateFlow<CaptchaRequest?> = _captcha
 
-    /**
-     * "Captcha loesen": die von der Engine gemerkte Seite oeffnen; nach einem
-     * Prozessneustart ist sie unbekannt, dann die Dateiseite selbst.
-     */
+    /** Opens the page remembered by the engine, or the file page after a process restart. */
     fun solveCaptcha(item: DownloadItem) {
         val hoster = HosterRegistry.byId(item.hosterId) ?: return
         _captcha.value = CaptchaRequest(item.id, FreeDownloads.captchaPage(item.id) ?: CaptchaPage(item.url), hoster)
@@ -169,7 +162,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelCaptcha() { _captcha.value = null }
 
-    /** Direktlink aus dem Browser: Hinweise hinterlegen, Eintrag sofort starten. */
+    /** Stores the direct link from the browser and restarts the item at once. */
     fun completeCaptcha(directUrl: String, cookies: String?) {
         val request = _captcha.value ?: return
         _captcha.value = null
@@ -181,10 +174,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Downloads (ohne Linksammler-Eintraege) nach Paketen gruppiert - wie im
-     * JDownloader. Bytestand, Geschwindigkeit und Entpack-Prozent kommen live
-     * aus dem [ProgressBus], nicht aus der Datenbank; Ueberlagern und
-     * Gruppieren laufen abseits des Hauptthreads.
+     * Downloads (without collector items) grouped by package. Bytes, speed and
+     * extraction percent come live from the [ProgressBus], not the database.
      */
     val groups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll(), ProgressBus.state) { items, packages, live ->
@@ -193,14 +184,13 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Linksammler: noch nicht gestartete Links nach Paketen. */
+    /** Collector: not yet started links grouped by package. */
     val collectorGroups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
             groupDownloads(items.filter { it.status == DownloadStatus.COLLECTED }, packages, noPackageName())
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Uebersetzte Beschriftung der Sammelgruppe fuer Eintraege ohne Paket. */
     private fun noPackageName(): String = getApplication<Application>().getString(R.string.accounts_no_package)
 
     fun startCollectedPackage(packageId: Long) {
@@ -232,14 +222,12 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deletePackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Linksammler-Eintraege haben nichts auf der Platte: direkt loeschen,
-            // ohne den Download-Dienst zu starten
+            // Collector items have nothing on disk; no need to start the service.
             val items = dao.byPackage(packageId)
             items.filter { it.status == DownloadStatus.COLLECTED }.forEach { dao.delete(it.id) }
             if (items.any { it.status != DownloadStatus.COLLECTED }) {
-                // Ein Aufruf fuer das ganze Paket: der Dienst loescht erst die
-                // Eintraege (Jobs, Dateien) und dann die Paketzeile - so bleiben
-                // keine verwaisten Eintraege zurueck
+                // The service deletes items (jobs, files) and then the package row,
+                // so no orphans remain.
                 DownloadService.send(getApplication(), DownloadService.ACTION_DELETE_PACKAGE, packageId)
             } else {
                 packageDao.delete(packageId)
@@ -259,7 +247,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun pausePackage(packageId: Long) =
         DownloadService.send(getApplication(), DownloadService.ACTION_PAUSE_PACKAGE, packageId)
 
-    /** Fuegt alle unterstuetzten Links aus dem Text hinzu (Duplikate werden uebersprungen). */
+    /** Adds all supported links from the text; duplicates are skipped. */
     fun addLinks(
         text: String,
         packageName: String? = null,
@@ -272,17 +260,13 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Importiert eine DLC-Container-Datei: entschluesselt sie und reiht die
-     * enthaltenen Links ein. Meldet Ergebnis/Fehler ueber [onResult].
-     */
+    /** Decrypts a DLC container and queues its links, keeping its package structure. */
     fun importDlc(content: String) {
         val app = getApplication<Application>()
         val res = app.resources
         AppMessages.progress(app.getString(R.string.accounts_dlc_decrypting))
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Paketstruktur des DLC uebernehmen - wie im JDownloader
                 val packages = ContainerDecrypter.decryptDlcPackages(content)
                 var added = 0
                 packages.forEach { pkg ->
@@ -290,8 +274,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val total = packages.sumOf { it.urls.size }
                 if (added > 0) {
-                    // "3 Links in 2 Paketen gestartet": Mengen als Plurals,
-                    // Satz als Formatstring
+                    // Quantities as plurals, the sentence as a format string.
                     val links = res.getQuantityString(R.plurals.accounts_dlc_links, added, added)
                     val count = packages.size
                     val pkgs = res.getQuantityString(R.plurals.accounts_dlc_packages, count, count)
@@ -314,9 +297,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * DLC aus dem Dateiwaehler: Lesen und Pruefen laufen im ViewModel-Scope,
-     * damit ein Tabwechsel oder Drehen waehrend des Lesens den Import nicht
-     * abbricht (ein rememberCoroutineScope stirbt mit dem Bildschirm).
+     * Reads a DLC from the file picker in the ViewModel scope, so a tab
+     * switch or rotation while reading does not cancel the import.
      */
     fun importDlcFromUri(resolver: ContentResolver, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -345,7 +327,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retry(item: DownloadItem) = resume(item)
 
-    /** Fertigen Download erneut laden (z.B. Datei versehentlich geloescht). */
+    /** Downloads a completed item again (e.g. file deleted by accident). */
     fun redownload(item: DownloadItem) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.requeueCompleted(item.id)
@@ -353,10 +335,9 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Nachtraeglich entpacken (Aktionsmenue). */
     fun extract(id: Long) = DownloadService.send(getApplication(), DownloadService.ACTION_EXTRACT, id)
 
-    /** Alle fertigen Archive eines Pakets entpacken (nur erste Teile eines Sets). */
+    /** Extracts all completed archives of a package (first parts of a set only). */
     fun extractPackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             val archives = dao.completedArchives(packageId).filter { item ->
@@ -373,8 +354,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(id: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             val item = dao.byId(id) ?: return@launch
-            // Linksammler-Eintraege haben nichts auf der Platte: direkt loeschen,
-            // ohne den Download-Dienst zu starten
+            // Collector items have nothing on disk; no need to start the service.
             if (item.status == DownloadStatus.COLLECTED) {
                 dao.delete(id)
                 packageDao.deleteEmpty()
@@ -388,7 +368,6 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Direkt in der DB, ein Update fuer alle: ein StateFlow ohne Sammler haette keinen Wert
             dao.requeuePausedAndFailed()
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
@@ -409,15 +388,11 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     val hosters: List<Hoster> = HosterRegistry.hosters
 
-    /** Angeforderter Browser-Login (Hoster mit CAPTCHA), null = keiner offen. */
+    /** Hoster whose browser login is open, null = none. */
     private val _webLogin = MutableStateFlow<Hoster?>(null)
     val webLogin: StateFlow<Hoster?> = _webLogin
 
-    /**
-     * Zustand des Browser-Logins lebt im ViewModel: die WebView wird beim
-     * Drehen neu erzeugt, die bereits erkannte Session und die Statuszeile
-     * duerfen dabei nicht verloren gehen.
-     */
+    // Browser login state lives here because the WebView is recreated on rotation.
     private val _webLoginStatus = MutableStateFlow(webLoginInitialStatus())
     val webLoginStatus: StateFlow<String> = _webLoginStatus
 
@@ -428,13 +403,12 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setWebLoginCookies(cookies: String?) { _webLoginCookies.value = cookies }
 
-    /** Meldung fuer den Nutzer (z.B. Keystore-Fehler beim Speichern), null = keine. */
+    /** Message for the user (e.g. a Keystore error while saving), null = none. */
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
     fun consumeMessage() { _message.value = null }
 
-    /** Erste Statuszeile des Browser-Logins, in der Geraetesprache. */
     private fun webLoginInitialStatus(): String =
         getApplication<Application>().getString(R.string.accounts_web_login_initial)
 
@@ -458,8 +432,7 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addAccount(hoster: Hoster, username: String?, password: String?, apiKey: String?) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Ohne funktionierenden Keystore wird NICHT gespeichert (kein
-            // stiller Klartext-Fallback) - der Nutzer bekommt eine Meldung.
+            // Without a working Keystore nothing is saved: no silent plaintext fallback.
             val account = try {
                 Account(
                     hosterId = hoster.id,
@@ -475,12 +448,11 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Konto aus einer im Browser uebernommenen Session anlegen. */
+    /** Creates an account from a session accepted in the browser. */
     fun addAccountWithCookies(hoster: Hoster, cookies: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val account = try {
-                // Kein Benutzername: die Kontenliste zeigt anhand der Cookies
-                // "Browser-Login" in der Geraetesprache an
+                // No username: the account list labels it "browser login" via the cookies.
                 Account(
                     hosterId = hoster.id,
                     cookies = Secrets.encrypt(cookies)
@@ -497,10 +469,10 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { AccountRefresher.check(jdApp, accountId) }
     }
 
-    /** Beim Oeffnen der Kontenansicht: veraltete Angaben (Traffic!) nachladen. */
+    /** Reloads stale account data (traffic) when the accounts tab opens. */
     fun refreshStale() = AccountRefresher.refreshStale(jdApp)
 
-    /** Minutentakt, solange die Kontenansicht sichtbar ist. */
+    /** Called every minute while the accounts tab is visible. */
     fun refreshAll() = AccountRefresher.refreshAll(jdApp)
 
     fun delete(account: Account) {

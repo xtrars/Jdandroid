@@ -6,17 +6,15 @@ import com.jdandroid.core.Texts
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Android-Provider fuer [Texts]: loest einen Schluessel als String-Ressource
- * (`R.string.<key>`) in der Sprache des Geraets auf. Fehlt die Ressource,
- * greift [Texts] auf die deutschen Kotlin-Maps zurueck.
+ * Android provider for [Texts]: resolves a key as `R.string.<key>` in the
+ * device language. Missing resources fall back to the Kotlin maps in [Texts].
  */
 class ResourceTexts(context: Context) : Texts.Provider {
     private val app = context.applicationContext
     private val ids = ConcurrentHashMap<String, Int>()
 
-    // getIdentifier ist hier Absicht: die Schluessel kommen zur Laufzeit aus
-    // Schichten ohne R-Klasse; Lint kennt die Verwendung nicht (UnusedResources
-    // ist in den betroffenen Dateien abgeschaltet).
+    // Keys come from layers without an R class, so lookup by name is required;
+    // Lint cannot see these usages (UnusedResources is disabled for those files).
     @SuppressLint("DiscouragedApi")
     override fun text(key: String, args: Array<out Any>): String? {
         val res = app.resources

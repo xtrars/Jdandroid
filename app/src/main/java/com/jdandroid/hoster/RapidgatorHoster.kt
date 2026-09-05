@@ -17,8 +17,8 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * rapidgator.net – offizielle API v2 fuer Premium-Konten; ohne Konto der
- * Free-Ablauf der Website ([resolveFree]: Timer, Freischaltung, Captcha).
+ * rapidgator.net: official API v2 for premium accounts; without an account the
+ * website's free flow ([resolveFree]: timer, unlock, captcha).
  */
 class RapidgatorHoster : Hoster {
 
@@ -31,7 +31,7 @@ class RapidgatorHoster : Hoster {
     private val base = "https://rapidgator.net/api/v2"
     private val pattern = Regex("""https?://(?:www\.)?(?:rapidgator\.net|rg\.to)/file/\S+""")
 
-    /** Session-Token pro Account-Id zwischenspeichern. */
+    /** Session token cache per account id. */
     private val tokens = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     override val siteHosts = setOf("rapidgator.net", "www.rapidgator.net", "rg.to", "www.rg.to")
@@ -40,18 +40,14 @@ class RapidgatorHoster : Hoster {
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
-    // ------------------------------------------------------------------
-    // Free-Modus (Website-Ablauf ohne Konto)
-    // ------------------------------------------------------------------
-
     private val siteBase = "https://rapidgator.net"
 
-    /** Captcha-Seite: dort loest der Nutzer das Turnstile im eingebetteten Browser. */
+    /** Captcha page: the user solves the Turnstile there in the embedded browser. */
     private val captchaPageUrl get() = "$siteBase/download/captcha"
 
     /**
-     * Browser-Kennung wie in der Captcha-Ansicht: Timer, Freischaltung,
-     * Captcha und Dateiabruf laufen unter derselben Kennung und denselben Cookies.
+     * Browser user agent as in the captcha view: timer, unlock, captcha and
+     * file request run under the same user agent and cookies.
      */
     private val browserUa: String
         get() = Http.browserUserAgent
@@ -59,10 +55,9 @@ class RapidgatorHoster : Hoster {
                 "Chrome/122.0.0.0 Mobile Safari/537.36"
 
     /**
-     * Zustand eines Free-Ablaufs je Datei-Kennung: eigener Cookie-Speicher
-     * (PHPSESSID, __token, sdata__), Timer-Kennung und Zeitpunkt, ab dem der
-     * Link freigeschaltet werden darf. Lebt nur im Prozess - nach einem Neustart
-     * beginnt der Ablauf von vorn.
+     * State of a free flow per file id: own cookie store (PHPSESSID, __token,
+     * sdata__), timer id and the time from which the link may be unlocked.
+     * Lives only in-process; after a restart the flow starts over.
      */
     private class FreeSession(val pageUrl: String) {
         lateinit var vars: RapidgatorFreeVars
@@ -94,7 +89,7 @@ class RapidgatorHoster : Hoster {
 
         val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
 
-        /** Cookie-Header fuer [url], null ohne passende Cookies. */
+        /** Cookie header for [url], null without matching cookies. */
         fun cookieHeader(url: String): String? {
             val http = runCatching { url.toHttpUrl() }.getOrNull() ?: return null
             val now = System.currentTimeMillis()
@@ -104,7 +99,7 @@ class RapidgatorHoster : Hoster {
             }.ifBlank { null }
         }
 
-        /** Alle Cookies im Set-Cookie-Format fuer den Browser. */
+        /** All cookies in Set-Cookie format for the browser. */
         fun cookiesForBrowser(): List<String> = synchronized(store) {
             val now = System.currentTimeMillis()
             store.filter { it.expiresAt > now }.map { it.toString() }
@@ -113,7 +108,7 @@ class RapidgatorHoster : Hoster {
 
     private val freeSessions = ConcurrentHashMap<String, FreeSession>()
 
-    /** Neustarts je Datei, wenn der Server Timer oder Zustand nicht anerkennt. */
+    /** Restarts per file when the server rejects the timer or the state. */
     private val restarts = ConcurrentHashMap<String, Int>()
 
     private data class Resp(val code: Int, val body: String, val location: String?, val finalUrl: String)
@@ -140,7 +135,7 @@ class RapidgatorHoster : Hoster {
         }
         return c.newCall(builder.build()).execute().use { resp ->
             val type = resp.header("Content-Type").orEmpty().lowercase()
-            // Nur Seiten und JSON als Text lesen, nie eine Datei (Heap)
+            // Only read pages and JSON as text, never a file (heap)
             val textual = type.isBlank() || type.startsWith("text/") || type.contains("json") ||
                 type.contains("javascript") || type.contains("xml")
             val body = if (textual) runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("") else ""
@@ -155,20 +150,20 @@ class RapidgatorHoster : Hoster {
     }
 
     /**
-     * Free-Modus ohne Konto. Ablauf ohne Nutzer: Dateiseite holen (Offline,
-     * Premium-Grenzen, Sperren mit Wartezeit), Timer per AjaxStartTimer
-     * starten und die Wartezeit (`secs`, meist 180 s) als [WaitException] an
-     * die Engine geben; beim naechsten Versuch den Link per
-     * AjaxGetDownloadLink freischalten und die Captcha-Seite pruefen. Steht
-     * dort das Turnstile-Formular, gehen die Session-Cookies mit der
-     * [CaptchaRequiredException] an die Captcha-Ansicht und der Nutzer loest
-     * das Captcha auf der Captcha-Seite; die Navigation auf den Fileserver
-     * (`pr<N>.rapidgator.net//?r=download/index&session_id=…`) faengt die
-     * Captcha-Ansicht ab und liefert sie als [FreeHints.direktUrlAusBrowser].
+     * Free mode without an account. Unattended flow: fetch the file page
+     * (offline, premium limits, blocks with wait time), start the timer via
+     * AjaxStartTimer and hand the wait (`secs`, usually 180 s) to the engine as
+     * [WaitException]; on the next attempt unlock the link via
+     * AjaxGetDownloadLink and check the captcha page. If it shows the Turnstile
+     * form, the session cookies go to the captcha view with the
+     * [CaptchaRequiredException] and the user solves the captcha there; the
+     * captcha view intercepts the navigation to the file server
+     * (`pr<N>.rapidgator.net//?r=download/index&session_id=…`) and returns it
+     * as [FreeHints.direktUrlAusBrowser].
      *
-     * Alle Schritte laufen ueber dieselbe IP, dieselben Cookies und dieselbe
-     * Browser-Kennung: die Freischaltung (`sdata__`) ist an die IP gebunden,
-     * ein zu frueher Abruf macht den Timer ungueltig (dann von vorn).
+     * All steps run over the same IP, cookies and browser user agent: the
+     * unlock (`sdata__`) is bound to the IP, and fetching too early invalidates
+     * the timer (then start over).
      */
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
         withContext(Dispatchers.IO) {
@@ -192,7 +187,7 @@ class RapidgatorHoster : Hoster {
                 val session = freeSessions[id]?.takeUnless { it.expired }
                     ?: startFreeSession(id, pageUrl)
 
-                // Timer laeuft noch: lange Reste an die Engine, kurze im Prozess abwarten
+                // Timer still running: long remainders to the engine, short ones in-process
                 val remaining = session.readyAt - System.currentTimeMillis()
                 if (remaining > MAX_INLINE_WAIT_MS) {
                     throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_rapidgator_free_wait"))
@@ -206,15 +201,15 @@ class RapidgatorHoster : Hoster {
                         else -> {
                             val block = reply.code?.let { RapidgatorFreePage.classify(it) }
                             if (block != null && block !is RapidgatorBlock.Restart) waitFor(block)
-                            // Timer nicht anerkannt (zu frueh, Zustand weg): von vorn
+                            // Timer not accepted (too early, state lost): start over
                             restart(id, Texts.t("hoster_rapidgator_unlock_rejected", reply.code ?: reply.state))
                             continue
                         }
                     }
                 }
 
-                // Captcha-Seite: bei verlorenem Zustand (andere IP, abgelaufen)
-                // leitet sie auf die Dateiseite zurueck - dann von vorn
+                // Captcha page: with lost state (other IP, expired) it redirects
+                // back to the file page, then start over
                 val page = session.fetch(resolveUrl(session.vars.captchaUrl), referer = pageUrl, followRedirects = false)
                 when {
                     page.code == 500 -> throw WaitException(30 * 60, Texts.t("hoster_rapidgator_download_not_possible"))
@@ -227,7 +222,7 @@ class RapidgatorHoster : Hoster {
                     )
                 }
                 RapidgatorFreePage.directLink(page.body)?.let { direct ->
-                    // Kein Captcha verlangt: Direktlink liegt schon vor
+                    // No captcha required: the direct link is already there
                     freeSessions.remove(id)
                     restarts.remove(id)
                     return@withContext ResolvedLink(
@@ -236,7 +231,7 @@ class RapidgatorHoster : Hoster {
                     )
                 }
                 if (RapidgatorFreePage.hasCaptchaForm(page.body)) {
-                    // Session-Cookies gehen mit: die Captcha-Ansicht setzt sie beim Oeffnen
+                    // Session cookies go along: the captcha view sets them when it opens
                     throw CaptchaRequiredException(
                         captchaPageUrl, Texts.t("hoster_rapidgator_captcha_browser"),
                         cookieUrl = siteBase, cookies = session.cookiesForBrowser()
@@ -250,17 +245,17 @@ class RapidgatorHoster : Hoster {
         }
 
     /**
-     * Dateiseite holen, auswerten und den Timer starten. Kehrt nie normal
-     * zurueck: die Wartezeit des Timers geht als [WaitException] an die Engine,
-     * die Session bleibt fuer den naechsten Versuch gespeichert.
+     * Fetches and parses the file page and starts the timer. Never returns
+     * normally: the timer's wait goes to the engine as [WaitException] and the
+     * session stays stored for the next attempt.
      */
     private fun startFreeSession(id: String, pageUrl: String): Nothing {
         freeSessions.remove(id)
         val session = FreeSession(pageUrl)
-        // Englische Texte erzwingen, damit die Fehlermuster greifen
+        // Force English texts so the error patterns match
         session.store.add(Cookie.Builder().name("lang").value("en").domain("rapidgator.net").path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
-        // Unbekannte Kennung: 302 auf /article/premium; rg.to leitet auf rapidgator.net weiter
+        // Unknown id: 302 to /article/premium; rg.to redirects to rapidgator.net
         if (page.code == 404 || !page.finalUrl.contains("/file/$id", ignoreCase = true) ||
             RapidgatorFreePage.isOffline(page.body)
         ) {
@@ -301,7 +296,7 @@ class RapidgatorHoster : Hoster {
             ?: throw HosterException(Texts.t("hoster_rapidgator_unexpected_response"), permanent = false)
     }
 
-    /** Zustand verwerfen und von vorn beginnen; nach zu vielen Anlaeufen vorerst aufgeben. */
+    /** Discards the state and starts over; gives up for now after too many restarts. */
     private fun restart(id: String, reason: String) {
         freeSessions.remove(id)
         val count = restarts.merge(id, 1) { a, b -> a + b } ?: 1
@@ -315,9 +310,10 @@ class RapidgatorHoster : Hoster {
         if (path.startsWith("http", ignoreCase = true)) path else siteBase + (if (path.startsWith("/")) path else "/$path")
 
     /**
-     * Header fuer den Dateiabruf: Browser-Kennung und Referer der Captcha-Seite
-     * wie im Browser, dazu die Cookies (sdata__ gilt fuer alle Subdomains).
-     * Cookies only for the hoster's own hosts, never for a foreign [directUrl].
+     * Headers for the file request: browser user agent and Referer of the
+     * captcha page as in the browser, plus the cookies (sdata__ applies to all
+     * subdomains). Cookies only for the hoster's own hosts, never for a
+     * foreign [directUrl].
      */
     internal fun freeHeaders(directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
@@ -330,8 +326,9 @@ class RapidgatorHoster : Hoster {
     }
 
     /**
-     * Fileserver-Adresse nach dem Captcha: `https://pr5.rapidgator.net//?r=download/index&session_id=…`
-     * (keine Dateiendung, daher neben [DirectLinks]). Seiten der Hauptdomain zaehlen nie.
+     * File server address after the captcha:
+     * `https://pr5.rapidgator.net//?r=download/index&session_id=…` (no file
+     * extension, hence in addition to [DirectLinks]). Main domain pages never count.
      */
     override fun isDirectDownloadUrl(url: String): Boolean {
         if (DirectLinks.isDirectDownloadUrl(url, siteHosts)) return true
@@ -342,20 +339,20 @@ class RapidgatorHoster : Hoster {
     }
 
     private companion object {
-        /** Reste bis hierhin laufen im Prozess ab, laengere gehen als Wartezeit an die Engine. */
+        /** Remainders up to this run in-process; longer ones go to the engine as wait time. */
         const val MAX_INLINE_WAIT_MS = 5_000L
         const val SESSION_MAX_AGE_MS = 2L * 60 * 60 * 1000
         const val MAX_RESTARTS = 3
     }
 
-    /** file_id (Hash) aus der Rapidgator-URL: .../file/<id>[/name.html] */
+    /** file_id (hash) from the Rapidgator URL: .../file/<id>[/name.html] */
     private fun fileId(url: String): String =
         Regex("""/file/([A-Za-z0-9]+)""").find(url)?.groupValues?.get(1)
             ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
 
     /**
-     * API-Aufruf per POST mit Formular-Body: Zugangsdaten und Token gehoeren
-     * nicht in die URL (Proxy-/Server-Logs). Antwort begrenzt lesen (Http.MAX_TEXT_BYTES).
+     * API call via POST with a form body: credentials and token do not belong
+     * in the URL (proxy/server logs). Response read with a limit (Http.MAX_TEXT_BYTES).
      */
     private fun post(url: String, form: Map<String, String>): String {
         val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
@@ -369,7 +366,7 @@ class RapidgatorHoster : Hoster {
         }
     }
 
-    /** Vollstaendige JSON-Antwort inklusive "status", ohne Auswertung. */
+    /** Full JSON response including "status", without evaluation. */
     private fun callRaw(path: String, params: Map<String, String>): JSONObject {
         val text = post("$base/$path", params)
         return runCatching { JSONObject(text) }
@@ -377,31 +374,30 @@ class RapidgatorHoster : Hoster {
     }
 
     /**
-     * Abgelaufene Session (401 ausserhalb des Logins): der einzige Fehler, bei
-     * dem ein erneuter Login sinnvoll ist. Alle anderen voruebergehenden Fehler
-     * (Sperren, 5xx) werden ohne Neuanmeldung weitergereicht, damit Loginzaehler
-     * und Parallel-Session-Limit nicht unnoetig belastet werden.
+     * Expired session (401 outside the login): the only error for which a new
+     * login makes sense. All other temporary errors (blocks, 5xx) are passed
+     * on without re-login so that login counters and the parallel session
+     * limit are not strained unnecessarily.
      */
     internal class TokenExpired(message: String) : HosterException(message, permanent = false)
 
     /**
-     * Fehler aus einer API-Antwort mit status != 200 werfen.
-     * [loginCall]: 401 beim Login heisst falsches Passwort/2FA - permanent,
-     * damit weder Engine noch Kontopruefung in eine Login-Schleife laufen.
-     * Bei anderen Aufrufen ist 401 ein abgelaufener Token ([TokenExpired]),
-     * nach erneutem Login behebbar, daher nicht permanent.
+     * Throws the error of an API response with status != 200. [loginCall]:
+     * 401 on login means wrong password/2FA, permanent, so neither engine nor
+     * account check run into a login loop. On other calls 401 is an expired
+     * token ([TokenExpired]), fixable by a new login, hence not permanent.
      */
     private fun fail(json: JSONObject, loginCall: Boolean): Nothing =
         throw failure(json.optInt("status"), json.optString("details"), loginCall)
 
-    /** Einordnung eines API-Fehlers; getrennt von JSON, damit sie auf der JVM testbar ist. */
+    /** Classification of an API error; separated from JSON so it is testable on the JVM. */
     internal fun failure(status: Int, details: String, loginCall: Boolean): HosterException {
         val text = details.ifBlank { Texts.t("hoster_http_status", status) }
         if (status == 401 && !loginCall) return TokenExpired(Texts.t("hoster_rapidgator_api_error", text))
-        // Rapidgator meldet unter 403 auch Tageslimit, IP-Sperre und
-        // Parallel-Limit - alles voruebergehend. Dauerhaft sind nur falsche
-        // Zugangsdaten (401 beim Login), fehlende Datei (404) und fehlendes
-        // Premium (402), sofern der Text nichts anderes sagt.
+        // Rapidgator reports daily limit, IP block and parallel limit under 403
+        // as well, all temporary. Permanent are only wrong credentials (401 on
+        // login), missing file (404) and missing premium (402), unless the
+        // text says otherwise.
         val transient = text.contains("traffic", true) ||
             text.contains("limit", true) ||
             text.contains("Denied by IP", true) ||
@@ -411,7 +407,7 @@ class RapidgatorHoster : Hoster {
         return HosterException(Texts.t("hoster_rapidgator_api_error", text), permanent = permanent)
     }
 
-    /** Logins pro Konto serialisieren: parallele Downloads sollen eine Session teilen. */
+    /** Serializes logins per account: parallel downloads should share one session. */
     private val loginLocks = java.util.concurrent.ConcurrentHashMap<Long, Any>()
 
     private fun call(path: String, params: Map<String, String>, loginCall: Boolean = false): JSONObject {
@@ -420,7 +416,7 @@ class RapidgatorHoster : Hoster {
         return json.optJSONObject("response") ?: JSONObject()
     }
 
-    /** Login; liefert Token und das "user"-Objekt der Login-Antwort. */
+    /** Login; returns the token and the "user" object of the login response. */
     private fun login(account: Account): Pair<String, JSONObject> {
         val user = account.username ?: throw HosterException(Texts.t("hoster_no_username"), true)
         val pass = account.plainPassword ?: throw HosterException(Texts.t("hoster_no_password"), true)
@@ -437,9 +433,9 @@ class RapidgatorHoster : Hoster {
         }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        // Mit vorhandenem Token reicht user/info; nur bei 401 (Token abgelaufen)
-        // neu anmelden. Ohne Token liefert die Login-Antwort das user-Objekt
-        // bereits mit - ein zweiter Aufruf ist unnoetig.
+        // With a cached token user/info suffices; re-login only on 401 (token
+        // expired). Without a token the login response already contains the
+        // user object, so a second call is unnecessary.
         val cached = tokens[account.id]
         val user: JSONObject = if (cached != null) {
             val json = callRaw("user/info", mapOf("token" to cached))
@@ -459,7 +455,7 @@ class RapidgatorHoster : Hoster {
             premiumEnd > System.currentTimeMillis() ||
             user.optString("state_label").contains("Premium", ignoreCase = true)
         val traffic = user.optJSONObject("traffic")
-        // "left"/"total" in Byte; null bei Konten ohne Tageslimit
+        // "left"/"total" in bytes; null for accounts without a daily limit
         val trafficLeft = traffic?.takeUnless { it.isNull("left") }?.optLong("left", -1) ?: -1
         val trafficTotal = traffic?.takeUnless { it.isNull("total") }?.optLong("total", -1) ?: -1
         AccountInfo(
@@ -474,12 +470,12 @@ class RapidgatorHoster : Hoster {
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
-            // Die API verlangt auch fuer file/info eine Session
+            // The API requires a session even for file/info
             if (account == null) {
                 return@withContext LinkInfo(online = null, note = Texts.t("hoster_rapidgator_check_needs_account"))
             }
             val id = fileId(url)
-            // Login getrennt behandeln: ein Kontoproblem ist kein "Datei offline"
+            // Handle the login separately: an account problem is not "file offline"
             val token = try {
                 tokenFor(account)
             } catch (e: Exception) {
@@ -497,8 +493,8 @@ class RapidgatorHoster : Hoster {
             try {
                 query(token)
             } catch (e: TokenExpired) {
-                // Nur bei abgelaufenem Token einmal neu anmelden und die Pruefung
-                // wiederholen; Sperren und Serverfehler kosten keinen Login.
+                // Re-login once only on an expired token and repeat the check;
+                // blocks and server errors cost no login.
                 tokens.remove(account.id)
                 val fresh = runCatching { tokenFor(account) }
                     .getOrElse { return@withContext LinkInfo(online = null, note = it.message) }
@@ -520,8 +516,8 @@ class RapidgatorHoster : Hoster {
                 val resp = call("file/download", mapOf("file_id" to id, "token" to token))
                 val direct = resp.optString("download_url")
                 if (direct.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_no_download_url"), true)
-                // Name, Groesse und MD5 fuer die Integritaetspruefung; optional,
-                // ein Fehler hier darf den Download nicht verhindern.
+                // Name, size and MD5 for the integrity check; optional, an error
+                // here must not prevent the download.
                 val info = runCatching {
                     call("file/info", mapOf("file_id" to id, "token" to token)).optJSONObject("file")
                 }.getOrNull()
@@ -532,10 +528,9 @@ class RapidgatorHoster : Hoster {
                     hash = info?.optString("hash")?.lowercase()?.takeIf { it.length == 32 }
                 )
             }
-            // Nur wenn file/download mit einem vorhandenen Token an einer
-            // abgelaufenen Session scheitert, einmal neu anmelden. Sperren (403),
-            // Serverfehler und permanente Fehler gehen direkt weiter - kein
-            // Login-Loop, kein Login pro Sperr-/Serverfehler.
+            // Re-login once only if file/download fails with a cached token on
+            // an expired session. Blocks (403), server errors and permanent
+            // errors are passed on directly: no login loop, no login per error.
             val cached = tokens[account.id]
             if (cached != null) {
                 try {

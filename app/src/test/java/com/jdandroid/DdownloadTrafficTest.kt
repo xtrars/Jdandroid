@@ -9,11 +9,11 @@ import org.junit.Test
 import java.util.Calendar
 import java.util.GregorianCalendar
 
-/** Erwartete Epoche (Standardzeitzone, wie SimpleDateFormat sie im Parser verwendet). */
+/** Expected epoch in the default time zone, as SimpleDateFormat uses it in the parser. */
 private fun epoch(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0, second: Int = 0): Long =
     GregorianCalendar(year, month, day, hour, minute, second).timeInMillis
 
-/** Kontingent-Erkennung auf der ddownload-Kontoseite in verschiedenen Layouts. */
+/** Quota detection on the ddownload account page in various layouts. */
 class DdownloadTrafficTest {
 
     private val gb = 1L shl 30
@@ -94,13 +94,13 @@ class DdownloadQuotaUnitTest {
 
     @Test
     fun megabyteLautApiDoku() {
-        // Doku: 102400 = 100 GB
+        // API docs: 102400 = 100 GB
         assertEquals(100L shl 30, DdownloadAccountPage.quotaToBytes(102400.0))
     }
 
     @Test
     fun apiWertLandetImTageskontingent() {
-        // 197040 MB laut API = 192,4 GiB; passt zu 200 GB pro Tag
+        // 197040 MB per API = 192.4 GiB, consistent with 200 GB per day
         assertEquals(197040L shl 20, DdownloadAccountPage.plausibleQuota(DdownloadAccountPage.quotaToBytes(197040.0)))
     }
 }
@@ -109,7 +109,7 @@ class DdownloadPlausibilityTest {
 
     @Test
     fun falschBeschriftetesGbWirdZuMb() {
-        // Kontoseite: "197040 GB" bei 200 GB Tageskontingent -> gemeint sind MB
+        // Account page: "197040 GB" with a 200 GB daily quota means MB
         assertEquals(197040L shl 20, DdownloadAccountPage.plausibleQuota(197040L shl 30))
     }
 
@@ -134,7 +134,7 @@ class DdownloadUltimatePageTest {
         val t = DdownloadAccountPage.parseTraffic(html)
         assertEquals(197040 * gb, t.left)
         assertFalse(t.unlimited)
-        // Die Seite beschriftet falsch: gemeint sind 192,4 GiB
+        // Mislabelled on the page: 192.4 GiB is meant
         assertEquals(197040L shl 20, DdownloadAccountPage.plausibleQuota(t.left))
     }
 

@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/** Pruefsumme der Datei und Abbruch der Pruefung bei Pause (Job-Abbruch). */
+/** File checksum and cancellation of the check on pause. */
 class HashFileTest {
 
     private fun tempFile(content: ByteArray): File =
@@ -34,7 +34,7 @@ class HashFileTest {
     fun `Abbruch waehrend der Pruefung beendet sie`() = runBlocking {
         val file = tempFile(ByteArray(200 * 1024))
         var finished = false
-        // UNDISPATCHED: laeuft bis zum ersten Block-Wechsel, dann wird abgebrochen
+        // UNDISPATCHED: runs until the first block switch, then cancelled
         val job = launch(start = CoroutineStart.UNDISPATCHED) {
             hashFile(file, "MD5")
             finished = true

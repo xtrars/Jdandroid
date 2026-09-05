@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
-    <!-- Hoster-Schicht ohne Context (ddownload, Rapidgator, 1fichier) ueber Texts.t; jeder Schluessel steht wortgleich in core/texts/HosterTexts.kt. Schluessel: hoster_<bedeutung>.
-         UnusedResources ist abgeschaltet: die Aufloesung laeuft ueber getIdentifier, Lint sieht keine Verwendung. -->
+    <!-- Hoster layer without a context (ddownload, Rapidgator, 1fichier) via Texts.t; every key mirrors core/texts/HosterTexts.kt. Keys: hoster_<meaning>.
+         UnusedResources is ignored: keys are resolved via getIdentifier, so lint sees no usage. -->
 
-    <!-- Allgemein -->
+    <!-- General -->
     <string name="hoster_free_status">Free</string>
     <string name="hoster_free_status_unsupported">Free (Downloads nicht möglich)</string>
     <string name="hoster_free_unsupported">Free-Download wird von diesem Hoster nicht unterstützt</string>

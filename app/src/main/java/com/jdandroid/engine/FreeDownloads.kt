@@ -3,10 +3,7 @@ package com.jdandroid.engine
 import com.jdandroid.hoster.FreeHints
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Captcha-Seite eines wartenden Eintrags samt der Session-Cookies, die der
- * Hoster dem Browser mitgibt (Set-Cookie-Zeilen fuer [cookieUrl]).
- */
+/** Captcha page of a held entry plus the hoster's session cookies (Set-Cookie lines for [cookieUrl]). */
 data class CaptchaPage(
     val url: String,
     val cookieUrl: String? = null,
@@ -14,12 +11,11 @@ data class CaptchaPage(
 )
 
 /**
- * Prozessweiter Zustand des Free-Modus je Eintrag: die Captcha-Seite, auf
- * der ein Download haengt (mit den Cookies des Hoster-Ablaufs), und die aus
- * dem Browser uebernommenen Hinweise (Direktlink, Cookies) fuer den naechsten
- * Versuch. Bewusst nicht in der Datenbank: ein Direktlink ist Minuten
- * gueltig, ein Neustart des Prozesses darf ihn vergessen (die Captcha-Ansicht
- * faellt dann auf die Link-URL zurueck).
+ * Process-wide free-mode state per entry: the captcha page a download is held
+ * on and the hints (direct link, cookies) taken over from the browser for the
+ * next attempt. Kept out of the database on purpose: a direct link is valid
+ * for minutes only, and after a process restart the captcha view falls back
+ * to the link URL.
  */
 object FreeDownloads {
     private val captchaPages = ConcurrentHashMap<Long, CaptchaPage>()
@@ -29,13 +25,12 @@ object FreeDownloads {
 
     fun captchaPage(id: Long): CaptchaPage? = captchaPages[id]
 
-    /** Hinweise aus dem Browser fuer den naechsten Versuch hinterlegen. */
     fun putHints(id: Long, value: FreeHints) {
         hints[id] = value
         captchaPages.remove(id)
     }
 
-    /** Hinweise einmalig abholen (der Direktlink gilt nur fuer einen Versuch). */
+    /** Removes and returns the hints; a direct link is good for one attempt only. */
     fun takeHints(id: Long): FreeHints? = hints.remove(id)
 
     fun forget(id: Long) {

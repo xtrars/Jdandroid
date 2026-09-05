@@ -15,15 +15,15 @@ data class ResolvedLink(
     val directUrl: String,
     val fileName: String? = null,
     val fileSize: Long = -1,
-    /** Pruefsumme als Hex (MD5 = 32, SHA-1 = 40 Zeichen), falls der Hoster eine liefert. */
+    /** Hex checksum (MD5 = 32, SHA-1 = 40 chars) when the hoster provides one. */
     val hash: String? = null,
-    /** Zusaetzliche Header fuer den Dateiabruf (z.B. Cookie im Free-Modus). */
+    /** Extra headers for the file request (e.g. cookies in free mode). */
     val headers: Map<String, String> = emptyMap()
 )
 
 /**
- * Ergebnis der Online-Pruefung im Linksammler. [online] null = nicht
- * pruefbar (z.B. Konto noetig), [note] erklaert das dem Nutzer.
+ * Result of the link collector's online check. [online] null = not checkable
+ * (e.g. account required); [note] explains that to the user.
  */
 data class LinkInfo(
     val online: Boolean?,
@@ -35,44 +35,42 @@ data class LinkInfo(
 data class AccountInfo(
     val valid: Boolean,
     val premiumUntil: Long = 0,
-    /** Verbleibender Traffic in Byte, -1 = unbekannt. */
+    /** Remaining traffic in bytes, -1 = unknown. */
     val trafficLeft: Long = -1,
-    /** Gesamtkontingent in Byte (fuer den Balken), -1 = unbekannt. */
+    /** Total quota in bytes (for the progress bar), -1 = unknown. */
     val trafficTotal: Long = -1,
-    /** Hoster ohne Traffic-Begrenzung (z.B. 1fichier Premium). */
+    /** Hoster without a traffic limit (e.g. 1fichier Premium). */
     val trafficUnlimited: Boolean = false,
     val statusText: String
 )
 
 /**
- * permanent = true: erneuter Versuch ohne Nutzeraktion ist sinnlos
- * (Datei offline, kein Premium, ungueltiger Account).
+ * [permanent] = true: retrying without user action is pointless
+ * (file offline, no premium, invalid account).
  */
 open class HosterException(message: String, val permanent: Boolean = false) : Exception(message)
 
-/** Datei beim Hoster nicht (mehr) vorhanden - dauerhaft, ohne Textvergleich erkennbar. */
+/** File no longer exists at the hoster; permanent, detectable without text matching. */
 class FileOfflineException : HosterException(Texts.t("hoster_file_offline"), permanent = true)
 
 /**
- * Free-Modus: der Hoster verlangt eine Wartezeit von [seconds] Sekunden,
- * bevor der Download (erneut) versucht werden darf. Nicht permanent - die
- * Engine reiht den Eintrag mit passendem retryAt wieder ein, ohne den
- * Versuch zu zaehlen.
+ * Free mode: the hoster demands a wait of [seconds] before the download may be
+ * (re)tried. Not permanent; the engine re-queues the entry with a matching
+ * retryAt without counting the attempt.
  */
 class WaitException(val seconds: Int, message: String) : HosterException(message, permanent = false)
 
 /**
- * Free-Modus: ohne Captcha geht es nicht weiter. [pageUrl] ist die Seite, auf
- * der der Nutzer das Captcha im eingebetteten Browser loest; der dabei
- * abgefangene Direktlink kommt als [FreeHints.direktUrlAusBrowser] zurueck.
+ * Free mode: a captcha is required. [pageUrl] is the page where the user solves
+ * it in the embedded browser; the intercepted direct link comes back as
+ * [FreeHints.direktUrlAusBrowser].
  *
- * Ein Hoster, der die Vorarbeit (Timer, Freischaltung) selbst erledigt und
- * nur das Captcha dem Browser ueberlaesst, gibt seine Session-Cookies mit:
- * [cookies] im Set-Cookie-Format ("name=wert; domain=…; path=/; secure"),
- * [cookieUrl] die Adresse, fuer die sie gelten. Die Captcha-Ansicht setzt
- * sie erst beim Oeffnen in ihren Browser - so ueberleben sie das Leeren der
- * Browser-Cookies durch andere Ansichten, und zwei wartende Eintraege
- * ueberschreiben sich nicht.
+ * A hoster that does the groundwork itself (timer, unlock) and leaves only the
+ * captcha to the browser passes its session cookies along: [cookies] in
+ * Set-Cookie format ("name=value; domain=…; path=/; secure"), [cookieUrl] the
+ * address they apply to. The captcha view sets them when it opens, so they
+ * survive other views clearing the browser cookies and two waiting entries do
+ * not overwrite each other.
  */
 class CaptchaRequiredException(
     val pageUrl: String,
@@ -82,9 +80,9 @@ class CaptchaRequiredException(
 ) : HosterException(message, permanent = false)
 
 /**
- * Hinweise fuer [Hoster.resolveFree]: ein bereits im Browser (Captcha-Ansicht)
- * abgefangener Direktlink samt den Browser-Cookies der Hoster-Domain
- * ("Name=Wert; ..."). Ohne Browser-Durchlauf sind beide null.
+ * Hints for [Hoster.resolveFree]: a direct link already intercepted in the
+ * browser (captcha view) plus the browser cookies of the hoster domain
+ * ("Name=Value; ..."). Both null without a browser round trip.
  */
 data class FreeHints(
     val direktUrlAusBrowser: String? = null,
@@ -92,9 +90,8 @@ data class FreeHints(
 )
 
 /**
- * Zeitspannen in Hoster-Meldungen ("in 5 min"). Texts.t kennt keine
- * Plurals, daher Einheitenkuerzel: volle Stunden als h, volle Minuten als
- * min, sonst Sekunden.
+ * Durations in hoster messages ("in 5 min"). Texts.t has no plurals, so unit
+ * abbreviations are used: whole hours as h, whole minutes as min, else seconds.
  */
 object HosterDurations {
     fun text(seconds: Int): String = when {
@@ -105,9 +102,9 @@ object HosterDurations {
 }
 
 /**
- * Standard fuer [Hoster.isDirectDownloadUrl]: Fileserver-Adressen liegen auf
- * einem anderen Host als der Hauptdomain und enden auf eine Dateiendung.
- * Seitenlinks, Skripte/Bilder und CGI-Aufrufe (tracker.cgi) fallen heraus.
+ * Default for [Hoster.isDirectDownloadUrl]: file server addresses live on a
+ * host other than the main domain and end with a file extension. Page links,
+ * scripts/images and CGI calls (tracker.cgi) are excluded.
  */
 object DirectLinks {
     val assetExtensions = setOf(
@@ -135,59 +132,59 @@ interface Hoster {
     val displayName: String
     val accountType: AccountType
 
-    /** Hinweis fuer den Account-Dialog, z.B. wo der API-Key zu finden ist. */
+    /** Hint for the account dialog, e.g. where to find the API key. */
     val accountHint: String
 
     /**
-     * Login-Seite fuer die Anmeldung im eingebetteten Browser. Nicht null,
-     * wenn der Hoster ein CAPTCHA verlangt und headless nicht anmeldbar ist;
-     * die Session-Cookies werden dann aus dem Browser uebernommen.
+     * Login page for signing in via the embedded browser. Non-null when the
+     * hoster requires a captcha and cannot be logged in headlessly; the session
+     * cookies are then taken over from the browser.
      */
     val webLoginUrl: String? get() = null
 
     /**
-     * Hauptdomain(s) der Webseite in Kleinschreibung (mit www-Varianten).
-     * Grundlage fuer [isDirectDownloadUrl] und den Host-Filter der Captcha-Ansicht.
+     * Main domain(s) of the website in lower case (with www variants). Basis
+     * for [isDirectDownloadUrl] and the host filter of the captcha view.
      */
     val siteHosts: Set<String>
 
     /**
-     * true, sobald [resolveFree] umgesetzt ist. Steuert nur den Kontostatus
-     * ([freeStatusText]); die Engine ruft [resolveFree] unabhaengig davon.
+     * True once [resolveFree] is implemented. Only affects the account status
+     * ([freeStatusText]); the engine calls [resolveFree] regardless.
      */
     val supportsFree: Boolean get() = false
 
-    /** Kontostatus eines Kontos ohne Premium. */
+    /** Account status of an account without premium. */
     val freeStatusText: String
         get() = if (supportsFree) Texts.t("hoster_free_status") else Texts.t("hoster_free_status_unsupported")
 
     fun matches(url: String): Boolean
 
-    /** Prueft Zugangsdaten und liefert Premium-Status. */
+    /** Validates the credentials and returns the premium status. */
     suspend fun checkAccount(account: Account): AccountInfo
 
-    /** Loest einen Hoster-Link mit Premium-Konto in eine direkte Download-URL auf. */
+    /** Resolves a hoster link into a direct download URL using a premium account. */
     suspend fun resolve(url: String, account: Account?): ResolvedLink
 
     /**
-     * Free-Modus (kein Konto): Direktlink ohne Premium. Darf [WaitException]
-     * (Wartezeit) und [CaptchaRequiredException] (Captcha im Browser noetig)
-     * werfen; mit [FreeHints.direktUrlAusBrowser] liegt der Link bereits vor
-     * und ist nur noch zu uebernehmen (ggf. mit [FreeHints.cookies] als
-     * [ResolvedLink.headers]). Standard: nicht unterstuetzt (permanent).
+     * Free mode (no account): direct link without premium. May throw
+     * [WaitException] (wait time) and [CaptchaRequiredException] (captcha in
+     * the browser); with [FreeHints.direktUrlAusBrowser] the link already
+     * exists and only needs to be adopted (possibly with [FreeHints.cookies]
+     * as [ResolvedLink.headers]). Default: unsupported (permanent).
      */
     suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
         throw HosterException(Texts.t("hoster_free_unsupported"), true)
 
     /**
-     * Erkennt in der Captcha-Ansicht die Navigation auf den Fileserver: diese
-     * Adresse wird abgefangen und der Engine als Direktlink uebergeben.
+     * Detects navigation to the file server in the captcha view: that address
+     * is intercepted and handed to the engine as the direct link.
      */
     fun isDirectDownloadUrl(url: String): Boolean = DirectLinks.isDirectDownloadUrl(url, siteHosts)
 
     /**
-     * Prueft ohne Download, ob die Datei online ist, und liefert wenn moeglich
-     * Name und Groesse (Linksammler). Standard: nicht pruefbar.
+     * Checks without downloading whether the file is online and returns name
+     * and size when possible (link collector). Default: not checkable.
      */
     suspend fun checkLink(url: String, account: Account?): LinkInfo =
         LinkInfo(online = null, note = Texts.t("hoster_no_check_possible"))
@@ -195,10 +192,9 @@ interface Hoster {
 
 object Http {
     /**
-     * Kennung der System-WebView, beim App-Start ermittelt. Cloudflare bindet
-     * das Cookie cf_clearance an die Kennung, mit der es ausgestellt wurde -
-     * eine per Browser-Login uebernommene Session gilt daher nur mit
-     * derselben Kennung.
+     * User agent of the system WebView, determined at app start. Cloudflare
+     * binds the cf_clearance cookie to the user agent it was issued for, so a
+     * session taken over from the browser login is only valid with the same one.
      */
     @Volatile
     var browserUserAgent: String? = null
@@ -227,14 +223,14 @@ object Http {
         return labels.takeLast(2).joinToString(".")
     }
 
-    // Ohne Versionsnummer: sie lief der App-Version davon (versionName in build.gradle.kts)
+    // No version number: it kept drifting from versionName in build.gradle.kts
     const val USER_AGENT = "Mozilla/5.0 (Android) JDAndroid"
 
     /**
-     * Obergrenze fuer als Text gelesene Antworten (API-Antworten sind klein).
-     * Antworten immer mit peekBody(MAX_TEXT_BYTES) lesen: antwortet ein Server
-     * unerwartet mit einer Datei statt JSON, wuerde ein ungebremstes string()
-     * den gesamten Inhalt in den Speicher laden (OutOfMemoryError).
+     * Upper bound for responses read as text (API responses are small). Always
+     * read with peekBody(MAX_TEXT_BYTES): if a server unexpectedly answers with
+     * a file instead of JSON, an unbounded string() would load the whole
+     * content into memory (OutOfMemoryError).
      */
     const val MAX_TEXT_BYTES = 2L * 1024 * 1024
 }
@@ -265,13 +261,13 @@ object HosterRegistry {
 }
 
 object LinkParser {
-    /** Anfuehrungszeichen, spitze und eckige Klammern beenden eine URL. */
+    /** Quotes, angle and square brackets terminate a URL. */
     private val urlRegex = Regex("""https?://[^\s"'<>\[\]]+""")
 
-    /** Extrahiert alle unterstuetzten Links aus beliebigem Text. */
+    /** Extracts all supported links from arbitrary text. */
     fun parse(text: String): List<Pair<String, Hoster>> =
         urlRegex.findAll(text)
-            // Kommas und Semikola trennen Links ("url1,url2"): Teile ohne http verwerfen
+            // Commas and semicolons separate links ("url1,url2"); drop parts without http
             .flatMap { m -> m.value.split(',', ';').asSequence().filter { it.startsWith("http") } }
             .map { it.trimEnd(')', ']', '>', '.', ',', ';', '"', '\'') }
             .filter { it.isNotBlank() }

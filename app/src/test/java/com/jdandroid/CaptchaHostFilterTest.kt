@@ -9,7 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Host-Filter der Captcha-Ansicht: Hoster-Domains und Captcha-Dienste, sonst nichts. */
+/** Host filter of the captcha view: hoster domains and captcha services only. */
 class CaptchaHostFilterTest {
     private val hosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to")
 
@@ -37,24 +37,24 @@ class CaptchaHostFilterTest {
 
     @Test
     fun nurHauptrahmenNavigationWirdAlsDirektlinkAbgefangen() {
-        // Formular-Weiterleitung auf den Fileserver des Hosters: abfangen
+        // Form redirect to the hoster file server: capture
         assertEquals(CaptchaRequestAction.CAPTURE, action(isMainFrame = true, isDirectLink = true, hosterHost = true, hostAllowed = true))
-        // Unterressource mit Dateiendung (Werbe-/Captcha-Skript laedt eine .mp4): nie abfangen,
-        // sonst schliesst die Ansicht, bevor der Nutzer ein Captcha gesehen hat
+        // Sub-resource with a file extension (ad/captcha script loading an .mp4):
+        // never capture, or the view closes before the user sees a captcha
         assertEquals(CaptchaRequestAction.LOAD, action(isMainFrame = false, isDirectLink = true, hosterHost = true, hostAllowed = true))
         assertEquals(CaptchaRequestAction.BLOCK, action(isMainFrame = false, isDirectLink = true, hosterHost = false, hostAllowed = false))
-        // Normale Seiten und Ressourcen: nur der Host-Filter entscheidet
+        // Ordinary pages and resources: only the host filter decides
         assertEquals(CaptchaRequestAction.LOAD, action(isMainFrame = true, isDirectLink = false, hosterHost = true, hostAllowed = true))
         assertEquals(CaptchaRequestAction.BLOCK, action(isMainFrame = true, isDirectLink = false, hosterHost = false, hostAllowed = false))
         assertEquals(CaptchaRequestAction.LOAD, action(isMainFrame = false, isDirectLink = false, hosterHost = false, hostAllowed = true))
         assertEquals(CaptchaRequestAction.BLOCK, action(isMainFrame = false, isDirectLink = false, hosterHost = false, hostAllowed = false))
     }
 
-    /** Direktlink auf einem Fremdhost (Werbe-Skript, Popunder): nie abfangen - die Hoster-Cookies gingen sonst dorthin. */
+    /** Direct link on a foreign host (ad script, popunder): never capture, the hoster cookies would go there. */
     @Test
     fun direktlinkAufFremdhostWirdNieAbgefangen() {
         assertEquals(CaptchaRequestAction.BLOCK, action(isMainFrame = true, isDirectLink = true, hosterHost = false, hostAllowed = false))
-        // Captcha-Dienst ist geladen, aber kein Hoster-Host: kein Direktlink
+        // Captcha service loaded but not a hoster host: no direct link
         assertEquals(CaptchaRequestAction.LOAD, action(isMainFrame = true, isDirectLink = true, hosterHost = false, hostAllowed = true))
     }
 

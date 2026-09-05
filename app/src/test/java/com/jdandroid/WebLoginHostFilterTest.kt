@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Host-Filter des Login-Browsers: derselbe Filter gilt fuer Navigationen
- * (shouldOverrideUrlLoading) und Subressourcen (shouldInterceptRequest).
+ * Host filter of the login browser, shared by navigations
+ * (shouldOverrideUrlLoading) and sub-resources (shouldInterceptRequest).
  */
 class WebLoginHostFilterTest {
     private val login = "ddownload.com"
@@ -29,7 +29,7 @@ class WebLoginHostFilterTest {
     fun fremdeHostsBlockiert() {
         assertFalse(isWebLoginHostAllowed("tracker.example.org", login))
         assertFalse(isWebLoginHostAllowed("cdn.googletagmanager.com", login))
-        // Suffix-Trick ohne Punkt-Trenner darf nicht durchrutschen
+        // Suffix trick without a dot separator must not pass
         assertFalse(isWebLoginHostAllowed("evil-ddownload.com", login))
         assertFalse(isWebLoginHostAllowed("ddownload.com.evil.org", login))
         assertFalse(isWebLoginHostAllowed("cloudflare.com.evil.org", login))

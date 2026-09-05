@@ -1,10 +1,9 @@
 package com.jdandroid.core
 
 /**
- * Reine Namenslogik fuer Archive: Basisname eines Sets, Reparatur von Namen
- * ohne Punkte und Erkennung weiterer Volumes. Ohne Android-Abhaengigkeit,
- * damit die Datenschicht (Migration, archiveKey) sie nutzen kann, ohne die
- * Engine zu kennen.
+ * Pure archive name logic: set base name, repair of names without dots and
+ * detection of secondary volumes. Android-free so the data layer (migration,
+ * archiveKey) can use it without knowing the engine.
  */
 object ArchiveNames {
 
@@ -15,18 +14,16 @@ object ArchiveNames {
     )
 
     /**
-     * Schluessel fuer die Spalte downloads.archiveKey: der Basisname des
-     * Archivs, auch bei Namen ohne Punkte ("film part2 rar" -> "film").
-     * Null ohne Namen oder wenn der Name kein Archiv bezeichnet.
+     * Value for downloads.archiveKey: the archive base name, also for names
+     * without dots ("film part2 rar" -> "film"); null for non-archives.
      */
     fun archiveKey(fileName: String?): String? = fileName?.let { archiveBase(repairName(it)) }
 
     /**
-     * Namen reparieren, bei denen der Hoster Punkte und Bindestriche durch
-     * Leerzeichen ersetzt hat ("Download name part1 rar" statt
-     * "name.part1.rar"): ohne Endung erkennt die App weder Archiv noch
-     * Zusammengehoerigkeit der Teile. Nur Namen ohne Punkt, deren letztes
-     * Wort eine bekannte Endung ist; ein "Download "-Praefix faellt weg.
+     * Repairs names where the hoster replaced dots with spaces ("Download
+     * name part1 rar" for "name.part1.rar"); without an extension neither the
+     * archive nor its parts are recognised. Only names without a dot whose
+     * last word is a known extension; a "Download " prefix is dropped.
      */
     fun repairName(name: String): String {
         if (name.contains('.')) return name
@@ -48,10 +45,7 @@ object ArchiveNames {
         return words.joinToString(".") + "." + ext
     }
 
-    /**
-     * Gemeinsamer Basisname aller Teile eines Archivs, z.B.
-     * "film.part2.rar" -> "film". Null, wenn kein Archiv.
-     */
+    /** Common base name of all parts, e.g. "film.part2.rar" -> "film"; null if not an archive. */
     fun archiveBase(fileName: String): String? {
         val lower = fileName.lowercase()
         Regex("""^(.*?)\.part\d+\.rar$""").find(lower)?.let { return it.groupValues[1] }
@@ -61,10 +55,7 @@ object ArchiveNames {
         return null
     }
 
-    /**
-     * Weitere Teile eines Multipart-Archivs (part2, .r00, .z01 ...) nicht selbst
-     * entpacken - das erledigt der erste Teil mit.
-     */
+    /** Secondary volumes (part2, .r00, .z01 ...) are extracted via the first part, never on their own. */
     fun isSecondaryVolume(fileName: String): Boolean {
         val lower = fileName.lowercase()
         Regex("""\.part(\d+)\.rar$""").find(lower)?.let {

@@ -1,21 +1,17 @@
 package com.jdandroid.core.texts
 
 /**
- * Deutsche Standardtexte der Hoster-Schicht (ddownload, Rapidgator, 1fichier,
- * Hoster.kt) fuer [com.jdandroid.core.Texts] ohne Android-Context. Jeder
- * Schluessel steht wortgleich in `res/values/strings_hoster.xml` und
- * uebersetzt in `res/values-en/strings_hoster.xml` (geprueft von `TextsTest`).
+ * German fallback texts of the hoster layer for [com.jdandroid.core.Texts].
+ * Every key exists verbatim in `res/values/strings_hoster.xml` and translated
+ * in `res/values-en/strings_hoster.xml` (checked by `TextsTest`).
  *
- * Schluesselschema: `hoster_<bedeutung>`; Platzhalter `%1$s`, `%1$d`.
- *
- * Nicht uebersetzt werden die Kontostufen der Hoster ("Premium", "Ultimate",
- * "Premium/Access"): `Account.hasPremium` vergleicht darauf, und die Woerter
- * sind in beiden Sprachen gleich. Texts.t kennt keine Plurals, daher stehen
- * Zeitspannen als Einheitenkuerzel (h, min, s).
+ * Account tiers ("Premium", "Ultimate", "Premium/Access") stay untranslated:
+ * `Account.hasPremium` compares against them. Texts.t has no plurals, so
+ * durations use unit abbreviations (h, min, s).
  */
 object HosterTexts {
     val texts: Map<String, String> = mapOf(
-        // Allgemein (Hoster.kt und mehrfach genutzt)
+        // Shared (Hoster.kt)
         "hoster_free_status" to "Free",
         "hoster_free_status_unsupported" to "Free (Downloads nicht möglich)",
         "hoster_free_unsupported" to "Free-Download wird von diesem Hoster nicht unterstützt",
@@ -38,7 +34,6 @@ object HosterTexts {
         "hoster_access_blocked" to "Zugriff blockiert (HTTP 403)",
         "hoster_status_quota_unreadable" to "%1\$s · Kontingent nicht lesbar",
         "hoster_status_cdn_credit" to "%1\$s · CDN-Guthaben %2\$s",
-        // Zeitspannen ohne Plural (Einheitenkuerzel)
         "hoster_duration_hours" to "%1\$d h",
         "hoster_duration_minutes" to "%1\$d min",
         "hoster_duration_seconds" to "%1\$d s",

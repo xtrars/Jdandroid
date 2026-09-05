@@ -17,15 +17,14 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
- * ddownload.com – XFileSharing-Hoster. Login über Benutzername/Passwort
- * (Session-Cookie), Premium-Direktdownload über die zweistufige
- * Download-Form. Free-Downloads laufen über [DdownloadFree]: Sperren und
- * Wartezeiten liest die App selbst von der Seite, das Cloudflare-Turnstile
- * im Download-Formular ist nur im eingebetteten Browser lösbar. Die
- * Kontoseite wertet [DdownloadAccountPage] aus.
+ * ddownload.com, an XFileSharing hoster. Login via username/password (session
+ * cookie), premium direct download via the two-step download form. Free
+ * downloads go through [DdownloadFree]: blocks and wait times are read from
+ * the page, the Cloudflare Turnstile in the download form is only solvable in
+ * the embedded browser. The account page is parsed by [DdownloadAccountPage].
  */
 class DdownloadHoster internal constructor(
-    /** Adresse der Website; Tests ersetzen sie durch einen lokalen Server. */
+    /** Website address; tests replace it with a local server. */
     internal val siteBase: String
 ) : Hoster {
 
@@ -33,43 +32,42 @@ class DdownloadHoster internal constructor(
 
     override val id = "ddownload"
     override val displayName = "ddownload"
-    // Der Weblogin von ddownload ist durch Cloudflare Turnstile geschützt und
-    // headless nicht lösbar. Deshalb zwei Wege: API-Key (empfohlen, läuft ohne
-    // CAPTCHA) oder Anmeldung im eingebetteten Browser mit Session-Übernahme.
+    // The web login is protected by Cloudflare Turnstile and cannot be solved
+    // headlessly, hence two paths: API key (recommended, no captcha) or login
+    // in the embedded browser with session takeover.
     override val accountType = AccountType.API_KEY
     override val accountHint: String
         get() = Texts.t("hoster_ddownload_account_hint")
     override val webLoginUrl = "https://ddownload.com/login.html"
 
-    /** Free-Downloads (Wartezeit + Turnstile im Browser) sind umgesetzt. */
     override val supportsFree = true
 
     private val apiBase = "https://api-v2.ddownload.com/api"
 
     /**
-     * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
-     * dass laengere Pfade (z.B. /register.html) als Code gelesen werden.
+     * File codes are exactly 12 chars [a-z0-9]; the lookahead prevents longer
+     * paths (e.g. /register.html) from being read as a code.
      */
     private val pattern =
         Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([a-z0-9]{12})(?![A-Za-z0-9])""")
 
     /**
-     * Direktlinks liegen auf Fileservern (Subdomain ausser www), nie auf der
-     * Hauptdomain und nie unter /cgi-bin/ (dort liegt z.B. tracker.cgi).
+     * Direct links live on file servers (subdomain other than www), never on
+     * the main domain and never under /cgi-bin/ (tracker.cgi lives there).
      */
     private val fileServerRegex =
         Regex("""https?://(?!www\.)[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)(?::\d+)?/[^\s"'<>]+""")
 
-    /** Hauptdomains, auf denen nie eine Datei liegt (nur Seiten). */
+    /** Main domains that never serve a file (pages only). */
     override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
-    /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
+    /** Browser-like user agent: XFileSharing/Cloudflare reject bot user agents. */
     internal val browserUa: String
         get() = Http.browserUserAgent
             ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/122.0.0.0 Mobile Safari/537.36"
 
-    /** Ein Cookie-Speicher (Session) pro Account-Id. */
+    /** One cookie store (session) per account id. */
     private val cookieStores = java.util.concurrent.ConcurrentHashMap<Long, MutableList<Cookie>>()
     private val clients = java.util.concurrent.ConcurrentHashMap<Long, OkHttpClient>()
 
@@ -84,19 +82,19 @@ class DdownloadHoster internal constructor(
         val body: String,
         val location: String? = null,
         val contentType: String? = null,
-        /** Adresse nach allen gefolgten Weiterleitungen. */
+        /** Address after all followed redirects. */
         val finalUrl: String = "",
         val contentDisposition: String? = null
     ) {
-        /** Antwort ist eine Datei, keine Seite. */
+        /** Response is a file, not a page. */
         val isFile: Boolean
             get() = contentDisposition?.contains("attachment", true) == true ||
                 (!contentType.isNullOrBlank() && !isTextualType(contentType))
     }
 
     internal fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
-        // OkHttp ruft den CookieJar aus mehreren Threads auf (parallele
-        // Downloads desselben Kontos) - Zugriffe daher synchronisieren.
+        // OkHttp calls the CookieJar from several threads (parallel downloads
+        // of the same account), so access is synchronized.
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -141,9 +139,9 @@ class DdownloadHoster internal constructor(
         }
         return client.newCall(builder.build()).execute().use { resp ->
             val contentType = resp.header("Content-Type")
-            // Antwortkoerper NIE unbegrenzt als Text lesen: folgt der Server der
-            // Download-Weiterleitung, ist der Koerper die komplette Datei und
-            // .string() sprengt den Heap (OutOfMemoryError).
+            // Never read the body as text without a limit: if the server
+            // followed the download redirect, the body is the whole file and
+            // .string() would exhaust the heap.
             val text = if (isTextual(contentType)) {
                 runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("")
             } else {
@@ -156,11 +154,11 @@ class DdownloadHoster internal constructor(
         }
     }
 
-    /** Nur textartige Antworten duerfen in den Speicher gelesen werden. */
+    /** Only textual responses may be read into memory. */
     internal fun isTextual(contentType: String?): Boolean =
         contentType.isNullOrBlank() || isTextualType(contentType)
 
-    /** Erkennt Cloudflare-/WAF-Blockaden, damit die Meldung nicht "falsches Passwort" lautet. */
+    /** Detects Cloudflare/WAF blocks so the message does not read "wrong password". */
     internal fun checkBlocked(resp: Resp) {
         val blocked = resp.code == 403 || resp.code == 503 ||
             resp.body.contains("Just a moment", true) ||
@@ -172,15 +170,15 @@ class DdownloadHoster internal constructor(
         }
     }
 
-    /** Eingeloggt erkennt man zuverlässig am Logout-Link, nicht am Cookie-Namen. */
+    /** The logout link is the reliable sign of being logged in, not a cookie name. */
     private fun isLoggedIn(html: String): Boolean =
         html.contains("op=logout", true) ||
             (html.contains("?op=my_account", true) && html.contains("Account type", true))
 
     /**
-     * Liefert Client plus HTML der Kontoseite auf Basis der im Browser
-     * uebernommenen Session-Cookies. Ein headless Formular-Login ist wegen
-     * des Turnstile-CAPTCHAs nicht moeglich.
+     * Returns the client and the account page HTML based on the session
+     * cookies taken over from the browser. A headless form login is impossible
+     * because of the Turnstile captcha.
      */
     private fun sessionAndAccountPage(account: Account): Pair<OkHttpClient, String> {
         val raw = account.plainCookies
@@ -193,15 +191,13 @@ class DdownloadHoster internal constructor(
         var page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
         checkBlocked(page)
         if (page.code !in 200..299) {
-            // Serverfehler oder Wartungsseite: voruebergehend, kein Grund, das
-            // Konto abzuschalten
+            // Server error or maintenance page: temporary, no reason to disable the account
             throw HosterException(Texts.t("hoster_ddownload_account_page_unreachable", page.code), permanent = false)
         }
         if (!isLoggedIn(page.body)) {
-            // Der Cookie-Speicher kann eine vom Server "geloeschte" Session
-            // tragen (Set-Cookie mit Ablauf in der Vergangenheit). Einmal mit
-            // den gespeicherten Browser-Cookies neu beginnen, bevor die
-            // Session als abgelaufen gilt.
+            // The cookie store may hold a session the server "deleted"
+            // (Set-Cookie with an expiry in the past). Start over once with the
+            // stored browser cookies before treating the session as expired.
             seedCookies(account.id, raw, force = true)
             page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
             checkBlocked(page)
@@ -215,7 +211,7 @@ class DdownloadHoster internal constructor(
         return client to page.body
     }
 
-    /** Cookie-String aus dem Browser in den OkHttp-Cookie-Speicher uebernehmen. */
+    /** Seeds the OkHttp cookie store with the cookie string from the browser. */
     private fun seedCookies(accountId: Long, raw: String, force: Boolean = false) {
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
         synchronized(store) {
@@ -235,13 +231,13 @@ class DdownloadHoster internal constructor(
         }
     }
 
-    /** Alle hidden-Felder eines Formulars einsammeln (Reihenfolge der Attribute egal). */
+    /** Collects all hidden fields of a form (attribute order does not matter). */
     internal fun hiddenInputs(html: String): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         Regex("""<input\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(html).forEach { tag ->
             val t = tag.value
-            // Oeffnendes Anfuehrungszeichen merken: ein Apostroph im Wert
-            // ("It's.a.file.mkv") darf den Wert nicht abschneiden
+            // Remember the opening quote: an apostrophe in the value
+            // ("It's.a.file.mkv") must not cut the value short
             val name = Regex("""\bname=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
                 .find(t)?.groupValues?.get(2)?.takeIf { it.isNotBlank() } ?: return@forEach
             val value = Regex("""\bvalue=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
@@ -258,10 +254,10 @@ class DdownloadHoster internal constructor(
         val (_, html) = sessionAndAccountPage(account)
         val (expire, premium, tier) = DdownloadAccountPage.status(DdownloadAccountPage.visibleText(html))
 
-        // Steht auf der Kontoseite ein API-Key, liefert die API das Kontingent
-        // zuverlaessiger als die HTML-Seite (premium_traffic_left). Premium gilt,
-        // wenn Seite ODER API es sagen - die Seite ist bei unklarem Datumsformat
-        // der API die verlaesslichere Quelle.
+        // With an API key on the account page the API reports the quota more
+        // reliably than the HTML (premium_traffic_left). Premium counts if the
+        // page OR the API says so; with an unclear API date format the page is
+        // the more reliable source.
         DdownloadAccountPage.apiKeyFromPage(html)?.let { key ->
             runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
                 if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) {
@@ -296,7 +292,7 @@ class DdownloadHoster internal constructor(
         )
     }
 
-    /** Kontopruefung ueber die offizielle API (ohne CAPTCHA). */
+    /** Account check via the official API (no captcha). */
     private fun checkViaApi(key: String): AccountInfo {
         val json = apiCall("account/info", mapOf("key" to key))
         // Status 200 without "result" is a changed response format, not an
@@ -304,15 +300,14 @@ class DdownloadHoster internal constructor(
         val result = json.optJSONObject("result")
             ?: throw HosterException(Texts.t("hoster_ddownload_unexpected_api_response"), permanent = false)
         val expire = DdownloadAccountPage.parseExpire(result.opt("premium_expire")?.toString())
-        // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
-        // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
-        // betreffen den Free-Traffic und sind fuer Premium irrelevant.
+        // Per API docs "premium_traffic_left" (in MB, e.g. 102400 = 100 GB) is
+        // the remaining premium daily quota; "traffic_left"/"traffic_used"
+        // refer to free traffic and are irrelevant for premium.
         val rawPremiumLeft = result.opt("premium_traffic_left")?.toString()?.trim().orEmpty()
         val unlimited = rawPremiumLeft.contains("unlimited", true) || rawPremiumLeft == "inf"
         val premiumLeft = rawPremiumLeft.toDoubleOrNull()
-        // Premium: gueltiges Ablaufdatum - oder, wenn die API das Datum in einem
-        // unbekannten Format liefert, ein vorhandenes Premium-Kontingent
-        // (ein Free-Konto hat keins). Vorher hiess ein unlesbares Datum "Free".
+        // Premium: a valid expiry date, or, if the API reports the date in an
+        // unknown format, an existing premium quota (a free account has none).
         val premium = expire > System.currentTimeMillis() ||
             (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
@@ -320,7 +315,7 @@ class DdownloadHoster internal constructor(
             premiumLeft != null && premiumLeft >= 0 ->
                 DdownloadAccountPage.plausibleQuota(DdownloadAccountPage.quotaToBytes(premiumLeft))
             else -> {
-                // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
+                // Older API without premium_traffic_left: traffic_left as fallback
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
                     ?.let { DdownloadAccountPage.quotaToBytes(it) } ?: -1L
             }
@@ -348,16 +343,15 @@ class DdownloadHoster internal constructor(
             okhttp3.Request.Builder().url("$apiBase/$path?$query")
                 .header("User-Agent", browserUa).build()
         ).execute().use { it.code to it.peekBody(Http.MAX_TEXT_BYTES).string() }
-        // Cloudflare-/Fehlerseiten sind kein JSON: voruebergehend, nicht "Konto ungueltig"
+        // Cloudflare/error pages are not JSON: temporary, not "account invalid"
         val json = runCatching { org.json.JSONObject(text) }.getOrElse {
             throw HosterException(Texts.t("hoster_ddownload_api_not_json", code), permanent = false)
         }
         val status = json.optInt("status")
         if (status != 200) {
             val msg = json.optString("msg").ifBlank { Texts.t("hoster_http_status", status) }
-            // Dauerhaft nur, was der Text als solches ausweist (Datei weg,
-            // Schluessel ungueltig); Tageslimit, Sperren und Serverfehler sind
-            // voruebergehend
+            // Permanent only what the text identifies as such (file gone, key
+            // invalid); daily limit, blocks and server errors are temporary
             val permanent = status == 404 ||
                 msg.contains("not found", true) || msg.contains("invalid key", true) ||
                 msg.contains("wrong key", true) || msg.contains("no such", true)
@@ -374,8 +368,8 @@ class DdownloadHoster internal constructor(
                 return@withContext resolveViaApi(key, code)
             }
             val (client, accountHtml) = sessionAndAccountPage(account)
-            // Steht auf der Kontoseite ein API-Key, ist die API der sicherste Weg
-            // zum Direktlink (kein Formular, keine Weiterleitungskette)
+            // With an API key on the account page the API is the safest route
+            // to the direct link (no form, no redirect chain)
             DdownloadAccountPage.apiKeyFromPage(accountHtml)?.let { key ->
                 runCatching { resolveViaApi(key, code) }
                     .onFailure { if (it is FileOfflineException) throw it }
@@ -385,14 +379,14 @@ class DdownloadHoster internal constructor(
 
             var page = client.fetch(pageUrl, referer = siteBase)
             checkBlocked(page)
-            // Konto mit "Direct Downloads": die Seite leitet sofort zur Datei
-            // weiter; der Client ist ihr gefolgt, die Endadresse ist der Link
+            // Account with "Direct Downloads": the page redirects straight to
+            // the file; the client followed it, the final address is the link
             if (page.isFile && page.finalUrl.toHttpUrlOrNull()?.host?.lowercase() !in siteHosts) {
                 return@withContext ResolvedLink(page.finalUrl, FileNames.fromDisposition(page.contentDisposition))
             }
             checkOffline(page.body)
-            // Name von der Dateiseite merken: nach der Weiterleitungskette ist
-            // der Seitentext eine Umleitung ohne Inhalt
+            // Remember the name from the file page: after the redirect chain
+            // the page text is a redirect without content
             val pageName = pageFileName(page.body)
 
             var direct = extractDirectLink(page.body)
@@ -401,24 +395,24 @@ class DdownloadHoster internal constructor(
             var currentUrl = pageUrl
             while (direct == null && hops++ < 6) {
                 if (page.code in 300..399 && !page.location.isNullOrBlank()) {
-                    // Weiterleitung: zeigt sie auf eine Datei, ist das der Direktlink;
-                    // sonst der naechsten Seite folgen (ohne die Datei selbst zu laden).
-                    // Relative Ziele gegen die zuletzt geholte Adresse aufloesen.
+                    // Redirect: if it points to a file, that is the direct link;
+                    // otherwise follow the next page (without loading the file).
+                    // Relative targets resolve against the last fetched address.
                     val target = resolveLocation(currentUrl, page.location!!)
                     if (isFileServerUrl(target)) { direct = target; break }
                     page = client.fetch(target, referer = currentUrl, followRedirects = false)
                     currentUrl = target
                     checkBlocked(page)
-                    // Antwort ist bereits die Datei (Adresse ohne Dateiendung,
-                    // z.B. dl.cgi/<token>): der Koerper wurde nicht gelesen
+                    // Response is already the file (address without extension,
+                    // e.g. dl.cgi/<token>): the body was not read
                     if (page.code in 200..299 && page.isFile) { direct = target; break }
                     direct = extractDirectLink(page.body)
                     continue
                 }
                 if (formsSent >= 2) break
-                // Download-Formular (op=download2, method_premium) abschicken. Ohne
-                // Redirect-Folgen: XFileSharing antwortet mit einer Weiterleitung,
-                // deren Location bereits der Direktlink ist.
+                // Submit the download form (op=download2, method_premium)
+                // without following redirects: XFileSharing answers with a
+                // redirect whose Location is already the direct link.
                 val form = downloadForm(page.body, code)
                 formsSent++
                 page = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
@@ -452,12 +446,12 @@ class DdownloadHoster internal constructor(
             ResolvedLink(direct, fileName)
         }
 
-    /** Free-Ablauf (Sperren, Countdown, Turnstile) - siehe [DdownloadFree]. */
+    /** Free flow (blocks, countdown, Turnstile), see [DdownloadFree]. */
     internal val free = DdownloadFree(this)
 
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink = free.resolve(url, hints)
 
-    /** Cookie-Header aus dem OkHttp-Speicher fuer [url]; null ohne passende Cookies. */
+    /** Cookie header from the OkHttp store for [url]; null without matching cookies. */
     internal fun cookieHeader(accountId: Long, url: String): String? {
         val http = url.toHttpUrlOrNull() ?: return null
         val store = cookieStores[accountId] ?: return null
@@ -478,7 +472,7 @@ class DdownloadHoster internal constructor(
                     ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_api_no_response"))
                 val status = info.optInt("status")
                 return@withContext if (status != 200) {
-                    // 404 = nicht gefunden; jeder andere Status ist ebenfalls "nicht online"
+                    // 404 = not found; any other status is "not online" as well
                     val note = info.optString("msg").ifBlank { null }
                         ?: if (status == 404) Texts.t("hoster_file_not_found") else Texts.t("hoster_status_code", status)
                     LinkInfo(online = false, note = note)
@@ -490,8 +484,8 @@ class DdownloadHoster internal constructor(
                     )
                 }
             }
-            // Ohne API-Key: oeffentliche Dateiseite auswerten (kein Login noetig).
-            // Mit Browser-Kennung, sonst liefert Cloudflare nur eine Challenge.
+            // Without an API key: parse the public file page (no login needed),
+            // with the browser user agent or Cloudflare only serves a challenge.
             val resp = clientFor(0L).fetch("$siteBase/$code")
             val html = resp.body
             if (resp.code == 404 || html.contains("File Not Found", true) || html.contains("No such file", true)) {
@@ -502,7 +496,7 @@ class DdownloadHoster internal constructor(
             ) {
                 return@withContext LinkInfo(online = null, note = Texts.t("hoster_cloudflare_check_unknown"))
             }
-            // Fehlerseite (5xx, 403) ist kein Beleg fuer "online"
+            // An error page (5xx, 403) is no proof of "online"
             if (resp.code !in 200..299) {
                 return@withContext LinkInfo(online = null, note = Texts.t("hoster_http_status_unknown", resp.code))
             }
@@ -514,11 +508,10 @@ class DdownloadHoster internal constructor(
         }
 
     /**
-     * Dateiname aus einer XFileSharing-Dateiseite. Reihenfolge: die
-     * Ueberschrift mit Klasse dk-dl-name (aktuelles Layout), dann das
-     * fname-Feld, zuletzt der Titel - dort ersetzt ddownload Punkte durch
-     * Leerzeichen ("Download scn smps8 S37E02 rar"), er zaehlt daher nur,
-     * wenn er noch eine Dateiendung traegt.
+     * File name from an XFileSharing file page. Order: the heading with class
+     * dk-dl-name (current layout), then the fname field, finally the title,
+     * where ddownload replaces dots with spaces ("Download scn smps8 S37E02
+     * rar"), so it only counts if it still carries an extension.
      */
     internal fun pageFileName(html: String): String? {
         Regex(
@@ -540,10 +533,10 @@ class DdownloadHoster internal constructor(
             }
     }
 
-    /** Groesse wie "1.2 GB" aus der Dateiseite. */
+    /** Size such as "1.2 GB" from the file page. */
     internal fun pageFileSize(html: String): Long {
-        // Nur sichtbarer Text, und erst ab dem Dateinamen: davor stehen
-        // Werbung und Kontingent-Angaben ("200 GB traffic per day")
+        // Visible text only, starting at the file name: ads and quota figures
+        // ("200 GB traffic per day") come before it
         val text = DdownloadAccountPage.visibleText(html)
         val start = pageFileName(html)?.let { text.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val m = Regex("""(\d+(?:[.,]\d+)?)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(text, start)
@@ -551,7 +544,7 @@ class DdownloadHoster internal constructor(
         return DdownloadAccountPage.toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
     }
 
-    /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
+    /** Direct link via the API (premium required, no captcha). */
     private fun resolveViaApi(key: String, code: String): ResolvedLink {
         var fileName: String? = null
         runCatching {
@@ -580,10 +573,9 @@ class DdownloadHoster internal constructor(
     }
 
     /**
-     * Felder der Download-Form. Die Feldnamen von XFileSharing sind bekannt,
-     * daher wird das Formular notfalls selbst aufgebaut: fuer angemeldete
-     * Nutzer liefert die Seite teils kein vollstaendiges Formular, und daran
-     * darf die Aufloesung nicht scheitern.
+     * Fields of the download form. The XFileSharing field names are known, so
+     * the form is built by hand if needed: for logged-in users the page
+     * sometimes lacks a complete form, and resolving must not fail on that.
      */
     internal fun downloadForm(html: String, code: String): Map<String, String> {
         val block = formBlock(html) ?: html
@@ -597,7 +589,7 @@ class DdownloadHoster internal constructor(
         return inputs
     }
 
-    /** Das Formular mit der Download-Operation, damit keine Fremdfelder mitgehen. */
+    /** The form with the download operation, so no foreign fields are sent along. */
     internal fun formBlock(html: String): String? =
         Regex("""<form\b[^>]*>.*?</form>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
             .findAll(html)
@@ -605,16 +597,16 @@ class DdownloadHoster internal constructor(
             ?.value
 
     /**
-     * Gilt fuer Adressen mit Dateinamen auf einem anderen Host als der
-     * Hauptdomain: Fileserver (Subdomain, auch mit Port wie :183, auch unter
-     * /cgi-bin/dl.cgi/) und fremde CDN-Hosts, auf die die Formular-Antwort
-     * weiterleiten kann. Seitenlinks, tracker.cgi, relative Weiterleitungen
-     * und /login.html fallen durch Host- und Endungspruefung heraus.
+     * True for addresses with a file name on a host other than the main
+     * domain: file servers (subdomain, also with a port like :183, also under
+     * /cgi-bin/dl.cgi/) and foreign CDN hosts the form response may redirect
+     * to. Page links, tracker.cgi, relative redirects and /login.html fail the
+     * host and extension checks.
      */
     internal fun isFileServerUrl(url: String): Boolean {
         if (DirectLinks.isDirectDownloadUrl(url, siteHosts)) return true
-        // Fileserver-Subdomain mit Download-Pfad, auch ohne Dateiendung
-        // (z.B. /cgi-bin/dl.cgi/<token>): so antwortet das Free-Formular
+        // File server subdomain with a download path, even without an extension
+        // (e.g. /cgi-bin/dl.cgi/<token>): this is how the free form answers
         val http = url.toHttpUrlOrNull() ?: return false
         val host = http.host.lowercase()
         if (host in siteHosts || host in serviceHosts) return false
@@ -623,20 +615,19 @@ class DdownloadHoster internal constructor(
             http.pathSegments.lastOrNull().orEmpty().isNotEmpty()
     }
 
-    /** Subdomains mit Seiten oder API, nie mit Dateien. */
+    /** Subdomains serving pages or the API, never files. */
     private val serviceHosts = setOf("my.ddownload.com", "api-v2.ddownload.com", "my.ddl.to")
 
     override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
 
-    /** Location-Header (auch relativ) gegen die Seitenadresse aufloesen. */
+    /** Resolves a Location header (possibly relative) against the page address. */
     internal fun resolveLocation(base: String, location: String): String =
         base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
     /**
-     * Direktlink aus dem HTML. Das frühere Muster "URL enthält download" traf
-     * jede Adresse der Website selbst ("ddownload.com" enthält "download") und
-     * lieferte dadurch Seitenlinks statt der Datei; spaeter galt auch
-     * tracker.cgi auf der Hauptdomain faelschlich als Direktlink.
+     * Direct link from the HTML. Only file server addresses count: matching on
+     * "contains download" would hit every address of the site itself
+     * ("ddownload.com"), and tracker.cgi on the main domain is not a file.
      */
     internal fun extractDirectLink(html: String): String? =
         fileServerRegex.findAll(html)
@@ -644,9 +635,9 @@ class DdownloadHoster internal constructor(
             .firstOrNull { isFileServerUrl(it) }
 
     /**
-     * Kein Direktlink: dauerhaft nur ohne Limit-Hinweis und ohne Serverfehler.
-     * 5xx und 429 (Drosselung) sind voruebergehend; checkBlocked() faengt nur
-     * 403/503 ab, alles andere landete sonst endgueltig in FAILED.
+     * No direct link: permanent only without a limit hint and without a server
+     * error. 5xx and 429 (throttling) are temporary; checkBlocked() only
+     * catches 403/503.
      */
     internal fun resolveFailurePermanent(code: Int, limitReached: Boolean): Boolean =
         !limitReached && code !in 500..599 && code != 429
@@ -654,7 +645,7 @@ class DdownloadHoster internal constructor(
     private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
 }
 
-/** Textartige Antworten (Seiten, JSON) - alles andere ist Dateiinhalt. */
+/** Textual responses (pages, JSON); everything else is file content. */
 private fun isTextualType(contentType: String): Boolean {
     val type = contentType.lowercase()
     return type.startsWith("text/") || type.contains("html") || type.contains("json") ||

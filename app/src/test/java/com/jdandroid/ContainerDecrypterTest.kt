@@ -12,16 +12,16 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Prueft ContainerDecrypter.decryptClickNLoad direkt (JVM, java.util.Base64):
- * Schluessel aus dem jk-Parameter, Formular-Dekodierung und Nachbearbeitung
- * des Klartexts. Verschluesselt wird hier nur, um Testdaten zu erzeugen.
+ * ContainerDecrypter.decryptClickNLoad on the JVM: key from the jk parameter,
+ * form decoding and plaintext post-processing. Encryption here only produces
+ * test data.
  */
 class ContainerDecrypterTest {
 
     private val key = "1234567890123456".toByteArray(Charsets.US_ASCII)
     private val keyHex = "31323334353637383930313233343536"
 
-    /** AES-128-CBC wie der Browser: Schluessel = IV, mit Nullbytes auf Blockgroesse aufgefuellt. */
+    /** AES-128-CBC like the browser: key = IV, zero-padded to the block size. */
     private fun encrypt(plain: String, key: ByteArray = this.key): String {
         val bytes = plain.toByteArray(Charsets.UTF_8)
         val padded = bytes.copyOf(((bytes.size + 15) / 16) * 16)
@@ -50,7 +50,7 @@ class ContainerDecrypterTest {
 
     @Test
     fun erstesLiteralMit32HexZeichenGewinnt() {
-        // Ein weiteres 32-stelliges Literal (falscher Schluessel) danach darf nicht gewinnen
+        // A later 32-character literal (wrong key) must not win
         val jk = "function f(){ var k='$keyHex'; var x='00000000000000000000000000000000'; return k;}"
         val crypted = encrypt("https://1fichier.com/?b")
         assertEquals(listOf("https://1fichier.com/?b"), ContainerDecrypter.decryptClickNLoad(crypted, jk))
@@ -75,7 +75,7 @@ class ContainerDecrypterTest {
 
     @Test
     fun leerzeichenImFormularWerdenZuPlus() {
-        // Base64 mit "+" erzwingen: so lange probieren, bis eines drin ist
+        // Retry until the Base64 contains a "+"
         var n = 0
         var crypted: String
         do {
@@ -87,7 +87,7 @@ class ContainerDecrypterTest {
 
     @Test
     fun nullbytePaddingWirdEntfernt() {
-        // 23 Zeichen -> 9 Nullbytes am Ende des Blocks
+        // 23 characters -> 9 zero bytes at the end of the block
         val url = "https://1fichier.com/?b"
         val links = ContainerDecrypter.decryptClickNLoad(encrypt(url), "'$keyHex'")
         assertEquals(listOf(url), links)

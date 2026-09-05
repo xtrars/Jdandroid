@@ -31,14 +31,14 @@ import java.io.RandomAccessFile
 import java.nio.file.Path
 
 /**
- * Entpackt Archive nach dem Download. Passwoerter werden wie im JDownloader
- * der Reihe nach aus der Passwortliste probiert (zuerst ohne Passwort).
+ * Extracts ZIP, 7z and RAR archives. Passwords are tried in list order,
+ * starting without a password.
  */
 object Extractor {
 
     private val archiveExtensions = listOf(".zip", ".7z", ".rar")
 
-    /** Fortschritt hoechstens alle 4 MiB melden. */
+    /** Progress is reported at most every 4 MiB. */
     private const val PROGRESS_STEP = 4L * 1024 * 1024
 
     /** Windows attribute flags as stored by 7-Zip and RAR. */
@@ -49,11 +49,9 @@ object Extractor {
     private var sevenZipReady = false
 
     /**
-     * Laedt die native 7-Zip-Bibliothek. Auf Android greift die
-     * Auto-Initialisierung von 7-Zip-JBinding nicht: sie sucht eine
-     * Platform-JAR, die es im APK nicht gibt. Die .so liegt stattdessen im
-     * lib-Verzeichnis des APK und muss selbst geladen werden, bevor
-     * initLoadedLibraries() die Bindung herstellt.
+     * Loads the native 7-Zip library. 7-Zip-JBinding's auto-initialisation
+     * looks for a platform JAR that does not exist in an APK; the .so ships in
+     * the APK's lib directory and must be loaded before initLoadedLibraries().
      */
     @Synchronized
     private fun ensureSevenZip() {
@@ -67,10 +65,10 @@ object Extractor {
         }
     }
 
-    /** Siehe [ArchiveNames.repairName]. */
+    /** See [ArchiveNames.repairName]. */
     fun repairName(name: String): String = ArchiveNames.repairName(name)
 
-    /** Archivformat anhand der ersten Bytes: "rar", "zip", "7z" oder null. */
+    /** Archive format from the magic bytes: "rar", "zip", "7z" or null. */
     fun sniffExtension(file: File): String? {
         val head = ByteArray(8)
         val n = runCatching { file.inputStream().use { it.read(head) } }.getOrDefault(-1)
@@ -91,14 +89,13 @@ object Extractor {
         return archiveExtensions.any { lower.endsWith(it) }
     }
 
-    /** Siehe [ArchiveNames.isSecondaryVolume]. */
+    /** See [ArchiveNames.isSecondaryVolume]. */
     fun isSecondaryVolume(fileName: String): Boolean = ArchiveNames.isSecondaryVolume(fileName)
 
     /**
-     * Ausschlussmuster wie im JDownloader ("*.nfo", "*sample*", "proof/…"):
-     * * steht fuer beliebig viele Zeichen, ? fuer eines; Vergleich ohne
-     * Beachtung der Gross-/Kleinschreibung, gegen den Dateinamen und den
-     * vollstaendigen Pfad im Archiv.
+     * Exclude patterns as in JDownloader ("*.nfo", "*sample*"): * matches any
+     * run of characters, ? one character; matched case-insensitively against
+     * the file name and the full path inside the archive.
      */
     fun isExcluded(entryPath: String, patterns: List<String>): Boolean =
         ExcludeFilter(patterns).matches(entryPath)
@@ -130,15 +127,15 @@ object Extractor {
     /** Failure that another password from the list may fix. */
     internal class PasswordException(message: String) : IOException(message)
 
-    /** Fortschrittsmeldung: entpackte Bytes und Gesamtbytes (0 = unbekannt). */
+    /** Extracted bytes and total bytes (0 = unknown). */
     fun interface ProgressListener {
         fun onProgress(done: Long, total: Long)
     }
 
     /**
-     * Entpackt [archive] nach [destDir]. Probiert erst ohne Passwort, dann
-     * alle Eintraege aus [passwords]. Liefert das verwendete Passwort (oder
-     * null bei unverschluesseltem Archiv), wirft [IOException] wenn nichts passt.
+     * Extracts [archive] into [destDir], trying no password first and then
+     * every entry of [passwords]. Returns the password used (null for an
+     * unencrypted archive); throws [IOException] if none fits.
      */
     fun extract(
         archive: File,
@@ -149,10 +146,9 @@ object Extractor {
         progress: ProgressListener? = null
     ): String? {
         destDir.mkdirs()
-        // Jeder Versuch laeuft in ein eigenes Arbeitsverzeichnis: destDir ist der
-        // Paketordner und kann bereits Dateien anderer Archive enthalten, die ein
-        // Fehlversuch nicht mitloeschen darf. Erst bei Erfolg wandert der Inhalt
-        // nach destDir (gleiche Partition, daher renameTo).
+        // Each attempt extracts into its own work directory: destDir is the package
+        // folder and may hold files of other archives that a failed attempt must
+        // not delete. On success the content moves to destDir (same partition).
         val workDir = File(destDir, ".extract-" + (archiveBase(archive.name) ?: archive.name))
         val candidates = listOf<String?>(null) + passwords.filter { it.isNotBlank() }
         val filter = ExcludeFilter(excludes)
@@ -180,7 +176,6 @@ object Extractor {
                 }
             }
         } finally {
-            // Nur die Reste des eigenen Versuchs entfernen, nie fremde Dateien in destDir
             FileTrees.deleteTree(workDir)
         }
         throw IOException(
@@ -189,9 +184,8 @@ object Extractor {
     }
 
     /**
-     * Verschiebt [src] nach [dst]. Bestehende Ordner werden zusammengefuehrt,
-     * bei bestehenden Dateien bekommt der Neuzugang "(2)", "(3)" ...;
-     * schlaegt renameTo fehl, wird kopiert.
+     * Moves [src] to [dst], merging existing directories and suffixing
+     * existing file names with "(2)", "(3)", ...; falls back to copying.
      */
     private fun moveInto(src: File, dst: File) {
         if (src.isDirectory && dst.isDirectory) {
@@ -218,8 +212,7 @@ object Extractor {
             if (password == null) throw PasswordException(Texts.t("engine_password_required"))
             zip.setPassword(password.toCharArray())
         }
-        // Datei fuer Datei statt extractAll: so greifen Ausschlussmuster und
-        // der Fortschritt laesst sich melden
+        // Per file instead of extractAll so excludes and progress work
         val headers = zip.fileHeaders.filter { !it.isDirectory && !isLink(it) && !filter.matches(it.fileName) }
         val total = headers.sumOf { it.uncompressedSize.coerceAtLeast(0) }
         var done = 0L
@@ -259,7 +252,7 @@ object Extractor {
     private fun isLink(entry: SevenZArchiveEntry): Boolean =
         entry.hasWindowsAttributes && isLinkAttributes(entry.windowsAttributes)
 
-    /** Alle Volumes eines mehrteiligen 7z (.7z.001, .7z.002 ...) in Reihenfolge. */
+    /** All volumes of a multipart 7z (.7z.001, .7z.002, ...) in order. */
     internal fun sevenZVolumes(archive: File): List<File> {
         val m = Regex("""^(.*)\.7z\.(\d+)$""", RegexOption.IGNORE_CASE).find(archive.name)
             ?: return listOf(archive)
@@ -293,7 +286,6 @@ object Extractor {
         val volumes = sevenZVolumes(archive)
         val builder = SevenZFile.builder()
         if (volumes.size > 1) {
-            // Mehrteilig: alle Teile als ein zusammenhaengender Kanal
             builder.setSeekableByteChannel(MultiReadOnlySeekableByteChannel.forFiles(*volumes.toTypedArray()))
         } else {
             builder.setFile(archive)
@@ -365,10 +357,7 @@ object Extractor {
         }
     }
 
-    /**
-     * RAR ueber das native 7-Zip-Binding: unterstuetzt RAR4 und RAR5,
-     * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
-     */
+    /** RAR4 and RAR5 via the native 7-Zip binding, including encryption and multivolume sets. */
     private fun extractRar(
         archive: File, target: Destination, password: String?, filter: ExcludeFilter,
         progress: ProgressListener?, flat: Boolean
@@ -418,7 +407,7 @@ object Extractor {
         }
     }
 
-    /** Liefert weitere Volumes eines Multipart-RAR und das Passwort beim Oeffnen. */
+    /** Supplies further volumes of a multipart RAR and the password while opening. */
     private class RarOpenCallback(
         private val primary: File,
         private val password: String?
@@ -524,10 +513,10 @@ object Extractor {
         }
     }
 
-    /** Siehe [ArchiveNames.archiveBase]. */
+    /** See [ArchiveNames.archiveBase]. */
     fun archiveBase(fileName: String): String? = ArchiveNames.archiveBase(fileName)
 
-    /** Erstes/primaeres Volume eines Archivs im Verzeichnis finden. */
+    /** First volume of the archive [base] in [dir], or null. */
     fun findPrimaryVolume(dir: File, base: String): File? =
         dir.listFiles()?.firstOrNull { file ->
             val lower = file.name.lowercase()
@@ -537,15 +526,15 @@ object Extractor {
         }
 
     /**
-     * Zielverzeichnis eines Entpackversuchs. Zielpfade werden lexikalisch
-     * gegen den einmal aufgeloesten Pfad des Verzeichnisses geprueft.
+     * Target directory of one extraction attempt. Entry paths are checked
+     * lexically against the directory's canonical path.
      */
     internal class Destination(dir: File) {
         val dir: File = dir.canonicalFile
         private val root: Path = this.dir.toPath()
         private val used = HashSet<String>()
 
-        /** Schutz gegen Zip-Slip: Zielpfad muss innerhalb des Verzeichnisses bleiben. */
+        /** Zip-slip guard: the target must stay inside the directory. */
         fun child(entryPath: String): File {
             val target = File(dir, entryPath)
             val normalized = target.toPath().normalize()
@@ -556,9 +545,8 @@ object Extractor {
         }
 
         /**
-         * Zieldatei eines Archiveintrags. Flach: die Ordner im Archiv werden
-         * ignoriert, jede Datei landet direkt im Verzeichnis; gleiche Namen aus
-         * verschiedenen Archivordnern bekommen "(2)", "(3)" ... angehaengt.
+         * Target file for an entry. Flat mode ignores the archive's folders;
+         * equal names from different folders get "(2)", "(3)", ... appended.
          */
         fun fileFor(entryPath: String, flat: Boolean): File {
             if (!flat) return child(entryPath)

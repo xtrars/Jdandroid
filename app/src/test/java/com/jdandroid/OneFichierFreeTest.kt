@@ -16,16 +16,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Free-Modus von 1fichier, geprüft gegen die 404-Seite (abgerufen am
- * 04.09.2026) und die Seitenausschnitte der Referenz-Clients (JDownloader,
- * pyLoad, 1fichier-dl): Dateiseite mit Formular `f1`, Countdown `var count`,
- * Antwort mit "Click here to download", Sperr- und Hinweistexte.
+ * 1fichier free mode against the real 404 page and the page excerpts of the
+ * reference clients (JDownloader, pyLoad, 1fichier-dl): form `f1`, countdown
+ * `var count`, "Click here to download" answer, block and notice texts.
  */
 class OneFichierFreeTest {
 
     private val hoster = OneFichierHoster()
 
-    /** Echte 404-Seite (Ausschnitt). */
+    /** Real 404 page (excerpt). */
     private val seite404 = """
         <div class="spacer" id="hspacer" style="height:104px"></div>
         <div class="center-container2">
@@ -35,7 +34,7 @@ class OneFichierFreeTest {
         </div>
     """.trimIndent()
 
-    /** Dateiseite mit Download-Formular (Aufbau nach JDownloader/pyLoad). */
+    /** File page with download form (layout per JDownloader/pyLoad). */
     private val dateiseite = """
         <html><head><title>Download archiv.part1.rar</title>
         <script src="https://static.1fichier.com/js/jquery.min.js"></script>
@@ -77,7 +76,7 @@ class OneFichierFreeTest {
     fun nameUndGroesseAusDerDateiseite() {
         assertEquals("archiv.part1.rar", OneFichierFreePage.fileName(dateiseite))
         assertEquals((1.5 * 1024 * 1024 * 1024).toLong(), OneFichierFreePage.fileSize(dateiseite))
-        // Titel als Rueckfall, franzoesische Einheiten
+        // Title as fallback, French units
         assertEquals("film.mkv", OneFichierFreePage.fileName("<title>Download film.mkv</title>"))
         assertEquals(700L * 1024 * 1024, OneFichierFreePage.fileSize("<td>Taille :</td><td>700 Mo</td>"))
         assertEquals(-1, OneFichierFreePage.fileSize(seite404))
@@ -102,7 +101,7 @@ class OneFichierFreeTest {
         assertEquals("0", form.fields["did"])
         assertFalse(form.fields.containsKey("save"))
         assertFalse(form.fields.containsKey("dl"))
-        // Das Login-Formular (Feld "mail") ist nicht das Download-Formular
+        // The login form (field "mail") is not the download form
         assertFalse(form.needsPassword)
         assertNull(OneFichierFreePage.downloadForm(seite404, "abcde12345"))
     }
@@ -214,24 +213,24 @@ class OneFichierFreeTest {
 
     @Test
     fun normaleDateiseiteIstKeineSperre() {
-        // "you can download only one file at a time" steht als Hinweis auf jeder
-        // Free-Dateiseite: mit Download-Formular ist das keine Sperre - sonst
-        // wartete der Eintrag endlos in 5-Minuten-Schritten, ohne je zu laden
+        // "you can download only one file at a time" appears on every free
+        // file page: with a download form it is no block, otherwise the entry
+        // would wait forever in 5-minute steps
         val text = OneFichierFreePage.visibleText(dateiseite)
         assertNotNull(OneFichierFreePage.downloadForm(dateiseite, "abcde12345"))
         assertNull(OneFichierFreePage.classify(text, downloadOffered = true))
-        // Ohne Formular (Antwort auf das Formular) gilt derselbe Satz als Sperre
+        // Without a form (form response) the same sentence is a block
         assertTrue(OneFichierFreePage.classify(text) is OneFichierBlock.Wait)
-        // Sperren mit Zeitangabe und endgueltige Gruende gelten auch mit Formular
+        // Timed blocks and permanent reasons apply even with a form
         assertTrue(OneFichierFreePage.classify("$text You must wait 5 minutes", downloadOffered = true) is OneFichierBlock.Wait)
         assertTrue(OneFichierFreePage.classify("$text This file need a subscription", downloadOffered = true) is OneFichierBlock.Permanent)
-        // Muster nur im sichtbaren Text, nicht in Skripten
+        // Patterns only in visible text, not in scripts
         assertNull(OneFichierFreePage.classify(OneFichierFreePage.visibleText("<script>var m = 'You must wait 5 minutes';</script>")))
     }
 
     @Test
     fun hinweisseiteOhneDownloadLinkLiefertKeinenDirektlink() {
-        // Sperr-/Hinweisseite mit Links auf Subdomains: keiner davon ist die Datei
+        // Block/notice page linking to subdomains: none of them is the file
         val hinweis = """
             <html><head><link rel="stylesheet" href="https://static.1fichier.com/css/main.css">
             <script src="https://static.1fichier.com/js/jquery.min.js"></script></head>
@@ -242,7 +241,7 @@ class OneFichierFreeTest {
         """.trimIndent()
         assertNull(OneFichierFreePage.directLink(hinweis))
         assertNull(OneFichierFreePage.directLink("""<script>window.location = 'https://www.1fichier.com/login.pl';</script>"""))
-        // Der echte Link steht auch zwischen solchen Links
+        // The real link is found among such links
         assertEquals(
             "https://a-3.1fichier.com/c1234567890",
             OneFichierFreePage.directLink(hinweis.replace("<div>", """<a href="https://a-3.1fichier.com/c1234567890">Click here to download</a><div>"""))
@@ -281,14 +280,14 @@ class OneFichierFreeTest {
             "https://1fichier.com/?abcde12345",
             FreeHints(direktUrlAusBrowser = "http://a-3.1fichier.com/c1234567890", cookies = "LG=en; SID=abc")
         )
-        // Cleartext ist gesperrt: Fileserver-Link ueber HTTPS
+        // Cleartext is blocked: file server link over HTTPS
         assertEquals("https://a-3.1fichier.com/c1234567890", link.directUrl)
         assertEquals("LG=en; SID=abc", link.headers["Cookie"])
         assertEquals("Mozilla/5.0 (Test) WebView", link.headers["User-Agent"])
         assertEquals("https://1fichier.com/?abcde12345", link.headers["Referer"])
         val ohneCookies = hoster.resolveFree("https://1fichier.com/?abcde12345", FreeHints(direktUrlAusBrowser = "https://a-3.1fichier.com/c1"))
         assertFalse(ohneCookies.headers.containsKey("Cookie"))
-        // Fremder Host: Link zaehlt, die Session-Cookies gehen nicht mit
+        // Foreign host: the link counts, the session cookies do not travel
         val fremd = hoster.resolveFree(
             "https://1fichier.com/?abcde12345",
             FreeHints(direktUrlAusBrowser = "https://cdn.example.net/abc/name.rar", cookies = "SID=abc")

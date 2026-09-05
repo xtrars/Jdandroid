@@ -16,9 +16,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
-// Eine beschaedigte Einstellungsdatei (z.B. nach Stromausfall beim Schreiben)
-// darf die App nicht bei jedem Start abstuerzen lassen: sie wird durch leere
-// Voreinstellungen ersetzt.
+// A corrupted settings file (e.g. power loss while writing) is replaced by
+// empty defaults instead of crashing every start.
 private val Context.dataStore by preferencesDataStore(
     name = "settings",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
@@ -26,10 +25,7 @@ private val Context.dataStore by preferencesDataStore(
 
 class SettingsRepository(private val context: Context) {
 
-    /**
-     * Alle Flows leiten sich hiervon ab: ein Lesefehler liefert leere
-     * Voreinstellungen statt den Sammler (und damit die Oberflaeche) zu beenden.
-     */
+    /** Base of all flows: a read error yields empty defaults instead of terminating the collector. */
     private val prefs: Flow<Preferences> = context.dataStore.data.catch { e ->
         if (e is IOException) emit(emptyPreferences()) else throw e
     }
@@ -42,7 +38,7 @@ class SettingsRepository(private val context: Context) {
     private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
     private val keyPasswords = stringPreferencesKey("archive_passwords")
     private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
-    /** Alter Schluessel (KiB/s), nur noch zum Uebernehmen in Mbit/s. */
+    /** Legacy key (KiB/s), only read for conversion to Mbit/s. */
     private val keySpeedLimitKbps = intPreferencesKey("speed_limit_kbps")
     private val keySpeedLimitMbit = doublePreferencesKey("speed_limit_mbit")
     private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
@@ -64,7 +60,7 @@ class SettingsRepository(private val context: Context) {
     val deleteArchiveAfterExtract: Flow<Boolean> =
         prefs.map { it[keyDeleteArchive] ?: true }
 
-    /** Flach entpacken: Ordner im Archiv ignorieren, alle Dateien direkt in den Paketordner. */
+    /** Flat extraction: ignore folders inside the archive. */
     val flatExtract: Flow<Boolean> =
         prefs.map { it[keyFlatExtract] ?: true }
 
@@ -74,15 +70,14 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyFlatExtract] = value }
     }
 
-    /** Eintraege eines Archivs nach erfolgreichem Entpacken aus der Liste entfernen (wie JDownloader). */
     val removeLinksAfterExtract: Flow<Boolean> =
         prefs.map { it[keyRemoveAfterExtract] ?: true }
 
-    /** Passwortliste, ein Passwort pro Zeile. */
+    /** One password per line. */
     val passwordList: Flow<String> =
         prefs.map { it[keyPasswords] ?: "" }
 
-    /** Vom Entpacken ausgeschlossene Dateien (Muster mit * und ?), eines pro Zeile. */
+    /** Files excluded from extraction (patterns with * and ?), one per line. */
     val extractExcludeList: Flow<String> =
         prefs.map { it[keyExtractExcludes] ?: "" }
 
@@ -107,8 +102,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     /**
-     * Globales Download-Limit in Mbit/s (1 Mbit = 1 000 000 Bit), 0 = unbegrenzt.
-     * Ein alter Wert in KiB/s wird umgerechnet, bis der Nutzer neu speichert.
+     * Global limit in Mbit/s (1 Mbit = 1 000 000 bit), 0 = unlimited. A legacy
+     * KiB/s value is converted until the user saves again.
      */
     val speedLimitMbit: Flow<Double> =
         prefs.map { p ->
@@ -117,21 +112,15 @@ class SettingsRepository(private val context: Context) {
                 ?: 0.0
         }
 
-    /** Downloads nur über nicht-getaktete Verbindungen (WLAN). */
+    /** Downloads only over unmetered connections. */
     val wifiOnly: Flow<Boolean> =
         prefs.map { it[keyWifiOnly] ?: false }
 
-    /**
-     * Neue Links sofort starten statt sie im Linksammler zu sammeln.
-     * Standard aus - wie im JDownloader landen Links erst im Linksammler.
-     */
+    /** Start new links immediately instead of collecting them in the link grabber. */
     val autoStartLinks: Flow<Boolean> =
         prefs.map { it[keyAutoStart] ?: false }
 
-    /**
-     * Free-Modus: Links ohne Konto laden (Wartezeiten, ggf. Captcha im
-     * eingebetteten Browser). Standard an - wie im JDownloader.
-     */
+    /** Free mode: download without an account (wait times, captcha in the embedded browser). */
     val freeMode: Flow<Boolean> =
         prefs.map { it[keyFreeMode] ?: true }
 
@@ -141,11 +130,11 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyFreeMode] = value }
     }
 
-    /** Per Storage Access Framework gewaehlter Zielordner (Tree-URI), null = Downloads/JDAndroid. */
+    /** Target folder chosen via Storage Access Framework (tree URI), null = Downloads/JDAndroid. */
     val downloadTreeUri: Flow<String?> =
         prefs.map { it[keyDownloadTree]?.ifBlank { null } }
 
-    /** "system", "light" oder "dark". */
+    /** "system", "light" or "dark". */
     val themeMode: Flow<String> = prefs.map { it[keyThemeMode] ?: "system" }
 
     suspend fun setThemeMode(value: String) {
@@ -166,7 +155,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    /** Ein Passwort aus der Liste entfernen. */
     suspend fun removePassword(password: String) {
         context.dataStore.edit { prefs ->
             val remaining = (prefs[keyPasswords] ?: "").lines()
@@ -175,7 +163,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    /** Click'n'Load-Server (Port 9666) aktiv. */
     val clickNLoadEnabled: Flow<Boolean> =
         prefs.map { it[keyClickNLoad] ?: false }
 
@@ -211,7 +198,7 @@ class SettingsRepository(private val context: Context) {
         /** Upper bound of the stored password list; every extraction tries all entries. */
         const val MAX_STORED_PASSWORDS = 200
 
-        /** Bytes pro Sekunde fuer ein Limit in Mbit/s (0 = unbegrenzt). */
+        /** Bytes per second for a limit in Mbit/s (0 = unlimited). */
         fun mbitToBytesPerSecond(mbit: Double): Long =
             if (mbit <= 0) 0L else (mbit * 1_000_000 / 8).toLong()
 
@@ -252,7 +239,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyPasswords] = value }
     }
 
-    /** Neue Passwoerter (z.B. aus Click'n'Load) an die Liste anhaengen, ohne Duplikate. */
     suspend fun addPasswords(passwords: List<String>) {
         val fresh = passwords.map { it.trim() }.filter { it.isNotEmpty() }
         if (fresh.isEmpty()) return

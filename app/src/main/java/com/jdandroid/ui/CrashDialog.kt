@@ -20,11 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.jdandroid.CrashReporter
 import com.jdandroid.R
 
-/**
- * Zeigt einen zuvor aufgezeichneten Absturz direkt beim Start an. In den
- * Einstellungen vergraben wuerde er leicht uebersehen - fuer die Fehlersuche
- * ist genau dieser Text aber entscheidend.
- */
+/** Shows a recorded crash right at start-up, where it cannot be missed. */
 @Composable
 fun CrashDialog(report: String, onDismiss: () -> Unit) {
     val context = LocalContext.current

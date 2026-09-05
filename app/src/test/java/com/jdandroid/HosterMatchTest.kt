@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Prueft die URL-Erkennung (matches) der Hoster-Plugins. */
 class HosterMatchTest {
 
     private fun idFor(url: String) = HosterRegistry.forUrl(url)?.id
@@ -25,7 +24,6 @@ class HosterMatchTest {
         assertEquals("onefichier", idFor("https://1fichier.com/?k7x2m9p4q1w8e5r3t6y0&af=1234"))
     }
 
-    /** Alle Alias-Domains von 1fichier werden erkannt. */
     @Test
     fun oneFichierAliasDomains() {
         for (domain in listOf(
@@ -53,14 +51,14 @@ class HosterMatchTest {
         assertEquals("ddownload", idFor("https://ddl.to/a1b2c3d4e5f6"))
     }
 
-    /** Seitenpfade wie /pricing oder /register.html sind keine Dateicodes. */
+    /** Page paths like /pricing or /register.html are not file codes. */
     @Test
     fun ddownloadSeitenpfadeNichtErkannt() {
         assertNull(idFor("https://ddownload.com/pricing"))
         assertNull(idFor("https://ddownload.com/register.html"))
         assertNull(idFor("https://ddownload.com/login.html"))
         assertNull(idFor("https://ddownload.com/?op=my_account"))
-        // 10 bzw. 13 Zeichen sind kein 12-stelliger Code
+        // 10 or 13 characters are not a 12-character code
         assertNull(idFor("https://ddownload.com/a1b2c3d4e5"))
         assertNull(idFor("https://ddownload.com/a1b2c3d4e5f6g"))
     }

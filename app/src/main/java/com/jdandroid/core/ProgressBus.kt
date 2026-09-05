@@ -4,9 +4,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Live-Werte eines Eintrags, die nicht in die Datenbank gehoeren: Bytestand
- * und Geschwindigkeit waehrend des Ladens, Prozent waehrend des Entpackens.
- * -1 bedeutet "kein Wert" - das Feld wird dann nicht ueber den Datenbankwert gelegt.
+ * Live values of an entry that stay out of the database: bytes and speed
+ * while downloading, percent while extracting. -1 means "no value" and does
+ * not override the database value.
  */
 data class LiveProgress(
     val downloadedBytes: Long = -1,
@@ -15,31 +15,23 @@ data class LiveProgress(
 )
 
 /**
- * Prozessweiter Speicher-Bus fuer Fortschrittswerte. Frueher schrieb die
- * Engine alle 2 s Bytes/Geschwindigkeit und sekuendlich den Entpack-Stand in
- * Room; jede Schreibung invalidierte die ganze Tabelle, und die Oberflaeche
- * gruppierte die Liste neu. Jetzt liegen Live-Werte nur hier; die Datenbank
- * sieht nur echte Zustandswechsel und eine seltene Sicherung des Bytestands.
- *
- * Je Eintrag wird hoechstens alle [MIN_INTERVAL_MS] veroeffentlicht; ein
- * entfernter Eintrag (Pause, Abschluss, Fehler) verschwindet sofort.
+ * In-memory bus for progress values. Writing them to Room would invalidate
+ * the whole table on every update and make the UI regroup the list, so the
+ * database only sees real state changes and an occasional byte snapshot.
+ * Each entry publishes at most every [MIN_INTERVAL_MS]; removal is immediate.
  */
 object ProgressBus {
-    /** Mindestabstand zweier Veroeffentlichungen je Eintrag. */
     const val MIN_INTERVAL_MS = 500L
 
     private val _state = MutableStateFlow<Map<Long, LiveProgress>>(emptyMap())
     val state: StateFlow<Map<Long, LiveProgress>> = _state
 
-    /** Zeitpunkt der letzten Veroeffentlichung je Eintrag (Drosselung). */
     private val lastPublished = HashMap<Long, Long>()
     private val lock = Any()
 
     /**
-     * Wert veroeffentlichen, sofern seit der letzten Veroeffentlichung dieses
-     * Eintrags mindestens [MIN_INTERVAL_MS] vergangen sind. Liefert true, wenn
-     * der Wert uebernommen wurde. [now] ist monotone Zeit in Millisekunden
-     * ([Clock]) und fuer Tests ueberschreibbar.
+     * Publishes unless the entry was published less than [MIN_INTERVAL_MS]
+     * ago; returns true when accepted. [now] is monotonic milliseconds ([Clock]).
      */
     fun update(id: Long, progress: LiveProgress, now: Long = Clock.SYSTEM.nowMillis()): Boolean {
         synchronized(lock) {
@@ -52,7 +44,7 @@ object ProgressBus {
         }
     }
 
-    /** Eintrag entfernen (Pause, Abschluss, Fehler): die Datenbank ist wieder massgeblich. */
+    /** Removes the entry; the database value applies again. */
     fun remove(id: Long) = removeAll(listOf(id))
 
     fun removeAll(ids: Collection<Long>) {
@@ -64,10 +56,9 @@ object ProgressBus {
         }
     }
 
-    /** Summe der aktuellen Geschwindigkeiten (fuer die Benachrichtigung). */
     fun totalSpeedBps(): Long = _state.value.values.sumOf { it.speedBps }
 
-    /** Nur fuer Tests: alles zuruecksetzen. */
+    /** Test use only. */
     internal fun clear() {
         synchronized(lock) {
             lastPublished.clear()

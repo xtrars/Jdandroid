@@ -1,24 +1,21 @@
-# Hinweis: R8 ist im Release-Build derzeit AUS (isMinifyEnabled = false in
-# app/build.gradle.kts). Diese Regeln greifen erst, wenn der Shrinker wieder
-# eingeschaltet wird. Sie sind bewusst schmal gehalten: nur das, was per
-# JNI/Reflection aufgerufen wird und dem Shrinker daher unsichtbar bleibt.
-# Umbenennen (Obfuskation) bleibt aus, damit Absturzberichte (Einstellungen ->
-# "Letzter Absturz") direkt nachvollziehbar sind.
+# R8 is off in the release build (isMinifyEnabled = false in app/build.gradle.kts);
+# these rules only apply once the shrinker is enabled again. They cover only what
+# is reached via JNI/reflection. No obfuscation, so crash reports stay readable.
 -dontobfuscate
 
-# 7-Zip-JBinding ruft Java-Klassen und -Methoden aus nativem Code per Name auf -
-# auch UNSERE Implementierungen der Callback-Interfaces (RarOpenCallback,
-# ISequentialOutStream-Lambda). Ohne diese Regeln entfernt R8 sie als "unbenutzt".
+# 7-Zip-JBinding calls Java classes and methods from native code by name,
+# including our callback implementations (RarOpenCallback, ISequentialOutStream
+# lambda). Without these rules R8 removes them as unused.
 -keep class net.sf.sevenzipjbinding.** { *; }
 -keepclassmembers class net.sf.sevenzipjbinding.** { *; }
 -keep class * implements net.sf.sevenzipjbinding.** { *; }
 -keep class com.jdandroid.engine.Extractor$RarOpenCallback { *; }
 -keep class com.jdandroid.engine.Extractor$RarExtractCallback { *; }
 
-# Room-Entities/DAOs brauchen keine Keep-Regeln: Room generiert Code statt
-# Reflection zu nutzen und bringt eigene Consumer-Regeln mit.
+# Room entities/DAOs need no keep rules: Room generates code and ships its own
+# consumer rules.
 
-# Optionale Kompressionsformate von commons-compress, die die App nicht nutzt
+# Optional commons-compress formats the app does not use
 -dontwarn org.brotli.dec.**
 -dontwarn com.github.luben.zstd.**
 -dontwarn org.osgi.**

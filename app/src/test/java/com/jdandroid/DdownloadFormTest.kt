@@ -8,10 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Geprüft gegen den tatsächlichen Seitenaufbau von ddownload.com
- * (abgerufen am 30.08.2026).
- */
+/** Based on the actual ddownload.com page layout. */
 class DdownloadFormTest {
 
     private val hoster = DdownloadHoster()
@@ -45,11 +42,7 @@ class DdownloadFormTest {
         assertEquals("", form["method_free"])
     }
 
-    /**
-     * Fuer angemeldete Nutzer liefert die Seite teilweise kein Formular.
-     * Daran darf die Aufloesung nicht scheitern - genau das war der Fehler
-     * "Download-Formular nicht gefunden".
-     */
+    /** For logged-in users the page sometimes has no form; resolving must not fail on that. */
     @Test
     fun ohneFormularWerdenDieFelderSelbstAufgebaut() {
         val form = hoster.downloadForm("<html><body>kein Formular</body></html>", "abc123def456")
@@ -58,20 +51,13 @@ class DdownloadFormTest {
         assertEquals("1", form["method_premium"])
     }
 
-    /**
-     * "ddownload.com" enthaelt die Zeichenfolge "download": das alte Muster
-     * hielt daher jede Seitenadresse fuer den Direktlink.
-     */
+    /** "ddownload.com" contains "download": a naive pattern takes every page URL for a direct link. */
     @Test
     fun seitenlinksGeltenNichtAlsDirektlink() {
         assertNull(hoster.extractDirectLink(echteSeite))
     }
 
-    /**
-     * Die Dateiseite enthaelt im Script einen Tracker-Aufruf auf der
-     * Hauptdomain (cgi-bin/tracker.cgi). Der galt frueher als Direktlink,
-     * wodurch das download2-Formular nie abgeschickt wurde.
-     */
+    /** The page script calls a tracker on the main domain (cgi-bin/tracker.cgi); it is not a direct link. */
     @Test
     fun trackerCgiGiltNichtAlsDirektlink() {
         assertTrue(echteSeite.contains("tracker.cgi"))
@@ -100,7 +86,7 @@ class DdownloadFormTest {
         assertEquals("https://s45.ddownload.com/d/abc/scn-smps8-S37E02.rar", hoster.extractDirectLink(html))
     }
 
-    /** Die Location der Formular-Antwort zaehlt nur, wenn sie auf einen Fileserver zeigt. */
+    /** The Location of the form response only counts when it points to a file server. */
     @Test
     fun weiterleitungszielNurVomFileserver() {
         assertTrue(hoster.isFileServerUrl("https://s12.ddownload.com/xyz/scn-smps8-S37.part1.rar"))
@@ -112,7 +98,7 @@ class DdownloadFormTest {
         assertFalse(hoster.isFileServerUrl("https://ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
         assertFalse(hoster.isFileServerUrl("https://s12.ddownload.com/cgi-bin/tracker.cgi?file_code=chnaz5epeg4t"))
         assertFalse(hoster.isFileServerUrl("https://cdn.ddownload.com/assets/style.css"))
-        // Fileserver mit Port, dl.cgi-Pfad und fremder CDN-Host sind Direktlinks
+        // File server with port, dl.cgi path and foreign CDN host are direct links
         assertTrue(hoster.isFileServerUrl("https://fs07.ddownload.com:183/d/abc123/name.part1.rar"))
         assertTrue(hoster.isFileServerUrl("https://s12.ddownload.com/cgi-bin/dl.cgi/abc/name.rar"))
         assertTrue(hoster.isFileServerUrl("https://cdn7.ddl-cdn.net/d/abc/name.mkv?token=1"))

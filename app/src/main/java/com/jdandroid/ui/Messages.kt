@@ -33,10 +33,8 @@ import com.jdandroid.R
 import com.jdandroid.core.MessageKind
 
 /**
- * Darstellung der Meldungen aus [com.jdandroid.core.AppMessages] in der
- * MainActivity ueber der Navigationsleiste - unabhaengig davon, welcher Tab
- * gerade offen ist. Die Darstellung folgt der App-Palette (im Dunkelmodus
- * dunkel) statt der Standard-Snackbar.
+ * Snackbar visuals for [com.jdandroid.core.AppMessages], shown above the
+ * navigation bar regardless of the current tab.
  */
 data class JdMessage(
     override val message: String,
@@ -50,7 +48,7 @@ data class JdMessage(
     override val withDismissAction: Boolean = kind == MessageKind.ERROR
 ) : SnackbarVisuals
 
-/** Anzeige der Meldungen: Karte in Flaechenfarbe mit Symbol je Art. */
+/** Snackbar host styled with the theme's surface colors and an icon per kind. */
 @Composable
 fun JdSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
     SnackbarHost(hostState = state, modifier = modifier) { data ->

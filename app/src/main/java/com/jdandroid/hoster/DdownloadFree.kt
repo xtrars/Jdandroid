@@ -8,23 +8,22 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Free-Ablauf von ddownload (ohne Konto). Die Seitenauswertung liegt in
- * [DdownloadFreePage], der Netzzugriff (Client, Cookies, Weiterleitungen)
- * im [DdownloadHoster]; hier steht nur der Ablauf: Dateiseite holen,
- * Sperren pruefen, Captcha-Art bestimmen, Countdown abwarten oder als
- * Wartezeit an die Engine geben, Formular abschicken und dem Direktlink
- * folgen.
+ * ddownload free flow (no account). Page parsing lives in [DdownloadFreePage],
+ * network access (client, cookies, redirects) in [DdownloadHoster]; this class
+ * holds only the flow: fetch the file page, check blocks, determine the captcha
+ * type, wait out the countdown or hand it to the engine as wait time, submit
+ * the form and follow the direct link.
  */
 internal class DdownloadFree(private val hoster: DdownloadHoster) {
 
     /**
-     * Zwischenstand eines Free-Ablaufs je Dateicode bei langem Countdown: das
-     * gelesene Formular (Kennung "rand", geloestes Span-Captcha), Name und
-     * Groesse sowie der Zeitpunkt, ab dem das Formular abgeschickt werden
-     * darf. Die Cookies liegen im Speicher des Free-Clients (clientFor(0)).
-     * Ohne diesen Zwischenstand luede jeder Folgeversuch die Seite neu, der
-     * Countdown stuende wieder auf demselben Wert und der Eintrag kreiste
-     * ohne Fortschritt (die Versuche zaehlt eine Wartezeit nicht).
+     * Intermediate state of a free flow per file code when the countdown is
+     * long: the parsed form ("rand" id, solved span captcha), name and size,
+     * and the time from which the form may be submitted. The cookies live in
+     * the free client's store (clientFor(0)). Without this state every retry
+     * would reload the page, the countdown would show the same value again
+     * and the entry would loop without progress (a wait does not count as an
+     * attempt).
      */
     private class FreeSession(
         val form: Map<String, String>,
@@ -32,40 +31,40 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         val fileSize: Long,
         val readyAt: Long
     ) {
-        /** Lange nach dem Startzeitpunkt nicht abgeschickt: Kennung vermutlich ungueltig, neu laden. */
+        /** Not submitted long after the ready time: the id is probably invalid, reload. */
         val expired: Boolean get() = System.currentTimeMillis() > readyAt + GRACE_MS
 
         private companion object {
-            /** So lange nach dem Startzeitpunkt gilt ein gemerktes Formular noch. */
+            /** How long after the ready time a remembered form is still used. */
             const val GRACE_MS = 10L * 60 * 1000
         }
     }
 
     private val freeSessions = ConcurrentHashMap<String, FreeSession>()
 
-    /** Countdowns bis hierhin laufen im Prozess ab; laengere werden zur Wartezeit der Engine. */
+    /** Countdowns up to this run in-process; longer ones become engine wait time. */
     private val MAX_INLINE_COUNTDOWN = 180
 
-    /** Mindestwartezeit nach einer Sperre ohne konkrete Zeitangabe (Sekunden). */
+    /** Minimum wait after a block without a concrete time (seconds). */
     private val MIN_RETRY_WAIT = 60
 
-    /** Sperre ohne genaue Zeit ("daily limit", "too many"): eine Stunde. */
+    /** Block without an exact time ("daily limit", "too many"): one hour. */
     private val LIMIT_FALLBACK_WAIT = 60 * 60
 
-    /** Grund einer Sperre; die Restzeit zaehlt die Engine-Meldung selbst herunter. */
+    /** Reason for a block; the engine message counts down the remaining time itself. */
     private fun waitText(@Suppress("UNUSED_PARAMETER") seconds: Int): String =
         Texts.t("hoster_ddownload_free_locked")
 
     /**
-     * Ablauf ohne Nutzer: Dateiseite holen, Offline, Wartung, Premium-Grenzen
-     * und Sperren (data-wait-seconds bzw. "You have to wait …") auswerten.
-     * Dann die Captcha-Art: ein XFS-Span-Captcha loest die App selbst und
-     * schickt nach dem Countdown das Free-Formular ab; Turnstile, reCAPTCHA,
-     * hCaptcha und Bild-Captchas gehen nur im Browser
-     * ([CaptchaRequiredException] mit der Dateiseite). Kommt aus dem Browser
-     * ein abgefangener Direktlink ([FreeHints.direktUrlAusBrowser]), wird er
-     * samt Cookies und Browser-Kennung uebernommen: cf_clearance ist an die
-     * Kennung gebunden, mit der es ausgestellt wurde.
+     * Unattended flow: fetch the file page, evaluate offline, maintenance,
+     * premium limits and blocks (data-wait-seconds or "You have to wait …").
+     * Then the captcha type: an XFS span captcha is solved by the app, which
+     * submits the free form after the countdown; Turnstile, reCAPTCHA,
+     * hCaptcha and image captchas only work in the browser
+     * ([CaptchaRequiredException] with the file page). A direct link
+     * intercepted by the browser ([FreeHints.direktUrlAusBrowser]) is adopted
+     * together with cookies and browser user agent: cf_clearance is bound to
+     * the user agent it was issued for.
      */
     suspend fun resolve(url: String, hints: FreeHints): ResolvedLink = withContext(Dispatchers.IO) {
         val code = hoster.fileCode(url)
@@ -79,8 +78,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         }
 
         val client = hoster.clientFor(0L)
-        // Formular aus einem frueheren Versuch (langer Countdown): Seite
-        // nicht neu laden, sonst begaenne der Countdown von vorn
+        // Form from an earlier attempt (long countdown): do not reload the
+        // page, otherwise the countdown would start over
         val session = freeSessions[code]?.takeUnless { it.expired }
         val form: Map<String, String>
         val fileName: String?
@@ -117,22 +116,21 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
             countdown = DdownloadFreePage.countdownSeconds(page.body)
             if (countdown > MAX_INLINE_COUNTDOWN) {
-                // Formular samt Startzeitpunkt merken; der naechste Versuch schickt es ab
+                // Remember form and ready time; the next attempt submits it
                 freeSessions[code] = FreeSession(
                     form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
                 )
             }
         }
 
-        // Countdown vor dem Download: kurz im Prozess abwarten, lange
-        // Zeiten als Wartezeit an die Engine zurueckgeben (Formular bleibt
-        // in [freeSessions])
+        // Countdown before the download: short waits in-process, long ones
+        // back to the engine as wait time (form stays in [freeSessions])
         if (countdown > MAX_INLINE_COUNTDOWN) {
             throw WaitException(countdown + 1, Texts.t("hoster_ddownload_free_countdown"))
         }
         if (countdown > 0) delay((countdown + 1) * 1000L)
 
-        // Formular ist verbraucht: ein weiterer Versuch laedt die Seite neu
+        // The form is used up: another attempt reloads the page
         freeSessions.remove(code)
         var resp = with(hoster) { client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false) }
         hoster.checkBlocked(resp)
@@ -166,7 +164,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
                 )
             }
             checkFreeBlockers(body)
-            // Unbekannte Antwort: ein neuer Versuch kostet nichts, daher nie endgueltig
+            // Unknown response: a retry costs nothing, so never permanent
             throw HosterException(Texts.t("hoster_ddownload_no_direct_link", resp.code), permanent = false)
         }
         ResolvedLink(
@@ -178,9 +176,9 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     }
 
     /**
-     * Dauerhafte und zeitliche Sperren der Free-Seite: Wartung (vorübergehend),
-     * nur Premium (dauerhaft), Wartezeit aus der Seite (+1 s Reserve) oder
-     * Limit ohne Zeitangabe (eine Stunde).
+     * Permanent and temporary blocks of the free page: maintenance
+     * (temporary), premium only (permanent), wait time from the page (+1 s
+     * margin) or a limit without a time (one hour).
      */
     private fun checkFreeBlockers(html: String) {
         if (DdownloadFreePage.isMaintenance(html)) {
@@ -195,9 +193,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     }
 
     /**
-     * Felder des Free-Formulars (op=download2, method_free="Free Download",
-     * referer = Dateiseite) plus Captcha-Felder; die Kennung "rand" kommt
-     * von der Seite.
+     * Fields of the free form (op=download2, method_free="Free Download",
+     * referer = file page) plus captcha fields; the "rand" id comes from the page.
      */
     fun freeDownloadForm(
         html: String,
@@ -219,10 +216,10 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     }
 
     /**
-     * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung (cf_clearance
-     * ist daran gebunden), Referer der Dateiseite und die Cookies, falls der
-     * Fileserver sie verlangt. Cookies only for the hoster's own hosts, never
-     * for a foreign CDN [directUrl].
+     * Headers for the file request in free mode: browser user agent
+     * (cf_clearance is bound to it), Referer of the file page and the cookies
+     * in case the file server requires them. Cookies only for the hoster's own
+     * hosts, never for a foreign CDN [directUrl].
      */
     fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
@@ -234,7 +231,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         return headers
     }
 
-    /** Dateiname aus dem letzten Pfadteil einer Fileserver-Adresse (nur mit Endung). */
+    /** File name from the last path segment of a file server address (only with an extension). */
     fun fileNameFromUrl(url: String): String? =
         url.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.trim()
             ?.takeIf { it.isNotEmpty() && Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it) }

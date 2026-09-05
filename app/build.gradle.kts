@@ -10,11 +10,10 @@ plugins {
 }
 
 /**
- * Signaturdaten fuer den Release-Build: zuerst die Umgebungsvariablen
- * KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD, sonst die Datei
- * keystore.properties im Projektstamm (Schluessel storeFile, storePassword,
- * keyAlias, keyPassword; storeFile relativ zum Projektstamm oder absolut).
- * Fehlt beides, liefert die Funktion null und die APK bleibt unsigniert.
+ * Release signing: environment variables KEYSTORE_FILE, KEYSTORE_PASSWORD,
+ * KEY_ALIAS, KEY_PASSWORD first, else keystore.properties in the project root
+ * (storeFile relative to the root or absolute). Without both the APK stays
+ * unsigned.
  */
 fun releaseSigning(): Map<String, String>? {
     val envStore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
@@ -48,25 +47,19 @@ android {
         applicationId = "com.jdandroid"
         minSdk = 26
         targetSdk = 36
-        // versionCode muss bei jedem Release steigen, sonst verweigert der
-        // Paketinstaller das Update ("App nicht installiert").
+        // versionCode must grow with every release or the installer refuses the update.
         versionCode = 41
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Exportierte Room-Schemata als Test-Assets: Grundlage fuer MigrationTest
+    // Exported Room schemas as test assets for MigrationTest
     sourceSets["androidTest"].assets.srcDirs("$projectDir/schemas")
 
-    // Room-Schema exportieren: Grundlage fuer nachvollziehbare Migrationen
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
-    // Signierung der Release-APK. Der Keystore liegt nicht im Repository.
-    // Reihenfolge: Umgebungsvariablen (CI mit Secrets, siehe
-    // .github/workflows/release.yml) -> keystore.properties im Projektstamm
-    // (lokal, in .gitignore) -> ohne beides entsteht eine unsignierte APK.
     val signing = releaseSigning()
     signingConfigs {
         if (signing != null) {
@@ -81,12 +74,10 @@ android {
 
     buildTypes {
         release {
-            // R8 bewusst AUS: der Shrinker hat die RAR-Rueckrufklasse
-            // (Extractor.RarOpenCallback, ISequentialOutStream-Lambda) entfernt,
-            // weil sie nur aus nativem 7-Zip-Code per JNI aufgerufen wird -
-            // Ergebnis: Release-Builds entpackten kein RAR mehr. Die Keep-Regeln
-            // in proguard-rules.pro decken das inzwischen ab, aber ohne Geraete-
-            // test bleibt der sichere Weg ein unveraenderter Build.
+            // R8 off: the shrinker removed the RAR callback classes
+            // (Extractor.RarOpenCallback, ISequentialOutStream lambda) that are
+            // only reached from native 7-Zip code via JNI, so release builds
+            // could not extract RAR.
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.findByName("release")
@@ -104,18 +95,16 @@ android {
         compose = true
     }
     lint {
-        // Versionshinweise absichtlich aus: Abhaengigkeiten werden gezielt
-        // aktualisiert, nicht bei jedem Lint-Lauf.
+        // Dependencies are updated deliberately, not on every lint run.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
     }
     androidResources {
-        // Nur die eigenen Sprachen einpacken (AndroidX-Uebersetzungen anderer
-        // Sprachen bleiben draussen); der Release-Lint prueft, dass jeder
-        // Schluessel in values/ und values-en/ steht.
+        // Only the app's own languages; AndroidX translations of other
+        // languages stay out.
         localeFilters += listOf("de", "en")
     }
 
-    // Release-APK nach Version benennen (statt app-release.apk)
+    // Name the release APK by version instead of app-release.apk
     applicationVariants.all {
         if (buildType.name == "release") {
             outputs.all {
@@ -133,10 +122,10 @@ kotlin {
 }
 
 dependencies {
-    // Room 2.8 (room-migration/room-testing) braucht kotlinx-serialization 1.8.1.
-    // Ohne diese Vorgabe zieht die konsistente Aufloesung den Test-Klassenpfad
-    // auf die 1.7.3 der App zurueck; die Migrationstests brechen dann im
-    // Emulator mit AbstractMethodError (GeneratedSerializer) ab.
+    // Room 2.8 (room-migration/room-testing) needs kotlinx-serialization 1.8.1.
+    // Without this constraint consistent resolution pulls the test classpath
+    // back to the app's 1.7.3 and the migration tests fail with
+    // AbstractMethodError (GeneratedSerializer).
     constraints {
         implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
         implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")

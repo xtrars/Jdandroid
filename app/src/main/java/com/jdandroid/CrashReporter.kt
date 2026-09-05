@@ -9,9 +9,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Schreibt den Stacktrace eines Absturzes in eine Datei, damit er nach dem
- * Neustart in den Einstellungen sichtbar ist. Ohne das bleibt bei einem
- * Absturz auf dem Geraet nur Raten.
+ * Writes the stack trace of an uncaught exception to a file so it can be
+ * shown after the next start.
  */
 object CrashReporter {
 

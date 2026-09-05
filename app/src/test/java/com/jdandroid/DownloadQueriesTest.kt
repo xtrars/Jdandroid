@@ -8,10 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * Prueft die Abfragen aus [DownloadQueries] gegen eine echte SQLite-Datenbank
- * mit dem exportierten Schema (siehe [SchemaDbTest]).
- */
+/** [DownloadQueries] against a real SQLite database with the exported schema (see [SchemaDbTest]). */
 class DownloadQueriesTest : SchemaDbTest() {
 
     private fun applyCheck(id: Long, online: Int, note: String?, fileName: String?, fileSize: Long = -1) =
@@ -21,11 +18,11 @@ class DownloadQueriesTest : SchemaDbTest() {
             "archiveKey" to ArchiveNames.archiveKey(fileName), "fileSize" to fileSize
         )
 
-    /** Room expandiert (:except) zu einer Platzhalterliste; hier stehen die Werte direkt im Text. */
+    /** Room expands (:except) to a placeholder list; here the values are inlined. */
     private fun openDownloadedBytesExcept(except: List<Long>): Long =
         long(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT.replace(":except", except.joinToString(",")))
 
-    /** Room liefert fuer MIN() ohne Treffer NULL - hier als null. */
+    /** MIN() without rows yields NULL, mapped to null. */
     private fun nextRetryAt(now: Long, horizon: Long): Long? =
         bind(DownloadQueries.NEXT_RETRY_AT, "now" to now, "horizon" to horizon).use { st ->
             st.executeQuery().use { rs -> rs.next(); rs.getObject(1)?.let { (it as Number).toLong() } }
@@ -44,9 +41,9 @@ class DownloadQueriesTest : SchemaDbTest() {
         item(4, "d.rar", DownloadStatus.QUEUED); retryAt(4, horizon + 1)       // Captcha: wartet auf den Nutzer
         item(5, "e.rar", DownloadStatus.PAUSED); retryAt(5, now + 1)           // nicht in der Warteschlange
         assertEquals(now + 20_000L, nextRetryAt(now, horizon))
-        // Nach Ablauf des Backoffs bleibt die Wartezeit
+        // After the backoff the wait time remains
         assertEquals(now + 3_600_000L, nextRetryAt(now + 20_000, horizon))
-        // Danach nur noch der Captcha-Eintrag jenseits des Horizonts: kein Timer
+        // Then only the captcha entry beyond the horizon: no timer
         assertNull(nextRetryAt(now + 3_600_000, horizon))
     }
 
@@ -69,11 +66,11 @@ class DownloadQueriesTest : SchemaDbTest() {
         assertEquals("film", column(1, "archiveKey"))
         assertEquals("1234", column(1, "fileSize"))
         assertNull(column(1, "errorMessage"))
-        // Neuer Name ohne Archiv-Endung: der alte Schluessel darf nicht stehen bleiben
+        // New name without archive extension: the old key must not remain
         applyCheck(1, OnlineState.ONLINE, null, "film.mkv")
         assertEquals("film.mkv", column(1, "fileName"))
         assertNull(column(1, "archiveKey"))
-        // Groesse -1 laesst die bekannte Groesse stehen
+        // Size -1 keeps the known size
         assertEquals("1234", column(1, "fileSize"))
     }
 
@@ -113,7 +110,7 @@ class DownloadQueriesTest : SchemaDbTest() {
         item(4, "d.bin", DownloadStatus.COMPLETED, downloadedBytes = 1000)
         item(5, "e.bin", DownloadStatus.EXTRACTING, downloadedBytes = 5000)
         item(6, "f.bin", DownloadStatus.COLLECTED, downloadedBytes = 7)
-        // Wie die Engine: -1 als nie vorhandene Kennung, damit die Liste nie leer ist
+        // Like the engine: -1 as a never-existing id so the list is never empty
         assertEquals(123L, openDownloadedBytesExcept(listOf(-1)))
         assertEquals(23L, openDownloadedBytesExcept(listOf(1, -1)))
         assertEquals(0L, openDownloadedBytesExcept(listOf(1, 2, 3)))

@@ -1,47 +1,48 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
+
 /**
- * Einordnung eines Hinweistexts der 1fichier-Website im Free-Modus
- * (Dateiseite oder Antwort auf das Download-Formular).
+ * Classification of a notice text of the 1fichier website in free mode (file
+ * page or response to the download form).
  */
 internal sealed class OneFichierBlock {
-    /** Wartezeit in Sekunden (inklusive Reserve) mit deutscher Meldung. */
+    /** Wait in seconds (including margin) with a translated message. */
     data class Wait(val seconds: Int, val text: String) : OneFichierBlock()
 
-    /** Ohne Konto nicht ladbar - erneuter Versuch ist sinnlos. */
+    /** Not downloadable without an account; retrying is pointless. */
     data class Permanent(val text: String) : OneFichierBlock()
 
-    /** Voruebergehend, aber ohne feste Wartezeit (Engine-Wiederholung). */
+    /** Temporary, but without a fixed wait (engine retry). */
     data class Transient(val text: String) : OneFichierBlock()
 }
 
-/** Das Download-Formular der Dateiseite (POST an dieselbe Adresse). */
+/** The download form of the file page (POST to the same address). */
 internal data class OneFichierForm(
     val action: String?,
     val fields: Map<String, String>,
-    /** Datei ist passwortgeschuetzt (Feld "pass"). */
+    /** File is password protected (field "pass"). */
     val needsPassword: Boolean
 )
 
 /**
- * Reine Auswertung der 1fichier-Dateiseite im Free-Modus (ohne Netz, ohne
- * Android), damit jede Regel gegen echte Seitenausschnitte pruefbar bleibt.
+ * Pure parsing of the 1fichier file page in free mode (no network, no
+ * Android), so every rule stays testable against real page snippets.
  *
- * Aufbau (Stand 09/2026, englische Sprache ueber `LG=en`): Name und Groesse
- * in einer Tabelle (`Filename :</td><td>…`, `Size :</td><td>1.2 GB`), das
- * Formular `<form action="https://1fichier.com/?<id>" method="post">` mit
- * verstecktem Zufallsfeld `adz`, der Countdown als `var count = 30;`. Nach
- * dem POST steht der Direktlink als `<a href="https://a-3.1fichier.com/…">
- * Click here to download`; Sperren stehen als sichtbarer Text ("You must
- * wait 5 minutes", "You already downloading a file"). Ein 404 kommt als
+ * Layout (as of 09/2026, English via `LG=en`): name and size in a table
+ * (`Filename :</td><td>…`, `Size :</td><td>1.2 GB`), the form
+ * `<form action="https://1fichier.com/?<id>" method="post">` with the hidden
+ * random field `adz`, the countdown as `var count = 30;`. After the POST the
+ * direct link appears as `<a href="https://a-3.1fichier.com/…">Click here to
+ * download`; blocks are visible text ("You must wait 5 minutes", "You already
+ * downloading a file"). A 404 comes as
  * `<div class="notice alc">The requested file does not exist`.
  */
 internal object OneFichierFreePage {
 
     private val ic = RegexOption.IGNORE_CASE
 
-    /** Sichtbarer Text ohne Skripte, Stile, Kommentare und Tags. */
+    /** Visible text without scripts, styles, comments and tags. */
     fun visibleText(html: String): String =
         html.replace(Regex("""<script[\s\S]*?</script>""", ic), " ")
             .replace(Regex("""<style[\s\S]*?</style>""", ic), " ")
@@ -63,14 +64,14 @@ internal object OneFichierFreePage {
             ?: Regex("""<title>\s*(?:Download|Téléchargement)\s+([^<]+?)\s*</title>""", ic)
                 .find(html)?.groupValues?.get(1)?.let(::unescape)?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** Groesse in Byte (1024-basiert), -1 wenn nicht angegeben. */
+    /** Size in bytes (1024-based), -1 if not stated. */
     fun fileSize(html: String): Long {
         val m = Regex("""(?:Size|Taille)\s*:?\s*</td>\s*<td[^>]*>\s*([\d.,]+)\s*([KMGT]?[Bo])\b""", ic).find(html)
             ?: return -1
         return toBytes(m.groupValues[1], m.groupValues[2])
     }
 
-    /** "1.5 GB", "1,5 Go", "700 MB" → Byte; franzoesische Einheit "o" (octet) wie "B". */
+    /** "1.5 GB", "1,5 Go", "700 MB" → bytes; the French unit "o" (octet) counts like "B". */
     fun toBytes(value: String, unit: String): Long {
         val number = value.replace(",", ".").toDoubleOrNull() ?: return -1
         val factor = when (unit.uppercase().first()) {
@@ -84,8 +85,8 @@ internal object OneFichierFreePage {
     }
 
     /**
-     * Countdown vor dem Download-Knopf in Sekunden (`var count = 30;`,
-     * Varianten `Free download in ⏳ 30`, `var ct = 30`), 0 = keiner.
+     * Countdown before the download button in seconds (`var count = 30;`,
+     * variants `Free download in ⏳ 30`, `var ct = 30`), 0 = none.
      */
     fun countdownSeconds(html: String): Int {
         val patterns = listOf(
@@ -100,10 +101,10 @@ internal object OneFichierFreePage {
     }
 
     /**
-     * Download-Formular: erstes POST-Formular, dessen Adresse `/?<id>` enthaelt
-     * (oder `id="f1"`); ohne Kennung das erste POST-Formular. Alle versteckten
-     * Felder werden uebernommen, `save` (in Konto speichern) entfernt.
-     * null = kein Formular (Sperre, Hinweisseite).
+     * Download form: the first POST form whose action contains `/?<id>` (or
+     * `id="f1"`); without an id the first POST form. All hidden fields are
+     * taken over, `save` (store in account) is removed. null = no form
+     * (block, notice page).
      */
     fun downloadForm(html: String, id: String? = null): OneFichierForm? {
         val forms = Regex("""<form\b([^>]*)>([\s\S]*?)</form>""", ic).findAll(html).toList()
@@ -113,7 +114,7 @@ internal object OneFichierFreePage {
             (id != null && Regex("""action\s*=\s*["'][^"']*\?$id(?:[&"']|$)""", ic).containsMatchIn(attrs)) ||
                 Regex("""\bid\s*=\s*["']f1["']""", ic).containsMatchIn(attrs)
         } ?: posts.firstOrNull { m ->
-            // Login- und Suchformulare ausschliessen: das Download-Formular hat kein Feld "mail"
+            // Exclude login and search forms: the download form has no "mail" field
             !Regex("""name\s*=\s*["']mail["']""", ic).containsMatchIn(m.groupValues[2])
         } ?: return null
         val attrs = chosen.groupValues[1]
@@ -137,14 +138,13 @@ internal object OneFichierFreePage {
             ?.let { it.groupValues[1].ifEmpty { it.groupValues[2].ifEmpty { it.groupValues[3] } } }
 
     /**
-     * Captcha-Markierungen im Download-Formular (bzw. auf der Seite, wenn kein
-     * Formular gefunden wurde): Turnstile, reCAPTCHA, hCaptcha, Cloudflare-
-     * Herausforderung. Im Normalablauf verlangt 1fichier kein Captcha; es
-     * erscheint nur bei auffaelligen Adressen und ist dann nur im Browser
-     * loesbar.
+     * Captcha markers in the download form (or on the page if no form was
+     * found): Turnstile, reCAPTCHA, hCaptcha, Cloudflare challenge. 1fichier
+     * normally requires no captcha; it appears only for suspicious addresses
+     * and is then only solvable in the browser.
      */
     fun hasCaptcha(html: String): Boolean {
-        // Alle POST-Formulare ausser dem Login (Feld "mail"); ohne Formular die ganze Seite
+        // All POST forms except the login (field "mail"); without a form the whole page
         val forms = Regex("""<form\b[^>]*method\s*=\s*["']?post[^>]*>[\s\S]*?</form>""", ic).findAll(html)
             .map { it.value }
             .filterNot { Regex("""name\s*=\s*["']mail["']""", ic).containsMatchIn(it) }
@@ -159,14 +159,14 @@ internal object OneFichierFreePage {
     }
 
     /**
-     * Direktlink aus der Antwort auf das Formular:
+     * Direct link from the form response:
      * `<a href="https://a-3.1fichier.com/c123456">Click here to download`
-     * (aktuell), Knopfklasse `ok btn-general btn-orange`, "Start your
-     * download" oder `window.location = '…'`; zuletzt jede Fileserver-
-     * Adresse im HTML. Jeder Kandidat muss [isFileServerUrl] bestehen:
-     * eine Sperr- oder Hinweisseite enthaelt ebenfalls `href`s auf
-     * Subdomains (`static.1fichier.com/css/…`, `www.1fichier.com/register.pl`),
-     * die sonst als Datei geladen wuerden.
+     * (current), button class `ok btn-general btn-orange`, "Start your
+     * download" or `window.location = '…'`; finally any file server address
+     * in the HTML. Every candidate must pass [isFileServerUrl]: a block or
+     * notice page also contains hrefs to subdomains
+     * (`static.1fichier.com/css/…`, `www.1fichier.com/register.pl`) that
+     * would otherwise be downloaded as the file.
      */
     fun directLink(html: String): String? {
         val patterns = listOf(
@@ -185,16 +185,16 @@ internal object OneFichierFreePage {
         return null
     }
 
-    /** Subdomains der Hoster-Domain, auf denen nur Seiten und Ressourcen liegen. */
+    /** Subdomains of the hoster domain that serve only pages and resources. */
     private val pageSubdomains = setOf("www", "static", "img", "api", "cdn", "help", "console")
 
     /**
-     * Fileserver-Adresse: `https://a-<n>.1fichier.com/<token>` - Subdomain
-     * der Hoster-Domain (nicht www/static/…), genau ein Pfadsegment aus
-     * mindestens vier Buchstaben/Ziffern ohne Dateiendung, danach hoechstens
-     * Query oder Fragment. Seiten der Hauptdomain (`1fichier.com/?id`),
-     * Ressourcen (`static.1fichier.com/css/main.css`) und Seitenlinks
-     * (`www.1fichier.com/register.pl`) zaehlen nie.
+     * File server address `https://a-<n>.1fichier.com/<token>`: a subdomain
+     * of the hoster domain (not www/static/…), exactly one path segment of at
+     * least four letters/digits without an extension, then at most query or
+     * fragment. Main domain pages (`1fichier.com/?id`), resources
+     * (`static.1fichier.com/css/main.css`) and page links
+     * (`www.1fichier.com/register.pl`) never count.
      */
     fun isFileServerUrl(url: String): Boolean {
         val m = Regex(
@@ -205,20 +205,20 @@ internal object OneFichierFreePage {
     }
 
     /**
-     * Hinweistexte der Website (sichtbarer Text). Reihenfolge: erst
-     * endgueltige Gruende, dann Muster mit Zeitangabe, dann pauschale
-     * Sperren. Wartezeiten sind in Minuten angegeben; +1 s Reserve.
+     * Website notice texts (visible text). Order: permanent reasons first,
+     * then patterns with a time, then generic blocks. Waits are stated in
+     * minutes; +1 s margin.
      *
-     * [downloadOffered] = die Seite bietet das Download-Formular an: dann
-     * zaehlen die Sperren ohne Zeitangabe ("only one file at a time") nicht -
-     * derselbe Satz steht als Hinweis auf jeder Free-Dateiseite. Ob wirklich
-     * gesperrt ist, sagt die Antwort auf das Formular (ohne Formular), und
-     * dort gelten die Muster wieder.
+     * [downloadOffered] = the page offers the download form: then the blocks
+     * without a time ("only one file at a time") do not count, since the same
+     * sentence is a notice on every free file page. Whether it is really
+     * blocked is shown by the form response (without a form), where the
+     * patterns apply again.
      */
     fun classify(text: String, downloadOffered: Boolean = false): OneFichierBlock? {
         val t = text.replace("&#039;", "'").replace("&apos;", "'").replace("&nbsp;", " ")
 
-        // --- endgueltig: Datei weg, nur mit Konto, geschuetzt ---
+        // permanent: file gone, account only, protected
         if (Regex("""File not found|The requested file (?:has been deleted|do(?:es)? not exist)""", ic).containsMatchIn(t)) {
             return OneFichierBlock.Permanent(Texts.t("hoster_file_offline"))
         }
@@ -237,7 +237,7 @@ internal object OneFichierFreePage {
             return OneFichierBlock.Permanent(Texts.t("hoster_onefichier_bad_password"))
         }
 
-        // --- Wartezeit mit Zahl (Minuten) ---
+        // wait with a number (minutes)
         Regex(
             """(?:you must wait (?:at least|up to)|You must wait|Vous devez attendre(?: encore)?)\s*(\d+)\s*(min|sec|hour|heure)""",
             ic
@@ -254,7 +254,7 @@ internal object OneFichierFreePage {
             return OneFichierBlock.Wait(3600 + 1, Texts.t("hoster_onefichier_ip_locked"))
         }
 
-        // --- nur ein Free-Download je IP (ohne Zahl: 5 Minuten) - nicht auf der Dateiseite mit Formular ---
+        // one free download per IP (no number: 5 minutes); not on the file page with a form
         if (!downloadOffered && Regex(
                 """You already downloading (?:some|a) file|You can download only one file at a time|""" +
                     """You must wait for another download|Please wait a few seconds before downloading new ones|""" +
@@ -267,7 +267,7 @@ internal object OneFichierFreePage {
             return OneFichierBlock.Wait(5 * 60 + 1, Texts.t("hoster_onefichier_one_at_a_time"))
         }
 
-        // --- weitere voruebergehende Zustaende ---
+        // other temporary states
         if (Regex("""Free download is temporarily limited due to high demand""", ic).containsMatchIn(t)) {
             return OneFichierBlock.Wait(60 + 1, Texts.t("hoster_onefichier_no_free_slots"))
         }

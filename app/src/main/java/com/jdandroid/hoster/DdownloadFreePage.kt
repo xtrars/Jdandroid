@@ -1,60 +1,58 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
-/**
- * Captcha-Art auf einer XFileSharing-Dateiseite im Free-Modus.
- */
+
+/** Captcha type on an XFileSharing file page in free mode. */
 internal sealed class FreeCaptcha {
-    /** Kein Captcha im Download-Formular. */
+    /** No captcha in the download form. */
     object None : FreeCaptcha()
 
-    /** Cloudflare Turnstile, reCAPTCHA oder hCaptcha: nur im Browser loesbar. */
+    /** Cloudflare Turnstile, reCAPTCHA or hCaptcha: only solvable in the browser. */
     data class Browser(val kind: String) : FreeCaptcha()
 
-    /** Bild-Captcha (Feld "code"): der Nutzer muss es abtippen, also Browser. */
+    /** Image captcha (field "code"): the user has to type it, so browser. */
     data class Image(val url: String) : FreeCaptcha()
 
     /**
-     * XFS-Span-Captcha: vier Ziffern in Spans, deren Reihenfolge nur ueber
-     * padding-left festliegt. Ohne Nutzer loesbar; [code] ist die Loesung.
+     * XFS span captcha: four digits in spans whose order is only defined by
+     * padding-left. Solvable without the user; [code] is the solution.
      */
     data class Span(val code: String) : FreeCaptcha()
 }
 
 /**
- * Reine Auswertung der ddownload-Dateiseite im Free-Modus (ohne Netz, ohne
- * Android), damit jede Regel gegen echte Seitenausschnitte pruefbar bleibt.
+ * Pure parsing of the ddownload file page in free mode (no network, no
+ * Android), so every rule stays testable against real page snippets.
  *
- * Aufbau der Seite (Stand 09/2026): Formularfehler stehen in
- * `<div class="dk-dl-alert">…</div>`, Sperren als Sprechblase am gesperrten
- * Knopf (`data-toast-msg`, `data-wait-seconds`), der Countdown vor dem
- * Download in `<span class="dk-countdown-num">60</span>`. Daneben die
- * klassischen XFS-Muster (countdown_str, "You have to wait …"), falls der
- * Anbieter das Layout wieder wechselt.
+ * Page layout (as of 09/2026): form errors in `<div class="dk-dl-alert">…</div>`,
+ * blocks as a tooltip on the locked button (`data-toast-msg`,
+ * `data-wait-seconds`), the pre-download countdown in
+ * `<span class="dk-countdown-num">60</span>`. The classic XFS patterns
+ * (countdown_str, "You have to wait …") are kept in case the layout changes back.
  */
 internal object DdownloadFreePage {
 
     private val ic = RegexOption.IGNORE_CASE
 
-    /** Formularfehler ("Wrong captcha", "Expired download session"). */
+    /** Form error ("Wrong captcha", "Expired download session"). */
     fun alert(html: String): String? =
         Regex("""class=["']dk-dl-alert["'][^>]*>\s*([^<]+?)\s*<""", ic)
             .find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** Sprechblase am gesperrten Knopf (Sperre, Groessengrenze, Formularfehler). */
+    /** Tooltip on the locked button (block, size limit, form error). */
     fun toast(html: String): String? =
         Regex("""data-toast-msg=["']([^"']*)["']""", ic)
             .find(html)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** Beide Fehlertexte der Seite fuer Textpruefungen, leer wenn keiner da ist. */
+    /** Both error texts of the page for text checks; empty if none. */
     private fun errorTexts(html: String): String =
         listOfNotNull(alert(html), toast(html)).joinToString(" | ")
 
     /**
-     * Sperre (IP-/Tageslimit) in Sekunden, 0 = keine. Zuerst das Rohfeld
-     * `data-wait-seconds`, sonst der klassische Satz "You have reached the
-     * download-limit / You have to wait 1 hour, 23 minutes, 5 seconds",
-     * auch mit Digitalformat "1:23:05".
+     * Block (IP/daily limit) in seconds, 0 = none. First the raw field
+     * `data-wait-seconds`, otherwise the classic sentence "You have reached the
+     * download-limit / You have to wait 1 hour, 23 minutes, 5 seconds", also in
+     * digital form "1:23:05".
      */
     fun waitSeconds(html: String): Int {
         Regex("""data-wait-seconds=["'](\d+)["']""", ic).find(html)
@@ -65,7 +63,7 @@ internal object DdownloadFreePage {
         return parseWaitText(sentence)
     }
 
-    /** "1 hour, 23 minutes, 5 seconds", "2 days", "1:23:05" oder "23:05" → Sekunden; 0 = nichts gefunden. */
+    /** "1 hour, 23 minutes, 5 seconds", "2 days", "1:23:05" or "23:05" → seconds; 0 = nothing found. */
     fun parseWaitText(text: String): Int {
         fun unit(name: String): Int =
             Regex("""(\d+)\s*$name""", ic).find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -87,9 +85,8 @@ internal object DdownloadFreePage {
     }
 
     /**
-     * Clientseitiger Countdown vor dem Download (aktuell 60 s), 0 = keiner.
-     * Aktuelles Layout `dk-countdown-num`, klassisch `countdown_str` bzw.
-     * `class="seconds"`.
+     * Client-side countdown before the download (currently 60 s), 0 = none.
+     * Current layout `dk-countdown-num`, classic `countdown_str` or `class="seconds"`.
      */
     fun countdownSeconds(html: String): Int {
         val patterns = listOf(
@@ -104,9 +101,9 @@ internal object DdownloadFreePage {
     }
 
     /**
-     * Captcha-Art des Download-Formulars. Turnstile steht auf der
-     * Dateiseite auch in Skripten fuer den Gast-Kauf; massgeblich ist das
-     * Widget (`class="cf-turnstile"`) oder ein Antwortfeld im Formular.
+     * Captcha type of the download form. Turnstile also appears in scripts for
+     * the guest purchase on the file page; what counts is the widget
+     * (`class="cf-turnstile"`) or a response field in the form.
      */
     fun captcha(html: String): FreeCaptcha {
         solveSpanCaptcha(html)?.let { return FreeCaptcha.Span(it) }
@@ -126,10 +123,10 @@ internal object DdownloadFreePage {
     }
 
     /**
-     * XFS-Span-Captcha loesen: Block hinter "Enter code", darin Spans mit
-     * `padding-left:<px>` und einer Ziffer (roh oder als `&#NN;`). Die
-     * Ziffern nach padding-left sortiert ergeben den Code. null = kein
-     * solches Captcha oder unvollstaendig (weniger als vier Ziffern).
+     * Solves the XFS span captcha: the block after "Enter code" holds spans
+     * with `padding-left:<px>` and one digit each (raw or as `&#NN;`); the
+     * digits sorted by padding-left form the code. null = no such captcha or
+     * incomplete (fewer than four digits).
      */
     fun solveSpanCaptcha(html: String): String? {
         val block = Regex(""">\s*Enter code.*?<div[^>]*>(.+?)</div>""", setOf(ic, RegexOption.DOT_MATCHES_ALL))
@@ -149,8 +146,8 @@ internal object DdownloadFreePage {
     }
 
     /**
-     * Grund, warum die Datei ohne Premium nicht ladbar ist (dauerhaft), als
-     * uebersetzte Meldung (Texts.t); null = frei ladbar.
+     * Reason why the file cannot be downloaded without premium (permanent),
+     * as a translated message (Texts.t); null = downloadable.
      */
     fun premiumOnlyReason(html: String): String? {
         val text = errorTexts(html) + " " + html
@@ -171,9 +168,9 @@ internal object DdownloadFreePage {
     }
 
     /**
-     * Datei weg: bekannte Texte, Copyright-Sperre oder eine leere Seite
-     * (Titel "Download " ohne Namen und ohne Download-Formular) - so
-     * antwortet ddownload auf einen ungueltigen Code.
+     * File gone: known texts, copyright ban or an empty page (title "Download "
+     * without a name and without a download form), which is how ddownload
+     * answers an invalid code.
      */
     fun isOffline(html: String): Boolean {
         if (html.contains("File Not Found", true) || html.contains("file was deleted", true) ||
@@ -197,7 +194,7 @@ internal object DdownloadFreePage {
     fun isSkippedCountdown(html: String): Boolean =
         Regex("""[>"']\s*Skipped countdown""", ic).containsMatchIn(html)
 
-    /** Sperre ohne konkrete Zeit ("download limit", "too many", "try again later"). */
+    /** Block without a concrete time ("download limit", "too many", "try again later"). */
     fun isLimitWithoutTime(html: String): Boolean =
         Regex("""download[- ]limit|limit reached|too many|try again later""", ic).containsMatchIn(errorTexts(html)) ||
             Regex("""You have reached the maximum limit|using all download slots for IP""", ic).containsMatchIn(html)

@@ -6,16 +6,12 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Benennung von Paketen wie im JDownloader: aus dem gemeinsamen Namensteil
- * der enthaltenen Dateien. Aus "film.part1.rar" und "film.part2.rar" wird
- * also das Paket "film".
+ * Package naming from the common part of the contained file names:
+ * "film.part1.rar" and "film.part2.rar" yield the package "film".
  */
 object PackageNaming {
 
-    /**
-     * Sobald Dateinamen bekannt sind, wird ein automatisch benanntes Paket
-     * nach dem gemeinsamen Namensteil benannt - wie im JDownloader.
-     */
+    /** Renames an auto-named package once file names are known. */
     suspend fun refineAutoName(db: AppDatabase, packageId: Long?) {
         val id = packageId ?: return
         val pkg = db.packageDao().byId(id) ?: return
@@ -34,11 +30,10 @@ object PackageNaming {
         return name.takeIf { it != pkg.name }
     }
 
-    /** Gemeinsamer Namensteil mehrerer Dateinamen, oder null wenn zu kurz. */
+    /** Common prefix of several file names, or null when too short. */
     fun commonName(names: List<String>): String? {
-        // Archiv-Endungen zuerst entfernen: sonst bliebe vom gemeinsamen
-        // Praefix von "film.part1.rar" und "film.part2.rar" das Fragment
-        // "film.part" uebrig.
+        // Strip archive suffixes first, otherwise "film.part1.rar" and
+        // "film.part2.rar" would leave the fragment "film.part".
         val cleaned = names.filter { it.isNotBlank() }.map { stripArchiveSuffix(it) }
         if (cleaned.isEmpty()) return null
         if (cleaned.size == 1) return tidy(cleaned.first())
@@ -53,7 +48,7 @@ object PackageNaming {
         return tidy(prefix)
     }
 
-    /** Aus Links einen Vorschlag ableiten (viele Links enthalten den Dateinamen). */
+    /** Suggests a name from URLs (many contain the file name), else a timestamp. */
     fun suggestFromUrls(urls: List<String>): String {
         val names = urls.mapNotNull { url ->
             url.substringBefore('?').substringAfterLast('/')
@@ -64,14 +59,12 @@ object PackageNaming {
         return Texts.t("engine_package_from_date", stamp)
     }
 
-    /** Entfernt Archiv-Endungen: "film.part1.rar" -> "film". */
     private fun stripArchiveSuffix(name: String): String =
         name.replace(Regex("\\.part\\d+\\.rar$", RegexOption.IGNORE_CASE), "")
             .replace(Regex("\\.7z\\.\\d+$", RegexOption.IGNORE_CASE), "")
             .replace(Regex("\\.(rar|zip|7z|[rz]\\d{2})$", RegexOption.IGNORE_CASE), "")
             .trim()
 
-    /** Trennzeichen und Reste wie "part" am Ende entfernen. */
     private fun tidy(value: String): String? {
         val trimmed = value.trim()
             .replace(Regex("[._\\- ]*part\\d*$", RegexOption.IGNORE_CASE), "")
