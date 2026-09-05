@@ -76,6 +76,7 @@
     <string name="downloads_completed_note">%1$s (%2$s)</string>
     <string name="downloads_waiting_for_parts">Warte auf weitere Archiv-Teile</string>
     <string name="downloads_waiting_for_wifi">Wartet auf WLAN</string>
+    <string name="downloads_waiting_for_nas">Wartet auf NAS</string>
     <string name="downloads_unknown_error">unbekannter Fehler</string>
     <string name="downloads_file_offline">Datei beim Hoster nicht mehr vorhanden</string>
     <string name="downloads_hoster_status">%1$s · %2$s</string>

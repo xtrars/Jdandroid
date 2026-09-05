@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.toggleable
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -66,6 +69,10 @@ import com.jdandroid.R
 import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
+import com.jdandroid.data.NfsSettings
+import com.jdandroid.engine.nfs.NfsFailure
+import com.jdandroid.engine.nfs.NfsProbe
+import com.jdandroid.engine.nfs.NfsShares
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -251,6 +258,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 )
             }
 
+            Spacer(Modifier.height(12.dp))
+            NfsSection(settings)
+
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
@@ -402,6 +412,190 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** Collapsible NFS target: switch, connection fields and a single-line connection check. */
+@Composable
+private fun NfsSection(settings: com.jdandroid.data.SettingsRepository) {
+    val scope = rememberCoroutineScope()
+    val nfs by settings.nfs.collectAsStateWithLifecycle(initialValue = NfsSettings())
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var serverText by rememberSaveable { mutableStateOf("") }
+    var exportText by rememberSaveable { mutableStateOf("") }
+    var subDirText by rememberSaveable { mutableStateOf("") }
+    var uidText by rememberSaveable { mutableStateOf("") }
+    var gidText by rememberSaveable { mutableStateOf("") }
+    var loaded by rememberSaveable { mutableStateOf(false) }
+    var probing by remember { mutableStateOf(false) }
+    var outcome by remember { mutableStateOf<NfsProbeOutcome?>(null) }
+    LaunchedEffect(Unit) {
+        if (!loaded) {
+            val current = settings.currentNfs()
+            serverText = current.server
+            exportText = current.export
+            subDirText = current.subDir
+            uidText = current.uid.toString()
+            gidText = current.gid.toString()
+            loaded = true
+        }
+    }
+    fun update(change: NfsSettings.() -> NfsSettings) {
+        if (loaded) scope.launch { settings.setNfs(settings.currentNfs().change()) }
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.settings_nfs_section), style = MaterialTheme.typography.titleSmall)
+            Text(
+                if (nfs.isUsable) stringResource(R.string.settings_nfs_summary_on, nfs.server, nfs.rootPath)
+                else stringResource(R.string.settings_nfs_summary_off),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = stringResource(if (expanded) R.string.settings_collapse else R.string.settings_expand)
+        )
+    }
+    if (!expanded) return
+
+    SettingSwitch(
+        title = stringResource(R.string.settings_nfs_enabled_title),
+        subtitle = stringResource(R.string.settings_nfs_enabled_subtitle),
+        checked = nfs.enabled,
+        onChange = { v -> update { copy(enabled = v) } }
+    )
+    Spacer(Modifier.height(4.dp))
+    val uriKeyboard = KeyboardOptions(
+        keyboardType = KeyboardType.Uri,
+        autoCorrectEnabled = false,
+        imeAction = ImeAction.Next
+    )
+    OutlinedTextField(
+        value = serverText,
+        onValueChange = { serverText = it; update { copy(server = it.trim()) } },
+        label = { Text(stringResource(R.string.settings_nfs_server)) },
+        keyboardOptions = uriKeyboard,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = exportText,
+        onValueChange = { exportText = it; update { copy(export = it.trim()) } },
+        label = { Text(stringResource(R.string.settings_nfs_export)) },
+        placeholder = { Text(stringResource(R.string.settings_nfs_export_placeholder)) },
+        keyboardOptions = uriKeyboard,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = subDirText,
+        onValueChange = { subDirText = it; update { copy(subDir = it.trim()) } },
+        label = { Text(stringResource(R.string.settings_nfs_subdir)) },
+        keyboardOptions = uriKeyboard,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = uidText,
+            onValueChange = { v ->
+                uidText = NfsSettingsUi.cleanId(v)
+                update { copy(uid = NfsSettingsUi.parseId(uidText, NfsSettings.DEFAULT_UID)) }
+            },
+            label = { Text(stringResource(R.string.settings_nfs_uid)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = gidText,
+            onValueChange = { v ->
+                gidText = NfsSettingsUi.cleanId(v)
+                update { copy(gid = NfsSettingsUi.parseId(gidText, NfsSettings.DEFAULT_GID)) }
+            },
+            label = { Text(stringResource(R.string.settings_nfs_gid)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.settings_nfs_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            enabled = !probing && serverText.isNotBlank() && exportText.isNotBlank(),
+            onClick = {
+                probing = true
+                outcome = null
+                scope.launch {
+                    // The check must work before the switch is on, so probe with the fields as typed.
+                    val target = settings.currentNfs().copy(enabled = true)
+                    outcome = NfsProbeOutcome.of(runCatching { NfsShares.probe(target) })
+                    probing = false
+                }
+            }
+        ) { Text(stringResource(R.string.settings_nfs_probe)) }
+        if (probing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+    }
+    outcome?.let { result ->
+        Text(
+            when (result) {
+                is NfsProbeOutcome.Ok -> stringResource(
+                    R.string.settings_nfs_probe_ok,
+                    pluralStringResource(R.plurals.settings_nfs_probe_entries, result.entries, result.entries),
+                    formatBytes(result.freeBytes),
+                    formatBytes(result.totalBytes)
+                )
+                is NfsProbeOutcome.Unreachable -> stringResource(R.string.settings_nfs_probe_unreachable, result.message)
+                is NfsProbeOutcome.Failed -> result.message
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (result is NfsProbeOutcome.Ok) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+/** Outcome of a connection check, reduced to what the single result line shows. */
+internal sealed class NfsProbeOutcome {
+    data class Ok(val entries: Int, val freeBytes: Long, val totalBytes: Long) : NfsProbeOutcome()
+    /** NAS off or unreachable; shown with a "not reachable" prefix. */
+    data class Unreachable(val message: String) : NfsProbeOutcome()
+    data class Failed(val message: String) : NfsProbeOutcome()
+
+    companion object {
+        fun of(result: Result<NfsProbe>): NfsProbeOutcome = result.fold(
+            onSuccess = { Ok(it.entries.size, it.freeBytes, it.totalBytes) },
+            onFailure = { e ->
+                val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+                if (e is NfsFailure.Transient) Unreachable(message) else Failed(message)
+            }
+        )
+    }
+}
+
+/** Input helpers of the NFS section; kept free of Compose for unit tests. */
+internal object NfsSettingsUi {
+    /** Keeps digits only; ids never exceed ten digits. */
+    fun cleanId(text: String): String = text.filter { it.isDigit() }.take(10)
+
+    /** Numeric uid/gid or [fallback] for empty or overflowing input. */
+    fun parseId(text: String, fallback: Int): Int = text.trim().toIntOrNull()?.takeIf { it >= 0 } ?: fallback
 }
 
 private fun ThemeMode.labelRes(): Int = when (this) {
