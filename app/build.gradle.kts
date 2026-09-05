@@ -133,6 +133,14 @@ kotlin {
 }
 
 dependencies {
+    // Room 2.8 (room-migration/room-testing) braucht kotlinx-serialization 1.8.1.
+    // Ohne diese Vorgabe zieht die konsistente Aufloesung den Test-Klassenpfad
+    // auf die 1.7.3 der App zurueck; die Migrationstests brechen dann im
+    // Emulator mit AbstractMethodError (GeneratedSerializer) ab.
+    constraints {
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
