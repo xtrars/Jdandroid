@@ -1,9 +1,12 @@
 package com.jdandroid
 
 import com.jdandroid.engine.Extractor
+import com.jdandroid.engine.FileTrees
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.EncryptionMethod
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
+import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,6 +16,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -312,9 +317,170 @@ class ExtractorTest {
     @Test
     fun zielnameFlachAusPfadMitBackslash() {
         val dir = tmp.newFolder("t")
-        val used = HashSet<String>()
-        assertEquals("x.rar", Extractor.targetFile(dir, "ordner\\unter\\x.rar", true, used).name)
-        assertEquals("x (2).rar", Extractor.targetFile(dir, "anders/x.rar", true, used).name)
-        assertEquals(File(dir, "anders/x.rar").path, Extractor.targetFile(dir, "anders/x.rar", false, used).path)
+        val target = Extractor.Destination(dir)
+        assertEquals("x.rar", target.fileFor("ordner\\unter\\x.rar", true).name)
+        assertEquals("x (2).rar", target.fileFor("anders/x.rar", true).name)
+        assertEquals(File(target.dir, "anders/x.rar").path, target.fileFor("anders/x.rar", false).path)
+    }
+
+    @Test
+    fun zielpfadPrueftLexikalischOhneDateisystemzugriff() {
+        val target = Extractor.Destination(tmp.newFolder("lex"))
+        assertEquals("b", target.child("a/../b").name)
+        for (bad in listOf("../x", "a/../../x", "", ".")) {
+            try {
+                target.child(bad)
+                throw AssertionError("IOException erwartet fuer '$bad'")
+            } catch (e: IOException) {
+                // erwartet
+            }
+        }
+    }
+
+    @Test
+    fun symlinkImZipWirdWederAngelegtNochVerfolgt() {
+        val secret = tmp.newFolder("privat")
+        File(secret, "db.sqlite").writeText("geheim")
+        val src = tmp.newFolder("src-link")
+        File(src, "echt.txt").writeText("inhalt")
+        val dirLink = File(src, "ordnerlink")
+        Files.createSymbolicLink(dirLink.toPath(), secret.toPath())
+        val fileLink = File(src, "dateilink")
+        Files.createSymbolicLink(fileLink.toPath(), File(secret, "db.sqlite").toPath())
+        val zip = File(tmp.root, "link.zip")
+        val linkOnly = ZipParameters().apply { symbolicLinkAction = ZipParameters.SymbolicLinkAction.INCLUDE_LINK_ONLY }
+        ZipFile(zip).apply {
+            addFile(File(src, "echt.txt"))
+            addFile(dirLink, linkOnly)
+            addFile(fileLink, linkOnly)
+        }
+        assertEquals(3, ZipFile(zip).fileHeaders.size)
+
+        val dest = tmp.newFolder("out-link")
+        Extractor.extract(zip, dest, emptyList())
+        assertEquals("inhalt", File(dest, "echt.txt").readText())
+        assertTrue(FileTrees.regularFiles(dest).map { it.name } == listOf("echt.txt"))
+        assertEquals(listOf("echt.txt"), dest.list()!!.toList())
+        assertFalse(Files.exists(File(dest, "dateilink").toPath(), LinkOption.NOFOLLOW_LINKS))
+        assertEquals("geheim", File(secret, "db.sqlite").readText())
+    }
+
+    @Test
+    fun symlinkIm7zWirdUebersprungen() {
+        val archive = File(tmp.root, "link.7z")
+        SevenZOutputFile(archive).use { out ->
+            val file = SevenZArchiveEntry().apply { name = "echt.txt" }
+            out.putArchiveEntry(file)
+            out.write("inhalt".toByteArray())
+            out.closeArchiveEntry()
+            val link = SevenZArchiveEntry().apply {
+                name = "link"
+                hasWindowsAttributes = true
+                windowsAttributes = 0x8000 or (0xA1FF shl 16)
+            }
+            out.putArchiveEntry(link)
+            out.write("/data/data/com.jdandroid".toByteArray())
+            out.closeArchiveEntry()
+        }
+        val dest = tmp.newFolder("out-7z-link")
+        Extractor.extract(archive, dest, emptyList())
+        assertEquals(listOf("echt.txt"), dest.list()!!.toList())
+        assertEquals("inhalt", File(dest, "echt.txt").readText())
+    }
+
+    @Test
+    fun linkAttributeVon7ZipUndRar() {
+        assertTrue(Extractor.isLinkAttributes(0x8000 or (0xA1FF shl 16)))
+        assertTrue(Extractor.isLinkAttributes(0x400))
+        assertFalse(Extractor.isLinkAttributes(0x8000 or (0x81A4 shl 16)))
+        assertFalse(Extractor.isLinkAttributes(0xA1FF shl 16))
+        assertFalse(Extractor.isLinkAttributes(0x20))
+        assertTrue(Extractor.isLinkMode(0xA1FF))
+        assertFalse(Extractor.isLinkMode(0x41ED))
+    }
+
+    @Test
+    fun aufraeumenUndExportFolgenKeinenLinks() {
+        val outside = tmp.newFolder("aussen")
+        val kept = File(outside, "bleibt.txt").apply { writeText("x") }
+        val dir = tmp.newFolder("baum")
+        File(dir, "echt.txt").writeText("y")
+        Files.createSymbolicLink(File(dir, "ordnerlink").toPath(), outside.toPath())
+        Files.createSymbolicLink(File(dir, "dateilink").toPath(), kept.toPath())
+
+        assertEquals(listOf("echt.txt"), FileTrees.regularFiles(dir).map { it.name })
+
+        FileTrees.deleteTree(dir)
+        assertFalse(dir.exists())
+        assertEquals("x", kept.readText())
+    }
+
+    @Test
+    fun fehlerOhnePasswortbezugBrichtSofortAb() {
+        val zip = File(tmp.root, "kaputt.zip")
+        zip.writeBytes(byteArrayOf(0x50, 0x4B, 0x03, 0x04) + ByteArray(64))
+        try {
+            Extractor.extract(zip, tmp.newFolder("out-kaputt"), listOf("a", "b", "c"))
+            throw AssertionError("IOException erwartet")
+        } catch (e: IOException) {
+            assertFalse(e.message, e.message!!.contains("Passwort"))
+        }
+    }
+
+    @Test
+    fun zipSlipMeldetDenEchtenFehlerTrotzPasswortliste() {
+        val zip = File(tmp.root, "slip2.zip")
+        ZipOutputStream(zip.outputStream()).use { out ->
+            out.putNextEntry(ZipEntry("../evil.txt"))
+            out.write("boese".toByteArray())
+            out.closeEntry()
+        }
+        try {
+            Extractor.extract(zip, tmp.newFolder("slip2-out"), listOf("p1", "p2"))
+            throw AssertionError("IOException erwartet")
+        } catch (e: IOException) {
+            assertTrue(e.message, e.message!!.contains("../evil.txt"))
+            assertFalse(e.message!!.contains("Passwort"))
+        }
+    }
+
+    @Test
+    fun vorhandeneDateiImPaketordnerWirdNichtUeberschrieben() {
+        val src = tmp.newFolder("src-dup")
+        File(src, "film.mkv").writeText("neu")
+        val zip = File(tmp.root, "dup.zip")
+        ZipFile(zip).addFile(File(src, "film.mkv"))
+        val dest = tmp.newFolder("paket-dup")
+        File(dest, "film.mkv").writeText("alt")
+
+        Extractor.extract(zip, dest, emptyList(), flat = true)
+        assertEquals("alt", File(dest, "film.mkv").readText())
+        assertEquals("neu", File(dest, "film (2).mkv").readText())
+        assertEquals(listOf("film (2).mkv", "film.mkv"), dest.list()!!.sorted())
+    }
+
+    @Test
+    fun rarHeadersEncryptedErkenntRar4UndRar5() {
+        fun rar(vararg body: Int) = tmp.newFile().apply {
+            writeBytes(body.map { it.toByte() }.toByteArray())
+        }
+        val rar4Plain = rar(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00, 0xCF, 0x90, 0x73, 0x00, 0x00, 0x0D, 0x00)
+        val rar4Locked = rar(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00, 0xCF, 0x90, 0x73, 0x80, 0x00, 0x0D, 0x00)
+        val rar5Plain = rar(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00, 0x33, 0x92, 0xB5, 0xE5, 0x0A, 0x01, 0x05, 0x06)
+        val rar5Locked = rar(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00, 0x33, 0x92, 0xB5, 0xE5, 0x27, 0x04, 0x00, 0x00)
+        assertFalse(Extractor.rarHeadersEncrypted(rar4Plain))
+        assertTrue(Extractor.rarHeadersEncrypted(rar4Locked))
+        assertFalse(Extractor.rarHeadersEncrypted(rar5Plain))
+        assertTrue(Extractor.rarHeadersEncrypted(rar5Locked))
+        assertFalse(Extractor.rarHeadersEncrypted(tmp.newFile().apply { writeText("kein rar") }))
+    }
+
+    @Test
+    fun ausschlussfilterKompiliertMusterEinmal() {
+        val filter = Extractor.ExcludeFilter(listOf("*.nfo", "", "proof/*"))
+        assertTrue(filter.matches("info.NFO"))
+        assertTrue(filter.matches("proof\\bild.jpg"))
+        assertFalse(filter.matches("film.mkv"))
+        assertFalse(Extractor.ExcludeFilter(emptyList()).matches("info.nfo"))
     }
 }

@@ -7,6 +7,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -41,45 +42,95 @@ internal class StorageTarget(
             .getOrNull()?.takeIf { it.canWrite() }
     }
 
-    /** Datei in den SAF-Ordner kopieren; liefert den Anzeigepfad oder null bei Fehler. */
-    private fun copyToTree(dir: DocumentFile, file: File, name: String): String? {
+    private class Child(val uri: Uri, val isDir: Boolean)
+
+    /**
+     * SAF directory whose listing is queried once; name checks and child
+     * lookups then run in memory. DocumentFile.findFile would list the
+     * directory and query each child's name per call.
+     */
+    private inner class TreeDir(val uri: Uri, val name: String?) {
+        private val children = HashMap<String, Child>()
+        private val subDirs = HashMap<String, TreeDir>()
+
+        init {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                uri, DocumentsContract.getDocumentId(uri)
+            )
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            runCatching {
+                context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(0) ?: continue
+                        val childName = cursor.getString(1) ?: continue
+                        val isDir = cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
+                        children[childName] = Child(DocumentsContract.buildDocumentUriUsingTree(uri, id), isDir)
+                    }
+                }
+            }
+        }
+
+        fun contains(childName: String): Boolean = childName in children
+
+        fun fileUri(childName: String): Uri? = children[childName]?.takeIf { !it.isDir }?.uri
+
+        /** Creates a file; the provider may still rename it if the name is taken. */
+        fun createFile(mime: String, childName: String): Uri? =
+            create(mime, childName)?.also { children[childName] = Child(it, false) }
+
+        /** Existing or newly created directory below this one, cached per path. */
+        fun subDir(path: String): TreeDir? {
+            var current: TreeDir = this
+            path.split('/').filter { it.isNotBlank() }.forEach { part ->
+                current = current.subDirs[part] ?: current.openOrCreateDir(part)?.also { current.subDirs[part] = it }
+                    ?: return null
+            }
+            return current
+        }
+
+        private fun openOrCreateDir(childName: String): TreeDir? {
+            val dirUri = children[childName]?.takeIf { it.isDir }?.uri
+                ?: create(DocumentsContract.Document.MIME_TYPE_DIR, childName)
+                    ?.also { children[childName] = Child(it, true) }
+                ?: return null
+            return TreeDir(dirUri, childName)
+        }
+
+        private fun create(mime: String, childName: String): Uri? =
+            runCatching { DocumentsContract.createDocument(context.contentResolver, uri, mime, childName) }
+                .getOrNull()
+    }
+
+    private fun deleteDocument(uri: Uri) {
+        runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+    }
+
+    /** Copies a file into the SAF directory; returns the display path or null on failure. */
+    private fun copyToTree(dir: TreeDir, file: File, name: String): String? {
         val mime = android.webkit.MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
             ?: "application/octet-stream"
-        // Vorhandene Datei nicht ueberschreiben, sondern durchnummerieren
-        var candidate = name
-        var index = 2
-        while (dir.findFile(candidate) != null && index < 1000) {
-            val base = name.substringBeforeLast('.', name)
-            val ext = name.substringAfterLast('.', "")
-            candidate = if (ext.isEmpty()) "$base ($index)" else "$base ($index).$ext"
-            index++
-        }
+        val candidate = FileNames.uniqueName(name) { dir.contains(it) }
         val target = dir.createFile(mime, candidate) ?: return null
         return try {
-            context.contentResolver.openOutputStream(target.uri)?.use { out ->
-                file.inputStream().use { it.copyTo(out) }
-            } ?: run { target.delete(); return null }
-            "${dir.name ?: Texts.t("engine_target_folder")}/${target.name ?: candidate}"
+            context.contentResolver.openOutputStream(target)?.use { out ->
+                file.inputStream().use { it.copyTo(out, COPY_BUFFER) }
+            } ?: run { deleteDocument(target); return null }
+            "${dir.name ?: Texts.t("engine_target_folder")}/$candidate"
         } catch (e: Exception) {
-            target.delete()
+            deleteDocument(target)
             null
         }
-    }
-
-    private fun subDir(root: DocumentFile, path: String): DocumentFile? {
-        var current: DocumentFile = root
-        path.split('/').filter { it.isNotBlank() }.forEach { part ->
-            current = current.findFile(part)?.takeIf { it.isDirectory }
-                ?: current.createDirectory(part) ?: return null
-        }
-        return current
     }
 
     /** Verschiebt die fertige Datei ins Ziel (oeffentlicher Download-Ordner oder App-Ordner). */
     suspend fun finish(temp: File, fileName: String): String {
         targetTree()?.let { root ->
-            copyToTree(root, temp, fileName)?.let { path ->
+            copyToTree(TreeDir(root.uri, root.name), temp, fileName)?.let { path ->
                 temp.delete()
                 return path
             }
@@ -124,16 +175,16 @@ internal class StorageTarget(
     suspend fun exportDirectory(dir: File, base: String): String {
         // Eigener Zielordner (SAF) hat Vorrang vor Downloads/JDAndroid
         targetTree()?.let { root ->
-            val target = subDir(root, base) ?: return dir.absolutePath
+            val target = TreeDir(root.uri, root.name).subDir(base) ?: return dir.absolutePath
             var allOk = true
-            dir.walkTopDown().filter { it.isFile }.forEach { file ->
+            FileTrees.regularFiles(dir).forEach { file ->
                 val relDir = file.parentFile!!.relativeTo(dir).path
-                val destDir = if (relDir.isEmpty()) target else subDir(target, relDir)
+                val destDir = if (relDir.isEmpty()) target else target.subDir(relDir)
                 if (destDir == null || copyToTree(destDir, file, file.name) == null) allOk = false
                 else file.delete()
             }
             return if (allOk) {
-                dir.deleteRecursively()
+                FileTrees.deleteTree(dir)
                 "${root.name ?: Texts.t("engine_target_folder")}/$base"
             } else dir.absolutePath
         }
@@ -142,7 +193,7 @@ internal class StorageTarget(
         if (!settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return dir.absolutePath
         val resolver = context.contentResolver
         var allOk = true
-        dir.walkTopDown().filter { it.isFile }.forEach { file ->
+        FileTrees.regularFiles(dir).forEach { file ->
             val relDir = file.parentFile!!.relativeTo(dir).path
             val relativePath = buildString {
                 append(Environment.DIRECTORY_DOWNLOADS).append("/JDAndroid/").append(base)
@@ -172,7 +223,7 @@ internal class StorageTarget(
             }
         }
         return if (allOk) {
-            dir.deleteRecursively()
+            FileTrees.deleteTree(dir)
             "Downloads/JDAndroid/$base"
         } else {
             dir.absolutePath
@@ -191,7 +242,7 @@ internal class StorageTarget(
                 resolver.delete(uri, null, null)
                 return false
             }
-            out.use { o -> source.inputStream().use { it.copyTo(o) } }
+            out.use { o -> source.inputStream().use { it.copyTo(o, COPY_BUFFER) } }
             return true
         } catch (e: Exception) {
             runCatching { resolver.delete(uri, null, null) }
@@ -205,8 +256,8 @@ internal class StorageTarget(
      * wenn sie dort nicht liegt oder das Kopieren scheitert.
      */
     suspend fun restoreExported(name: String, dest: File): Boolean {
-        targetTree()?.findFile(name)?.takeIf { it.isFile }?.let { doc ->
-            return copyUriTo(doc.uri, dest)
+        targetTree()?.let { root -> TreeDir(root.uri, null).fileUri(name) }?.let { uri ->
+            return copyUriTo(uri, dest)
         }
         if (Build.VERSION.SDK_INT >= 29) {
             val resolver = context.contentResolver
@@ -232,10 +283,15 @@ internal class StorageTarget(
 
     private fun copyUriTo(uri: Uri, dest: File): Boolean = try {
         context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { input.copyTo(it) }
+            dest.outputStream().use { input.copyTo(it, COPY_BUFFER) }
         } != null
     } catch (_: Exception) {
         dest.delete()
         false
+    }
+
+    private companion object {
+        /** Streams over ParcelFileDescriptor are unbuffered; 1 MiB keeps syscalls low on multi-GiB files. */
+        const val COPY_BUFFER = 1 shl 20
     }
 }

@@ -41,9 +41,10 @@
     <string name="engine_seven_zip_unavailable">Native 7-Zip library could not be loaded (RAR extraction not possible): %1$s</string>
     <string name="engine_unknown_archive_format">Unknown archive format: %1$s</string>
     <string name="engine_extract_failed">Extraction failed (password not in the list?): %1$s</string>
+    <string name="engine_extract_error">Extraction failed: %1$s</string>
     <string name="engine_move_failed">Could not move %1$s to %2$s</string>
     <string name="engine_password_required">Password required</string>
-    <string name="engine_no_password_needed">No password needed</string>
+    <string name="engine_wrong_password">Wrong password</string>
     <string name="engine_rar_extraction_result">RAR extraction: %1$s</string>
     <string name="engine_invalid_archive_path">Invalid path in archive: %1$s</string>
     <string name="engine_secrets_encrypt_failed">Credentials could not be encrypted (Android keystore unavailable: %1$s). Please unlock the device and try again.</string>
