@@ -6,6 +6,7 @@ import com.jdandroid.container.CnlStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -388,5 +389,85 @@ class ClickNLoadServerTest {
             listOf("https://1fichier.com/?abc123", "https://rg.to/file/dd44/y.zip"),
             received.single().urls
         )
+    }
+
+    @Test
+    fun passwoerterWerdenGekapptUndDedupliziert() {
+        val long = "x".repeat(ClickNLoadServer.MAX_PASSWORD_LENGTH + 50)
+        val passwords = listOf(long, " geheim ", "geheim", "", "   ", "geheim").joinToString("\n")
+        val body = "crypted=${enc(encrypt("https://rapidgator.net/file/aaa111/x.rar"))}&jk=${enc(jk)}" +
+            "&passwords=${enc(passwords)}"
+        val reply = request("/flash/addcrypted2", body)
+
+        assertEquals(200, reply.code)
+        val req = received.single()
+        assertEquals(2, req.passwords.size)
+        assertEquals(ClickNLoadServer.MAX_PASSWORD_LENGTH, req.passwords[0].length)
+        assertEquals("geheim", req.passwords[1])
+    }
+
+    @Test
+    fun paketnameWirdGekapptUndLeerZuNull() {
+        val name = "p".repeat(ClickNLoadServer.MAX_PACKAGE_LENGTH + 1)
+        val body = "crypted=${enc(encrypt("https://rapidgator.net/file/aaa111/x.rar"))}&jk=${enc(jk)}"
+        request("/flash/addcrypted2", "$body&package=${enc(name)}")
+        assertEquals(ClickNLoadServer.MAX_PACKAGE_LENGTH, received.single().packageName!!.length)
+
+        received.clear()
+        request("/flash/addcrypted2", "$body&package=${enc("   ")}")
+        assertNull(received.single().packageName)
+    }
+
+    @Test
+    fun getParameterHabenVorrangVorFormularfeldern() {
+        val links = "https://rapidgator.net/file/aaa111/x.rar"
+        val body = "crypted=${enc(encrypt(links))}&jk=${enc(jk)}&package=${enc("aus dem Formular")}"
+        val reply = request("/flash/addcrypted2?package=${enc("aus der URL")}", body)
+
+        assertEquals(200, reply.code)
+        assertEquals("aus der URL", received.single().packageName)
+        assertEquals(listOf(links), received.single().urls)
+    }
+
+    @Test
+    fun linklisteWirdAufMaximumGekappt() {
+        val links = (1..ClickNLoadServer.MAX_LINKS + 1).joinToString("\n") { "https://rapidgator.net/file/$it/x.rar" }
+        val reply = request("/flash/addcrypted2", "crypted=${enc(encrypt(links))}&jk=${enc(jk)}")
+
+        assertEquals(200, reply.code)
+        val urls = received.single().urls
+        assertEquals(ClickNLoadServer.MAX_LINKS, urls.size)
+        assertEquals("https://rapidgator.net/file/1/x.rar", urls.first())
+        assertEquals("https://rapidgator.net/file/${ClickNLoadServer.MAX_LINKS}/x.rar", urls.last())
+    }
+
+    @Test
+    fun flashgotPfadNimmtLinksAn() {
+        val reply = request("/flashgot", "urls=${enc("https://1fichier.com/?abc123")}")
+        assertEquals(200, reply.code)
+        assertEquals(listOf("https://1fichier.com/?abc123"), received.single().urls)
+    }
+
+    @Test
+    fun postOhneContentLengthLiestKeinenKoerper() {
+        // Without Content-Length the body is not read: the form fields are
+        // missing, and the status line names the missing fields instead of
+        // the server waiting for more bytes.
+        val answer = raw(
+            "POST /flash/add HTTP/1.1\r\n" +
+                "Host: 127.0.0.1:$port\r\n" +
+                "Content-Type: application/x-www-form-urlencoded\r\n" +
+                "Connection: close\r\n\r\n" +
+                "urls=${enc("https://1fichier.com/?abc123")}"
+        )
+        assertTrue("Antwort: $answer", answer.startsWith("HTTP/1.1 400"))
+        assertTrue(received.isEmpty())
+    }
+
+    @Test
+    fun jedeAntwortSchliesstDieVerbindung() {
+        val reply = request("/jdcheck.js")
+        assertEquals(listOf("close"), reply.headers["connection"])
+        assertEquals(listOf("close"), request("/gibt/es/nicht").headers["connection"])
     }
 }
