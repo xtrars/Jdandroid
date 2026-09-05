@@ -152,6 +152,8 @@ const HINWEIS = args && typeof args.hinweis === 'string' ? args.hinweis + ' ' : 
 const vorab = args && Array.isArray(args.reports) ? args.reports : null
 // Bereits strukturierte Funde (z.B. aus einer vorgezogenen Suchphase) ersetzen die Suche ganz.
 const vorabFunde = args && Array.isArray(args.findings) ? args.findings : null
+// nurFinden: nach der Suche mit den gefundenen Funden enden (Verifikation laeuft getrennt).
+const nurFinden = !!(args && args.nurFinden)
 // Alternativ eine JSON-Datei mit einem Array solcher Funde (wird von einem Agenten eingelesen).
 const vorabDatei = args && typeof args.fundeDatei === 'string' ? args.fundeDatei : null
 
@@ -183,8 +185,10 @@ if (vorabFunde) {
   )
   funde = extrahiert.filter(Boolean).flatMap(r => r.findings)
 } else {
+  // Optional nur eine Teilmenge der Blickwinkel (args.blickwinkel = ['engine', ...]).
+  const auswahl = args && Array.isArray(args.blickwinkel) ? BLICKWINKEL.filter(b => args.blickwinkel.includes(b.key)) : BLICKWINKEL
   const gefunden = await parallel(
-    BLICKWINKEL.map(b => () =>
+    auswahl.map(b => () =>
       agent(BASIS + b.prompt + ' Liefere nur verifizierte, konkrete Funde mit Datei und Zeile.', {
         label: `finden:${b.key}`,
         phase: 'Finden',
@@ -208,6 +212,7 @@ funde = funde.filter(f => {
   return true
 })
 log(`${funde.length} Funde nach Zusammenfuehrung`)
+if (nurFinden) return { findings: funde }
 if (funde.length === 0) {
   return { confirmed: [], refuted: [], fixed: [], build: 'nicht noetig - keine Funde' }
 }
