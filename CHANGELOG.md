@@ -27,6 +27,55 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.2.1] – 2026-09-05
+
+Gesamtprüfung auf dem Stand 0.2.0 (acht Blickwinkel, 42 Funde, 33 nach
+doppelter Verifikation behoben). 488 Unit-Tests.
+
+### Sicherheit
+
+- Die mit dem außer Dienst gestellten Schlüssel signierten APKs 0.0.15 und
+  0.0.16 sind aus `release/` und der README entfernt.
+- „Alle fortsetzen“ aus der Benachrichtigung wird nur noch angenommen, wenn
+  der Aufruf aus der eigenen App stammt.
+- Cookies laufen bei allen Hostern über eine gemeinsame Sitzung; ein
+  Dateianhang als Antwort wird nie als Seite gelesen.
+
+### Behoben
+
+- ddownload: deutsche Wartezeit-Angaben („2 Stunden, 30 Sekunden“) wurden als
+  0 gelesen und die Sperre ignoriert; „Expired download session“ und
+  „Skipped countdown“ sind vorübergehend; eine Datei direkt auf das Formular
+  gilt nicht mehr als Direktlink; Countdowns über 5 s gehen an die Engine
+  statt Slot und WakeLock zu halten.
+- 1fichier: Linkprüfung wertet den HTTP-Status aus (Sperrseiten galten als
+  „online“).
+- Export einer fertigen Datei blockiert nicht mehr Pause, Warteschlange und
+  Leerlauferkennung; der Abschluss ist atomar.
+- Zurückholen exportierter Archive nutzt den tatsächlich gespeicherten Namen
+  („x (1).rar“) und den exakten Ordner.
+- Netzwerk-Callback reagiert nur auf echte Änderungen (kein NFS-Mount-Versuch
+  bei jeder Signaländerung).
+- DLC-Import über „Öffnen mit“ überlebt eine Drehung; NFS-Verbindungsprüfung
+  ebenso.
+- Querformat: Schaltfläche und Meldung liegen nicht mehr unter der seitlichen
+  Navigationsleiste; Tastatur verdeckt keine Zeilen mehr (Einstellungen,
+  Suche); Android 8–10 mit `adjustResize`.
+- „Alle fortsetzen“ setzt Wartezeit und Versuche zurück; Job-Verwaltung
+  entfernt nur den eigenen Job.
+
+### Geändert
+
+- Linksammler-Prüfung mit drei festen Arbeitern und Sammel-Update statt einer
+  Coroutine je Link; Paketaktionen als eine Abfrage.
+- Prüfsumme wird während der Übertragung mitgeführt statt in einem zweiten
+  Lesedurchgang.
+- Einstellungen in Abschnitte aufgeteilt; Sammler-Paket umbenennbar.
+- Gemeinsame Bausteine `HtmlText`, `parseSize`, `HttpSession` ersetzen
+  Kopien in den Hostern; Engine ohne Abhängigkeit zur Oberfläche.
+- Tests: Premium-API-Abläufe (Rapidgator, 1fichier) mit `org.json` als
+  Testabhängigkeit, `nextQueued`, Netzwerkfilter, Speicherziele, DLC-Erkennung.
+
 ## [0.2.0] – 2026-09-05
 
 Neues Speicherziel: eine NFS-Freigabe auf einem NAS im eigenen Netz
@@ -737,6 +786,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.2.1]: https://github.com/xtrars/Jdandroid/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/xtrars/Jdandroid/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xtrars/Jdandroid/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xtrars/Jdandroid/compare/6db7793...v0.1.0
