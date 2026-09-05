@@ -9,8 +9,9 @@ stehen in `gradle/verification-metadata.xml`.
 
 ## Lizenzverträglichkeit
 
-Alle Abhängigkeiten stehen unter permissiven Lizenzen (Apache-2.0, BSD-3-Clause,
-0BSD; EPL-1.0 nur in den Unit-Tests, die nicht in die APK gelangen). Die einzige
+Alle Abhängigkeiten stehen unter permissiven Lizenzen (Apache-2.0, MIT,
+BSD-3-Clause, 0BSD; EPL-1.0 nur in den Unit-Tests, die nicht in die APK
+gelangen). Die einzige
 Copyleft-Komponente ist 7-Zip-JBinding-4Android unter der LGPL-2.1: Sie wird
 unverändert als eigenständige Bibliothek (Java-Klassen plus native `.so`, per
 JNI geladen) eingebunden, ihr Quelltext ist öffentlich verfügbar, und weil R8
@@ -31,6 +32,10 @@ kein RAR-kompatibler Packer gebaut werden; JDAndroid entpackt nur.
 | XZ for Java | `org.tukaani:xz:1.12` | 0BSD | LZMA/XZ-Streams für Commons Compress |
 | OkHttp | `com.squareup.okhttp3:okhttp:4.12.0` | Apache-2.0 | HTTP-Zugriff auf Hoster-APIs und Dateien (`hoster/Hoster.kt`) |
 | Okio (transitiv) | `com.squareup.okio:okio:3.9.1` (OkHttp verlangt 3.6.0, AndroidX DataStore hebt auf 3.9.1 an) | Apache-2.0 | I/O-Grundlage von OkHttp und DataStore |
+| nfs-client (Dell EMC ECS) | `com.emc.ecs:nfs-client:1.1.0` | Apache-2.0 | NFSv3-Client (TCP, `AUTH_SYS`) für das NAS-Ziel (`engine/nfs/`) |
+| Netty 3 (transitiv über nfs-client) | `io.netty:netty:3.10.6.Final` | Apache-2.0 | Netzwerkschicht des NFS-Clients |
+| Apache Commons Lang (transitiv über nfs-client) | `org.apache.commons:commons-lang3:3.12.0` | Apache-2.0 | Hilfsklassen des NFS-Clients |
+| SLF4J API (transitiv über nfs-client) | `org.slf4j:slf4j-api:1.7.36` | MIT | Logging-Fassade des NFS-Clients (ohne Binding, Ausgaben werden verworfen) |
 | kotlinx.coroutines | `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0` | Apache-2.0 | Nebenläufigkeit in Engine und UI |
 | Kotlin-Standardbibliothek | `org.jetbrains.kotlin:kotlin-stdlib:2.3.21` | Apache-2.0 | Sprache |
 | AndroidX Core KTX | `androidx.core:core-ktx:1.18.0` | Apache-2.0 | Plattform-Erweiterungen |

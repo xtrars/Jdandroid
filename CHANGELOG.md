@@ -27,6 +27,35 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.2.0] – 2026-09-05
+
+Neues Speicherziel: eine NFS-Freigabe auf einem NAS im eigenen Netz
+(`versionCode` 43). Einrichtung und Fehlerbilder in
+[`docs/NFS.md`](docs/NFS.md).
+
+### Hinzugefügt
+
+- Speicherziel „NFS-Freigabe (NAS)“ in den Einstellungen: Schalter, Server,
+  Export-Pfad, optionaler Unterordner, uid/gid (Standard 1000). NFSv3 über
+  TCP mit `AUTH_SYS` über `com.emc.ecs:nfs-client` 1.1.0; kein NFSv4, kein
+  Kerberos. Download und Entpacken bleiben lokal, fertige Dateien und
+  entpackte Inhalte werden danach in `Export-Pfad/Unterordner/<Paket>/`
+  hochgeladen (gleiche Namen mit „(2)“) und lokal gelöscht.
+- „Verbindung prüfen“: hängt den Export ein, listet den Zielordner und zeigt
+  den freien Platz.
+- Wiederholung: Ist das NAS nicht erreichbar, bleibt die Datei lokal mit dem
+  Vermerk „Wartet auf NAS“ (Code `EXPORT_PENDING`) und wird bei Netzwechsel
+  und im Minutentakt erneut hochgeladen; dauerhafte Fehler (Zugriff
+  verweigert, Export fehlt) erscheinen als Fehlertext.
+- Dokumentation: `docs/NFS.md` (Synology, QNAP, TrueNAS, Linux; Ports,
+  `insecure`, Squash, Fehlertabelle, Sicherheitshinweis); Datenschutz- und
+  Play-Angaben um das NAS-Ziel ergänzt.
+
+### Geändert
+
+- Reihenfolge der Speicherziele: NFS-Ziel vor SAF-Zielordner vor
+  `Downloads/JDAndroid/`.
+
 ## [0.1.1] – 2026-09-05
 
 Testabsicherung der Erkenntnisse aus der Gesamtprüfung: 407 Unit-Tests
@@ -708,6 +737,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.2.0]: https://github.com/xtrars/Jdandroid/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xtrars/Jdandroid/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xtrars/Jdandroid/compare/6db7793...v0.1.0
 [0.0.16]: https://github.com/xtrars/Jdandroid/commit/6db7793

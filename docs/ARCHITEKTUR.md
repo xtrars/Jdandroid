@@ -24,7 +24,8 @@ com.jdandroid
 ├── ui/                   Compose-Oberfläche, ViewModels, Theme, Meldungen
 ├── data/                 Room (Db.kt), DataStore (SettingsRepository), Secrets,
 │                         LinkSink, LinkChecker, AccountRefresher, PackageNaming
-├── engine/               DownloadService, DownloadEngine, Extractor, SpeedLimiter, BootReceiver
+├── engine/               DownloadService, DownloadEngine, Extractor, SpeedLimiter, BootReceiver,
+│                         StorageTarget; nfs/ (NfsShare, NfsShares, NfsTarget)
 ├── hoster/               Hoster-Interface, HosterRegistry, LinkParser, Http;
 │                         DdownloadHoster, RapidgatorHoster, OneFichierHoster
 └── container/            ClickNLoadServer, ContainerDecrypter, ContainerFiles, CnlStatus
@@ -167,8 +168,8 @@ Siehe [Click'n'Load-Server](#clicknload-server) und
 
 ### `engine` – Dienst, Warteschlange, Entpacken
 
-Siehe [Download-Dienst](#download-dienst-und-vordergrund-typen) und
-[Download-Engine](#download-engine).
+Siehe [Download-Dienst](#download-dienst-und-vordergrund-typen),
+[Download-Engine](#download-engine) und [Speicherziele](#speicherziele).
 
 ## Datenfluss: Link → Linksammler → Download → Entpacken → Export
 
@@ -213,7 +214,7 @@ completeDownload()  [NonCancellable]
                           Passwortliste, Ausschlussmuster, Fortschritt in %
                                                     │
                                                     ▼
-                          exportDirectory()  → SAF-Zielordner oder Downloads/JDAndroid/<Paket>/
+                          exportDirectory()  → NFS-Ziel, SAF-Zielordner oder Downloads/JDAndroid/<Paket>/
                           Archiv löschen (Option), Einträge entfernen (Option)
                                                     │
                                                     ▼
@@ -320,9 +321,11 @@ unter einem `Mutex`. Kernpunkte:
   Teile desselben Archivs dürfen sich nicht gegenseitig als „noch ausstehend“
   sehen. Entpacken läuft in einem eigenen Job (`extractLimiter`, immer nur
   eines), damit der Download-Slot sofort frei wird.
-- **Export**: Ein per SAF gewählter Zielordner (`DocumentFile`) hat Vorrang;
-  sonst `Downloads/JDAndroid/` über `MediaStore.Downloads` mit `IS_PENDING`.
-  Vorhandene Dateien werden nicht überschrieben, sondern durchnummeriert.
+- **Export**: Das NFS-Ziel hat Vorrang, dann ein per SAF gewählter
+  Zielordner (`DocumentFile`), sonst `Downloads/JDAndroid/` über
+  `MediaStore.Downloads` mit `IS_PENDING`. Vorhandene Dateien werden nicht
+  überschrieben, sondern durchnummeriert. Einzelheiten unter
+  [Speicherziele](#speicherziele).
 - **Nachträgliches Entpacken** (`extractNow`) holt Archivteile bei Bedarf aus
   dem Zielordner oder dem MediaStore zurück in den App-Ordner.
 
@@ -337,6 +340,44 @@ von Hand initialisiert, weil die Auto-Initialisierung auf Android eine
 Platform-JAR sucht). Passwörter werden der Reihe nach aus der Passwortliste
 probiert (zuerst ohne). `safeChild()` verhindert Pfad-Traversal aus
 Archiveinträgen.
+
+## Speicherziele
+
+`engine/StorageTarget` kennt drei Ablagen für fertige Dateien: das NFS-Ziel,
+den SAF-Zielordner und `Downloads/JDAndroid/` (MediaStore); sie werden in
+dieser Reihenfolge probiert. Der private App-Ordner bleibt in jedem Fall der
+Arbeitsbereich für Teildateien, Archive und das Entpacken, weil Range-Resume
+und der RAR-Entpacker (natives 7-Zip) lokale Dateien brauchen.
+
+**NFS-Ziel** (`engine/nfs/`, seit 0.2.0):
+
+- `NfsSettings` (`data/`) hält Server, Export-Pfad, optionalen Unterordner
+  und uid/gid (Standard 1000/1000) aus dem DataStore; `isUsable` ist der
+  einzige Schalter, den die Engine abfragt (eingeschaltet, Server und Export
+  gesetzt), `rootPath` der normalisierte Pfad `Export/Unterordner`.
+- `NfsShare` ist die schmale Schnittstelle auf einen eingehängten Export
+  (`list`, `exists`, `mkdirs`, `upload`, `download`, `delete`, `probe`),
+  Pfade relativ zu `rootPath`. `NfsShares.factory` öffnet Shares und wird in
+  Tests durch ein Fake ersetzt; `NfsShares.probe()` ist die
+  Verbindungsprüfung der Einstellungen (einhängen, Zielordner listen, freien
+  Platz lesen).
+- Die echte Umsetzung spricht NFSv3 über TCP mit `AUTH_SYS` (uid/gid) über
+  `com.emc.ecs:nfs-client` (Netty 3); kein NFSv4, kein Kerberos. Weil Android-Apps keine
+  privilegierten Ports (< 1024) nutzen dürfen, braucht der Export die Option
+  `insecure`; die Einrichtung am NAS steht in [`NFS.md`](NFS.md).
+- `NfsTarget` bindet das an den Export: nach `finish()` bzw. nach dem
+  Entpacken werden fertige Dateien und entpackte Inhalte nach
+  `rootPath/<Paket>/` hochgeladen (gleiche Namen mit „(2)“) und lokal
+  gelöscht. Nachträgliches Entpacken holt Archivteile per `download` zurück.
+- Fehler sind als `NfsFailure.Transient` (NAS aus, Netz, Zeitüberschreitung)
+  und `NfsFailure.Permanent` (Export fehlt, Zugriff verweigert) getrennt.
+  Bei einem vorübergehenden Fehler bleibt die Datei lokal und der Eintrag
+  erhält den Vermerk-Code `DownloadNotes.EXPORT_PENDING` („Wartet auf NAS“);
+  die Engine wiederholt den Upload bei jedem Netzwechsel und im Minutentakt
+  über `pump()`. Dauerhafte Fehler landen als Fehlertext am Eintrag, die
+  Datei bleibt ebenfalls lokal. Der Code wird wie `WAITING_PARTS` und
+  `WAITING_WIFI` unübersetzt gespeichert und erst in der Oberfläche
+  übersetzt.
 
 ## Datenbank und Migrationen
 
@@ -479,6 +520,7 @@ liefert. Click'n'Load 2 kommt ohne den Dienst aus.
 | Eingaben des CnL-Servers und geteilte Dateien mit Größen- und Anzahlgrenzen | `ClickNLoadServer`, `ContainerFiles` | Jede geöffnete Webseite darf an 9666 senden |
 | Pfad-Traversal abgefangen | `Extractor.safeChild()`, `DownloadEngine.sanitizeFileName()` | Archiveinträge und Server-Dateinamen sind fremde Eingaben |
 | R8/Shrinking **aus**, `-dontobfuscate` | `app/build.gradle.kts`, `proguard-rules.pro` | Der Shrinker entfernte `Extractor.RarOpenCallback` und das `ISequentialOutStream`-Lambda, die nur per JNI aus nativem 7-Zip-Code aufgerufen werden – Release-Builds entpackten kein RAR mehr (per dexdump belegt). Keep-Regeln liegen bereit, aber ohne Gerätetest bleibt der unveränderte Build der sichere Weg. Ohne Obfuskation bleiben Absturzberichte lesbar |
+| NFS-Ziel nur mit vom Nutzer eingetragenem Server, unverschlüsselt (NFSv3/`AUTH_SYS`) | `engine/nfs/`, `docs/NFS.md` | NFSv3 kennt keine Passwörter und keine Verschlüsselung; gespeichert werden nur Server, Pfad und uid/gid. Die Doku beschränkt den Einsatz auf das eigene Netz; der Export muss die Host-Regel am NAS passieren |
 | Absturzbericht nur lokal | `CrashReporter.kt` | Stacktrace in `files/last_crash.txt`, sichtbar in den Einstellungen; nichts wird gesendet |
 | Nur eine exportierte Activity, Dienst nicht exportiert, `BootReceiver` nur für Systemaktionen | `AndroidManifest.xml` | Kleine Angriffsfläche |
 | Signatur-Keystore außerhalb des Repositorys | `app/build.gradle.kts` (`signingConfigs.release`), `.github/workflows/release.yml` | Der bis 0.0.16 eingecheckte Schlüssel war öffentlich, gilt als kompromittiert und ist außer Dienst. Der neue kommt aus den Umgebungsvariablen `KEYSTORE_FILE`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` oder aus `keystore.properties` (gitignored), in der CI aus Repository-Secrets; ohne Keystore entsteht eine unsignierte Release-APK. Die fünf neuesten signierten APKs bleiben zusätzlich in `release/`. Fingerabdruck und Einordnung in [`../SECURITY.md`](../SECURITY.md) |

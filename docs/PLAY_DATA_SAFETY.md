@@ -9,12 +9,13 @@ Ausfüllen gegen den aktuellen Code prüfen (Manifest, `Secrets.kt`,
 
 **Erhebt oder teilt die App Nutzerdaten?** Ja – „erheben“ im Sinne von Play
 bedeutet jede Übertragung vom Gerät, auch wenn sie nicht beim Entwickler
-landet. Die App überträgt Zugangsdaten an den jeweiligen Hoster und
-DLC-Inhalte an den JDownloader-Dienst.
+landet. Die App überträgt Zugangsdaten an den jeweiligen Hoster,
+DLC-Inhalte an den JDownloader-Dienst und – nur wenn der Nutzer ein
+NFS-Ziel einträgt – fertige Dateien an dessen eigenes NAS im lokalen Netz.
 
 | Frage | Antwort |
 |---|---|
-| Werden alle Nutzerdaten bei der Übertragung verschlüsselt? | Ja (HTTPS erzwungen, Klartext gesperrt; Loopback-Ausnahme betrifft nur das Gerät selbst) |
+| Werden alle Nutzerdaten bei der Übertragung verschlüsselt? | Internet: Ja (HTTPS erzwungen, Klartext gesperrt; Loopback-Ausnahme betrifft nur das Gerät selbst). Das optionale NFS-Ziel überträgt heruntergeladene Dateien unverschlüsselt (NFSv3) an das vom Nutzer selbst eingetragene NAS im eigenen Netz; keine Zugangsdaten, keine personenbezogenen Daten. Je nach Formularversion „Nein“ mit dieser Begründung wählen oder die NFS-Übertragung als Übertragung im lokalen Netz zum Gerät des Nutzers erläutern. |
 | Können Nutzer die Löschung ihrer Daten verlangen? | Nicht zutreffend: der Entwickler speichert keine Daten. Im Formular „Ja“ wählen und auf das Löschen in der App (Konto löschen) und beim Hoster verweisen, oder „Nein“ mit Begründung, dass keine Daten beim Entwickler liegen – die zulässige Antwort hängt von der aktuellen Formularversion ab. |
 | Unabhängige Sicherheitsprüfung | Nein |
 | Werden Daten zwischen Android-Geräten übertragen (Backup)? | Nein (`allowBackup="false"`) |
@@ -26,6 +27,7 @@ DLC-Inhalte an den JDownloader-Dienst.
 | Persönliche Daten | Nutzer-IDs (Benutzername/E-Mail des Hoster-Kontos) | Ja | Nein (geht nur an den Hoster, dessen Dienst der Nutzer selbst gewählt hat – Play zählt das als „Übertragung an Dienstanbieter“, nicht als Teilen) | App-Funktionen | Ja (Free-Modus ohne Konto möglich) | Nur bei Bedarf übertragen, nicht beim Entwickler gespeichert |
 | Persönliche Daten | Sonstige (Passwort, API-Schlüssel) | Ja | Nein | App-Funktionen | Ja | wie oben, lokal verschlüsselt |
 | Dateien und Dokumente | DLC-Container-Inhalt (Links) | Ja | Nein (JDownloader-Dienst als Verarbeiter) | App-Funktionen | Ja (nur bei DLC-Import) | Übertragung zur Entschlüsselung, keine Speicherung beim Entwickler |
+| Dateien und Dokumente | Heruntergeladene und entpackte Dateien an das NAS des Nutzers (NFS-Ziel) | Ja | Nein (Ziel ist ein Gerät des Nutzers im eigenen Netz) | App-Funktionen | Ja (nur mit eingetragenem NFS-Ziel) | Unverschlüsselt (NFSv3) im lokalen Netz; gespeichert werden lokal nur Server, Pfad und uid/gid, keine Zugangsdaten |
 | App-Aktivität, Absturzprotokolle | – | Nein | Nein | – | – | Absturzbericht bleibt auf dem Gerät |
 | Geräte- oder andere IDs | – | Nein | Nein | – | – | – |
 | Standort, Kontakte, Fotos, Audio | – | Nein | Nein | – | – | – |

@@ -20,7 +20,8 @@ Stand: September 2026. Gilt für die App „JDAndroid“ (Paketname
 | Zugangsdaten der Hoster-Konten (Benutzername, Passwort, API-Schlüssel, Session-Cookies) | Anmeldung beim jeweiligen Hoster für Downloads und Kontostand | Datenbank der App, AES-GCM-verschlüsselt; der Schlüssel liegt im Android-Keystore und verlässt das Gerät nie. Ohne nutzbaren Keystore wird das Konto nicht gespeichert (kein Klartext). |
 | Links, Paketnamen, Dateinamen, Größen, Prüfsummen, Fortschritt | Download-Liste und Linksammler | Datenbank der App |
 | Einstellungen (Zielordner, Geschwindigkeitslimit, Passwortliste fürs Entpacken, Ausschlussmuster) | Bedienung | DataStore der App |
-| Heruntergeladene und entpackte Dateien | Ergebnis der Downloads | `Downloads/JDAndroid/` bzw. der von dir gewählte Ordner |
+| NFS-Ziel: Server, Export-Pfad, Unterordner, uid/gid | Ablage fertiger Dateien auf deinem NAS | DataStore der App; keine Zugangsdaten, NFSv3 kennt nur uid/gid |
+| Heruntergeladene und entpackte Dateien | Ergebnis der Downloads | `Downloads/JDAndroid/`, der von dir gewählte Ordner oder dein NAS (NFS-Ziel) |
 | Letzter Absturz (Stapelabzug) | Anzeige beim nächsten Start | Datei im App-Speicher; wird nirgendwohin gesendet |
 
 Die App ist mit `allowBackup="false"` gebaut: Konten, Download-Liste und
@@ -45,14 +46,24 @@ JDAndroid hat keinen eigenen Server. Netzverbindungen entstehen nur zu:
    nur, wenn du einen DLC-Container importierst. Der Inhalt des Containers
    wird zur Entschlüsselung an diesen Dienst gesendet, weil der Schlüssel
    dort liegt. Ohne DLC-Import findet keine Verbindung statt.
-3. **Click'n'Load**: Der lokale Server der App lauscht ausschließlich auf
+3. **Deinem NAS (NFS-Ziel)** – nur, wenn du in den Einstellungen eine
+   NFS-Freigabe eingetragen und eingeschaltet hast. Die App verbindet sich
+   dann mit dem von dir angegebenen Server in deinem eigenen Netz (NFSv3,
+   Ports 111/2049/mountd) und legt dort fertige Downloads und entpackte
+   Dateien ab. Übertragen werden nur diese Dateien, ihre Namen und die
+   eingetragene uid/gid; Zugangsdaten gibt es bei NFSv3 nicht. Die
+   Übertragung ist **unverschlüsselt** und für das eigene, vertrauenswürdige
+   Netz gedacht (siehe [`NFS.md`](NFS.md)).
+4. **Click'n'Load**: Der lokale Server der App lauscht ausschließlich auf
    `127.0.0.1:9666` (Loopback). Er ist aus dem WLAN oder dem Internet nicht
    erreichbar; nur ein Browser auf demselben Gerät kann ihm Links übergeben.
    Die Entschlüsselung der Click'n'Load-Daten passiert vollständig auf dem
    Gerät.
 
-Alle Verbindungen nach außen laufen über HTTPS; Klartext-HTTP ist in der
-App gesperrt (Ausnahme: der eigene Click'n'Load-Server auf Loopback).
+Alle Verbindungen ins Internet laufen über HTTPS; Klartext-HTTP ist in der
+App gesperrt (Ausnahme: der eigene Click'n'Load-Server auf Loopback). Die
+Verbindung zum NAS ist NFSv3 ohne Verschlüsselung und findet nur zu dem
+Server statt, den du selbst eingetragen hast.
 
 ## Berechtigungen
 
@@ -95,8 +106,10 @@ with AES-GCM; the key lives in the Android KeyStore and never leaves the
 device (if the KeyStore is unusable the account is not saved – no plain-text
 fallback). Links, package and file names, sizes, checksums and progress form
 the download list; settings (target folder, speed limit, extraction password
-list, exclude patterns) are kept in the app's DataStore; downloaded and
-extracted files go to `Downloads/JDAndroid/` or the folder you choose. A
+list, exclude patterns, and the NFS target: server, export path, sub
+folder, uid/gid – no credentials, NFSv3 has none) are kept in the app's
+DataStore; downloaded and extracted files go to `Downloads/JDAndroid/`, the
+folder you choose or your NAS (NFS target). A
 crash trace, if any, is kept in app storage for display at the next start and
 is never transmitted. The app is built with `allowBackup="false"`, so
 accounts and lists are excluded from Android cloud backups.
@@ -111,10 +124,17 @@ embedded browser used for browser login and captchas loads the hoster's
 pages, which may include Cloudflare Turnstile; (2) the JDownloader project's
 DLC service (`service.jdownloader.org`), only when you import a DLC container
 – the container content is sent there for decryption because the key is held
-server-side; (3) nothing else. The Click'n'Load server listens exclusively on
-`127.0.0.1:9666` (loopback), is unreachable from Wi-Fi or the internet, and
-decrypts Click'n'Load data entirely on the device. All external traffic uses
-HTTPS; clear-text HTTP is blocked except for the app's own loopback server.
+server-side; (3) your NAS, only if you enter and enable an NFS share in the
+settings – the app then connects to the server you specified on your own
+network (NFSv3, ports 111/2049/mountd) and stores finished downloads and
+extracted files there, transmitting only those files, their names and the
+configured uid/gid, **unencrypted**, so this is meant for a trusted home
+network only (see `NFS.md`); (4) nothing else. The Click'n'Load server
+listens exclusively on `127.0.0.1:9666` (loopback), is unreachable from Wi-Fi
+or the internet, and decrypts Click'n'Load data entirely on the device. All
+internet traffic uses HTTPS; clear-text HTTP is blocked except for the app's
+own loopback server. The NAS connection is NFSv3 without encryption and only
+goes to the server you entered yourself.
 
 **Permissions.** Internet and network state (downloads, Wi-Fi-only mode);
 foreground service (`dataSync`, `specialUse`) and notifications (downloads
