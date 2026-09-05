@@ -2,7 +2,8 @@
 
 Android-Download-Manager nach dem Vorbild von JDownloader (Hoster: ddownload,
 Rapidgator, 1fichier; Linksammler, Click'n'Load, DLC, Entpacken). Sprache der
-Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
+Oberfläche (Standard, dazu Englisch), der Doku und der Commit-Texte ist
+Deutsch. Kommentare im Code sind Englisch.
 
 ## Arbeitsweise mit dem Nutzer
 
@@ -33,6 +34,17 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
   nie einen neuen erzeugen. Die APKs in `release/` bleiben (fünf neueste).
 - Keine Diagnose-Ausgaben in den Einstellungen anhäufen („vollgespamt“).
   Fehler sollen als eine klare Meldung erscheinen, nicht als Protokoll.
+
+## Kommentare im Code (vom Nutzer festgelegt)
+
+- Englisch, knapp, nur wo sie etwas Nichtoffensichtliches erklären (Warum,
+  Hoster-Eigenheiten, Plattform-Fallen). Kein Kommentar, der den Code
+  wiederholt.
+- Keine erzählenden oder KI-typischen Kommentare: keine Verweise auf Funde,
+  Prüfungen, Sitzungen oder Entscheidungen („bewusst“, „Hinweis:“,
+  „wichtig:“), keine Aufzählung dessen, was gerade geändert wurde.
+- KDoc nur für öffentliche Klassen und nicht triviale Funktionen, ein bis drei
+  Sätze.
 
 ## Gestaltungsregeln (vom Nutzer festgelegt)
 

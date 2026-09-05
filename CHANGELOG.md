@@ -43,6 +43,15 @@ Versionsschema `0.1.x`.
 - Signierung im Build nur noch aus Umgebungsvariablen oder einer
   gitignorierten `keystore.properties`; ohne Keystore entsteht eine
   unsignierte Release-APK.
+- Symbolische Links in ZIP-, 7z- und RAR-Archiven werden übersprungen;
+  Export und Aufräumen folgen keinen Links mehr.
+- Hoster-Cookies gehen nur noch an Hoster-Hosts: Die Captcha-Ansicht
+  übernimmt Direktlinks nur von dort, und bei Weiterleitungen auf fremde
+  Sites werden `Cookie` und `Referer` entfernt.
+- Passwortliste aus Click'n'Load auf 200 Einträge begrenzt; Passwörter werden
+  nur mit einem neuen Link übernommen.
+- Schlägt die Nachverschlüsselung alter Zugangsdaten fehl, erscheint der
+  Fehler im Kontostatus statt still zu bleiben.
 
 ### Hinzugefügt
 
@@ -66,6 +75,39 @@ Versionsschema `0.1.x`.
   entfernt, Indizes für die häufigen Abfragen ergänzt.
 - `DownloadEngine` und `DdownloadHoster` in kleinere Klassen aufgeteilt.
 - Android-Lint meldet 0 Warnungen.
+
+### Behoben
+
+- Entpack-Job auf beendetem Dienst hinterließ Teile dauerhaft in
+  „Entpacken“; der Job startet jetzt atomar und räumt immer auf.
+- Pause während Prüfsummen-Prüfung oder Abschluss führte zu Neudownload und
+  Duplikat; die Prüfung ist abbrechbar, der Abschluss prüft den Zustand
+  unter der Sperre.
+- Gleichnamige Archive zweier Pakete vermischten sich im App-Ordner;
+  Archivteile liegen jetzt je Paket getrennt.
+- Leere Antwort (`Content-Length: 0`) oder grob abweichende Größe wurde als
+  fertige Datei gespeichert; jetzt vorübergehender Fehler mit neuer
+  Auflösung.
+- Paket pausieren oder löschen startete jeden weiteren Eintrag kurz und brach
+  ihn ab; jetzt erst alle Zeilen, dann ein Durchlauf.
+- Wartende Archivteile wurden nach Fehlschlag oder Löschen eines Teils nie
+  neu geprüft.
+- RAR-Archive werden in einem Durchlauf entpackt (solide Archive vorher
+  quadratisch langsam); Passwortliste wird nur bei Passwortfehlern
+  durchprobiert; „Kein Passwort nötig“ verdeckte den eigentlichen Fehler.
+- Flaches Entpacken nummeriert auch gegen vorhandene Dateien im Paketordner.
+- SAF-Export fragte den Dokumentenanbieter je Datei quadratisch oft ab;
+  Zielordner wird einmal gelesen, Kopierpuffer 1 MiB.
+- Ungültige Konten wurden im Minutentakt beim Hoster geprüft.
+- ddownload-API-Antwort ohne `result` schaltete das Konto dauerhaft ab.
+- 1fichier-CDN-Guthaben in 1024-Einheiten; Konten- und Sammlerzeilen mit
+  Drei-Punkte-Menü statt mehrerer Symbole.
+- Dienst: `stopSelfResult` vor `stopForeground`; nach abgelehntem
+  `startForeground` kein Start über den Netzwerk-Callback.
+- Oberfläche: Paketköpfe rekomponieren nur bei Änderung, Linksammler
+  gruppiert außerhalb des Hauptthreads, Absturzbericht wird nicht mehr in
+  der Komposition gelesen.
+- Kommentare im Code sind jetzt Englisch und auf das Wesentliche gekürzt.
 
 ## [0.0.16] – 2026-09-04
 
