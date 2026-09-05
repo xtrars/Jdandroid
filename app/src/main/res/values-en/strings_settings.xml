@@ -106,4 +106,25 @@
     <string name="settings_crash_hint">Please copy this report and pass it on – it pinpoints the cause.</string>
     <string name="settings_crash_clip_label">Crash report</string>
     <string name="settings_crash_discard">Discard</string>
+
+    <!-- NFS target (NAS) -->
+    <string name="settings_nfs_section">NFS share (NAS)</string>
+    <string name="settings_nfs_summary_off">Off</string>
+    <string name="settings_nfs_summary_on">%1$s:%2$s</string>
+    <string name="settings_nfs_enabled_title">Save to NAS</string>
+    <string name="settings_nfs_enabled_subtitle">Move finished files to the NAS via NFS</string>
+    <string name="settings_nfs_server">Server (hostname or IP)</string>
+    <string name="settings_nfs_export">Export path</string>
+    <string name="settings_nfs_export_placeholder">/volume1/downloads</string>
+    <string name="settings_nfs_subdir">Subfolder (optional)</string>
+    <string name="settings_nfs_uid">uid</string>
+    <string name="settings_nfs_gid">gid</string>
+    <string name="settings_nfs_hint">NFS takes precedence over the chosen folder and Downloads/JDAndroid; it needs NFSv3, an export with “insecure” (non-privileged ports) and a squash matching uid/gid.</string>
+    <string name="settings_nfs_probe">Check connection</string>
+    <string name="settings_nfs_probe_ok">Reachable · %1$s · %2$s of %3$s free</string>
+    <plurals name="settings_nfs_probe_entries">
+        <item quantity="one">%d entry</item>
+        <item quantity="other">%d entries</item>
+    </plurals>
+    <string name="settings_nfs_probe_unreachable">NAS unreachable: %1$s</string>
 </resources>

@@ -87,6 +87,7 @@ private const val SEPARATOR = " · "
 private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String = when (note) {
     DownloadNotes.WAITING_PARTS -> stringResource(R.string.downloads_waiting_for_parts)
     DownloadNotes.WAITING_WIFI -> stringResource(R.string.downloads_waiting_for_wifi)
+    DownloadNotes.EXPORT_PENDING -> stringResource(R.string.downloads_waiting_for_nas)
     else -> FreeMode.displayText(note, retryAt, now) ?: note
 }
 
