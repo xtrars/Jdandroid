@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <!-- Engine without a context (DownloadEngine, Extractor, FreeMode, Format) via Texts.t; every key mirrors core/texts/EngineTexts.kt. Keys: engine_<meaning>. -->
+
+    <!-- Free mode: display of the stored codes -->
+    <string name="engine_free_wait">Free mode wait: %1$s</string>
+    <string name="engine_free_wait_reason">Free mode wait: %1$s – %2$s</string>
+    <string name="engine_free_captcha">Captcha required – use “Solve captcha” in the menu</string>
+    <string name="engine_free_captcha_reason">%1$s – use “Solve captcha” in the menu</string>
+    <string name="engine_free_disabled">No account and free mode is off</string>
+    <string name="engine_free_no_premium">Account without premium and free mode is off</string>
+
+    <!-- Download flow -->
+    <string name="engine_target_folder">Target folder</string>
+    <string name="engine_unknown_hoster">Unknown hoster</string>
+    <string name="engine_generic_error">Error</string>
+    <string name="engine_invalid_download_url">Invalid download URL: %1$s</string>
+    <string name="engine_gave_up" tools:ignore="PluralsCandidate">%1$s (gave up after %2$d attempts)</string>
+    <string name="engine_retry_scheduled">%1$s – attempt %2$d/%3$d in %4$d s</string>
+    <string name="engine_part_size_mismatch">Partial file does not match the file size – restarting</string>
+    <string name="engine_http_error">Server responded with HTTP %1$d</string>
+    <string name="engine_html_instead_of_file">Server returned an HTML page instead of the file (%1$s) – link will be resolved again</string>
+    <string name="engine_empty_response">Empty response while downloading</string>
+    <string name="engine_not_enough_space">Not enough storage space: %1$s needed, %2$s free</string>
+    <string name="engine_download_incomplete">Download incomplete (%1$s of %2$s)</string>
+    <string name="engine_hash_mismatch">Checksum (%1$s) does not match – file will be downloaded again</string>
+
+    <!-- Archives and extraction -->
+    <string name="engine_archive_name_clash">An archive with the same name exists in another package, not extracted</string>
+    <string name="engine_first_volume_missing_not_extracted">First archive part missing, not extracted</string>
+    <string name="engine_first_volume_missing">First archive part missing</string>
+    <string name="engine_entry_not_found">Entry not found</string>
+    <string name="engine_already_extracting">Already being extracted</string>
+    <string name="engine_only_completed_extractable">Only finished downloads can be extracted</string>
+    <string name="engine_file_name_unknown">File name unknown</string>
+    <string name="engine_not_an_archive">Not an archive: %1$s</string>
+    <string name="engine_archive_part_missing">Archive part no longer available: %1$s</string>
+    <string name="engine_archive_incomplete_loading">Archive incomplete – more parts are still downloading</string>
+
+    <!-- Extractor -->
+    <string name="engine_seven_zip_unavailable">Native 7-Zip library could not be loaded (RAR extraction not possible): %1$s</string>
+    <string name="engine_unknown_archive_format">Unknown archive format: %1$s</string>
+    <string name="engine_extract_failed">Extraction failed (password not in the list?): %1$s</string>
+    <string name="engine_move_failed">Could not move %1$s to %2$s</string>
+    <string name="engine_password_required">Password required</string>
+    <string name="engine_no_password_needed">No password needed</string>
+    <string name="engine_rar_extraction_result">RAR extraction: %1$s</string>
+    <string name="engine_invalid_archive_path">Invalid path in archive: %1$s</string>
+    <string name="engine_secrets_encrypt_failed">Credentials could not be encrypted (Android keystore unavailable: %1$s). Please unlock the device and try again.</string>
+    <string name="engine_secrets_decrypt_failed">Credentials cannot be read (Android keystore: %1$s). Please delete the account and add it again.</string>
+    <string name="engine_secrets_key_missing">Key missing in keystore</string>
+    <string name="engine_package_from_date">Package from %1$s</string>
+</resources>

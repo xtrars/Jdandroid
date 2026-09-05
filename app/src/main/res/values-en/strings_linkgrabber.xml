@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Link grabber (LinkGrabberScreen, AddLinksDialog, captcha and login browser). Keys: linkgrabber_<meaning>. -->
+
+    <!-- LinkGrabberScreen -->
+    <string name="linkgrabber_title">Link Grabber</string>
+    <string name="linkgrabber_import_dlc">Import DLC file</string>
+    <string name="linkgrabber_recheck">Check again</string>
+    <string name="linkgrabber_start_all">Start all</string>
+    <string name="linkgrabber_empty_hint">The Link Grabber is empty.\n\nNew links (paste, share, DLC via the file icon, Click\'n\'Load) appear here, are checked online and only start when you say so.</string>
+    <plurals name="linkgrabber_offline_count">
+        <item quantity="one">%1$d offline</item>
+        <item quantity="other">%1$d offline</item>
+    </plurals>
+    <string name="linkgrabber_remove_offline">Remove offline links</string>
+    <string name="linkgrabber_expand">Expand</string>
+    <string name="linkgrabber_collapse">Collapse</string>
+    <plurals name="linkgrabber_link_count">
+        <item quantity="one">%1$d link</item>
+        <item quantity="other">%1$d links</item>
+    </plurals>
+    <plurals name="linkgrabber_online_count">
+        <item quantity="one">%1$d online</item>
+        <item quantity="other">%1$d online</item>
+    </plurals>
+    <plurals name="linkgrabber_checking_count">
+        <item quantity="one">%1$d being checked</item>
+        <item quantity="other">%1$d being checked</item>
+    </plurals>
+    <string name="linkgrabber_source">from %1$s</string>
+    <string name="linkgrabber_start_package">Start package</string>
+    <string name="linkgrabber_discard_package">Discard package</string>
+    <string name="linkgrabber_discard_package_question">Discard package?</string>
+    <plurals name="linkgrabber_discard_package_text">
+        <item quantity="one">“%1$s” with %2$d link will be removed from the Link Grabber.</item>
+        <item quantity="other">“%1$s” with %2$d links will be removed from the Link Grabber.</item>
+    </plurals>
+    <string name="linkgrabber_remove_link">Remove link</string>
+    <string name="linkgrabber_state_online">online</string>
+    <string name="linkgrabber_state_offline">offline</string>
+    <string name="linkgrabber_state_checking">checking …</string>
+    <string name="linkgrabber_state_unchecked">not checked</string>
+    <string name="linkgrabber_icon_online">Online</string>
+    <string name="linkgrabber_icon_offline">Offline</string>
+    <string name="linkgrabber_icon_unchecked">Not checked</string>
+
+    <!-- AddLinksDialog -->
+    <string name="linkgrabber_add_title">Add links</string>
+    <string name="linkgrabber_add_placeholder">Paste links here (one per line or any text)</string>
+    <string name="linkgrabber_add_package_name">Package name (optional)</string>
+    <string name="linkgrabber_add_none_recognized">No supported links found (Rapidgator, 1fichier, ddownload)</string>
+    <plurals name="linkgrabber_add_recognized">
+        <item quantity="one">%1$d link found: %2$s</item>
+        <item quantity="other">%1$d links found: %2$s</item>
+    </plurals>
+    <string name="linkgrabber_add_hoster_count">%1$d× %2$s</string>
+    <string name="linkgrabber_add_confirm">Add</string>
+
+    <!-- CaptchaScreen -->
+    <string name="linkgrabber_captcha_title">Solve captcha – %1$s</string>
+    <string name="linkgrabber_captcha_hint">Solve the captcha and start the download – the app then downloads the file.</string>
+    <string name="linkgrabber_captcha_blocked">Blocked: %1$s (only %2$s and captcha services are allowed).</string>
+    <string name="linkgrabber_unknown_address">unknown address</string>
+
+    <!-- WebLoginScreen -->
+    <string name="linkgrabber_login_title">Sign in via browser</string>
+    <string name="linkgrabber_login_accept">Apply</string>
+    <string name="linkgrabber_login_no_session">No session found yet – please sign in first.</string>
+    <string name="linkgrabber_login_blocked">Blocked: %1$s (only %2$s is allowed).</string>
+    <string name="linkgrabber_login_detected">Login detected – tap “Apply” at the top.</string>
+</resources>

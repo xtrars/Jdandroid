@@ -254,7 +254,10 @@ interface DownloadDao {
     suspend fun pauseIfActive(id: Long)
 
     /** "Nur WLAN": laufenden Download zurueck in die Warteschlange (startet bei WLAN automatisch). */
-    @Query("UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, errorMessage = 'Wartet auf WLAN' WHERE id = :id AND status = 'RUNNING'")
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
+            "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
+    )
     suspend fun requeueIfRunning(id: Long)
 
     /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
@@ -417,7 +420,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -513,9 +516,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gespeicherte Vermerke als Code statt als deutscher Text: die Engine
+         * sucht wartende Archiv-Teile per SQL-Gleichheit, die Oberflaeche
+         * uebersetzt den Code bei der Anzeige (siehe [DownloadNotes]).
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE downloads SET errorMessage = ? WHERE errorMessage = ?",
+                    arrayOf<Any>(DownloadNotes.WAITING_PARTS, DownloadNotes.LEGACY_WAITING_PARTS)
+                )
+                db.execSQL(
+                    "UPDATE downloads SET errorMessage = ? WHERE errorMessage = ?",
+                    arrayOf<Any>(DownloadNotes.WAITING_WIFI, DownloadNotes.LEGACY_WAITING_WIFI)
+                )
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-            MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
+            MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
         )
     }
 }

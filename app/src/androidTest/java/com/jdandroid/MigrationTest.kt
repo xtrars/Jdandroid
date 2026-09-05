@@ -6,6 +6,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.jdandroid.data.AppDatabase
+import com.jdandroid.data.DownloadNotes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -137,12 +138,46 @@ class MigrationTest {
     }
 
     @Test
-    fun migrateAll5To10() {
+    fun migrate10To11_ersetztDeutscheVermerkeDurchCodes() {
+        helper.createDatabase(dbName, 10).apply {
+            insertDownload10(this, 1, "https://example.org/a", DownloadNotes.LEGACY_WAITING_PARTS)
+            insertDownload10(this, 2, "https://example.org/b", DownloadNotes.LEGACY_WAITING_WIFI)
+            insertDownload10(this, 3, "https://example.org/c", "Hoster-Meldung")
+            insertDownload10(this, 4, "https://example.org/d", null)
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(dbName, 11, true, AppDatabase.MIGRATION_10_11)
+        db.query("SELECT id, errorMessage FROM downloads ORDER BY id").use { c ->
+            assertEquals(4, c.count)
+            assertTrue(c.moveToFirst())
+            assertEquals(DownloadNotes.WAITING_PARTS, c.getString(1))
+            assertTrue(c.moveToNext())
+            assertEquals(DownloadNotes.WAITING_WIFI, c.getString(1))
+            assertTrue(c.moveToNext())
+            assertEquals("Hoster-Meldung", c.getString(1))
+            assertTrue(c.moveToNext())
+            assertTrue(c.isNull(1))
+        }
+    }
+
+    @Test
+    fun migrateAll5To11() {
         helper.createDatabase(dbName, 5).close()
         helper.runMigrationsAndValidate(
-            dbName, 10, true,
+            dbName, 11, true,
             AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10
+            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10,
+            AppDatabase.MIGRATION_10_11
+        )
+    }
+
+    /** Fuegt eine downloads-Zeile im Schema der Version 10 ein (mit archiveKey) samt Vermerk. */
+    private fun insertDownload10(db: SupportSQLiteDatabase, id: Long, url: String, note: String?) {
+        db.execSQL(
+            "INSERT INTO downloads (id, url, hosterId, packageId, fileName, fileSize, downloadedBytes, " +
+                "speedBps, status, errorMessage, localPath, attempts, retryAt, online, extractProgress, archiveKey, addedAt) VALUES " +
+                "(?, ?, 'ddownload', NULL, 'a.part1.rar', 10, 0, 0, 'COMPLETED', ?, NULL, 0, 0, 0, -1, 'a', 1)",
+            arrayOf<Any?>(id, url, note)
         )
     }
 

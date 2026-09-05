@@ -16,8 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.jdandroid.CrashReporter
+import com.jdandroid.R
 
 /**
  * Zeigt einen zuvor aufgezeichneten Absturz direkt beim Start an. In den
@@ -31,7 +33,7 @@ fun CrashDialog(report: String, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Die App ist abgestürzt") },
+        title = { Text(stringResource(R.string.settings_crash_title)) },
         text = {
             Column(
                 Modifier
@@ -40,8 +42,7 @@ fun CrashDialog(report: String, onDismiss: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "Bitte diesen Bericht kopieren und weitergeben – daraus lässt " +
-                        "sich die Ursache eindeutig bestimmen.",
+                    stringResource(R.string.settings_crash_hint),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 SelectionContainer {
@@ -54,16 +55,17 @@ fun CrashDialog(report: String, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
+            val clipLabel = stringResource(R.string.settings_crash_clip_label)
             TextButton(onClick = {
                 context.getSystemService(ClipboardManager::class.java)
-                    ?.setPrimaryClip(ClipData.newPlainText("Absturzbericht", report))
-            }) { Text("Kopieren") }
+                    ?.setPrimaryClip(ClipData.newPlainText(clipLabel, report))
+            }) { Text(stringResource(R.string.common_copy)) }
         },
         dismissButton = {
             TextButton(onClick = {
                 CrashReporter.clear(context)
                 onDismiss()
-            }) { Text("Verwerfen") }
+            }) { Text(stringResource(R.string.settings_crash_discard)) }
         }
     )
 }

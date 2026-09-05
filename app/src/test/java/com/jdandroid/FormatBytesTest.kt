@@ -1,11 +1,26 @@
 package com.jdandroid
 
 import com.jdandroid.core.formatBytes
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 /** Groessenangaben sind 1024-basiert und liegen in der Kernschicht (auch fuer Benachrichtigungen). */
 class FormatBytesTest {
+
+    private lateinit var previous: Locale
+
+    /** Das Dezimalzeichen folgt der Sprache; die Erwartungen unten sind deutsch. */
+    @Before
+    fun deutscheSprache() {
+        previous = Locale.getDefault()
+        Locale.setDefault(Locale.GERMANY)
+    }
+
+    @After
+    fun spracheZuruecksetzen() = Locale.setDefault(previous)
 
     @Test
     fun binaereEinheiten() {

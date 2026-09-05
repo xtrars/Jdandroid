@@ -51,7 +51,9 @@ class BootReceiver : BroadcastReceiver() {
         val notification = NotificationCompat.Builder(context, JdApp.CHANNEL_EVENTS)
             .setSmallIcon(com.jdandroid.R.drawable.ic_stat_download)
             .setContentTitle(context.getString(R.string.app_name))
-            .setContentText("$count Download(s) warten – antippen zum Fortsetzen")
+            .setContentText(
+                context.resources.getQuantityString(R.plurals.service_boot_pending_downloads, count, count)
+            )
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

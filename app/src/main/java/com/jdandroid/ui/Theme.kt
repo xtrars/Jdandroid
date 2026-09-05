@@ -14,10 +14,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /** Hell/Dunkel: dem System folgen oder fest waehlen (Einstellungen). */
-enum class ThemeMode(val key: String, val label: String) {
-    SYSTEM("system", "System"),
-    LIGHT("light", "Hell"),
-    DARK("dark", "Dunkel");
+enum class ThemeMode(val key: String) {
+    SYSTEM("system"),
+    LIGHT("light"),
+    DARK("dark");
 
     companion object {
         fun fromKey(key: String?): ThemeMode = entries.firstOrNull { it.key == key } ?: SYSTEM

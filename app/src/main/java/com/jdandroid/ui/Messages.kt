@@ -27,7 +27,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.jdandroid.R
 import com.jdandroid.core.MessageKind
 
 /**
@@ -108,7 +110,7 @@ private fun JdSnackbar(data: SnackbarData, kind: MessageKind) {
             }
             if (data.visuals.withDismissAction) {
                 IconButton(onClick = { data.dismiss() }) {
-                    Icon(Icons.Default.Close, contentDescription = "Schließen", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close), modifier = Modifier.size(18.dp))
                 }
             }
         }

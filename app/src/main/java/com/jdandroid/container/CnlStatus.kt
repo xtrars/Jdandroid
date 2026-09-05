@@ -23,9 +23,9 @@ object CnlStatus {
     val lastRequest: StateFlow<String?> = _lastRequest
 
     fun record(method: String, uri: String, result: String) {
-        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.GERMANY)
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
-        _lastRequest.value = "$time $method $uri → $result"
+        _lastRequest.value = ContainerTexts.t("service_cnl_last_request_line", time, method, uri, result)
     }
 
     fun started(address: String) {

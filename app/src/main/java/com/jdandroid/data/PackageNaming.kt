@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
-import java.text.SimpleDateFormat
+import com.jdandroid.core.Texts
+import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -48,8 +49,8 @@ object PackageNaming {
                 .takeIf { it.contains('.') && it.length > 3 }
         }
         commonName(names)?.let { return it }
-        val stamp = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date())
-        return "Paket vom $stamp"
+        val stamp = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault()).format(Date())
+        return Texts.t("engine_package_from_date", stamp)
     }
 
     /** Entfernt Archiv-Endungen: "film.part1.rar" -> "film". */

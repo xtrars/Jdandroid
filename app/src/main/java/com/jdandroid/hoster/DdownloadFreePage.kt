@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 /**
  * Captcha-Art auf einer XFileSharing-Dateiseite im Free-Modus.
  */
@@ -149,13 +150,13 @@ internal object DdownloadFreePage {
 
     /**
      * Grund, warum die Datei ohne Premium nicht ladbar ist (dauerhaft), als
-     * deutsche Meldung; null = frei ladbar.
+     * uebersetzte Meldung (Texts.t); null = frei ladbar.
      */
     fun premiumOnlyReason(html: String): String? {
         val text = errorTexts(html) + " " + html
         Regex("""can download files up to\s*([^<>"']*?)\s*only""", ic).find(text)?.let { m ->
             val limit = m.groupValues[1].trim()
-            return "Free-Download nur bis $limit – für diese Datei ist ein Premium-Konto nötig"
+            return Texts.t("hoster_ddownload_free_size_limit", limit)
         }
         val premiumOnly = Regex(
             """>\s*Upgrade your account to download (?:larger|bigger) files|""" +
@@ -166,7 +167,7 @@ internal object DdownloadFreePage {
                 """This file (?:can|only can|can only) be downloaded by""",
             ic
         ).containsMatchIn(text)
-        return if (premiumOnly) "Datei ist nur mit Premium-Konto ladbar" else null
+        return if (premiumOnly) Texts.t("hoster_ddownload_premium_only") else null
     }
 
     /**

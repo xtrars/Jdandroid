@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 /**
  * Einordnung eines Hinweistexts der 1fichier-Website im Free-Modus
  * (Dateiseite oder Antwort auf das Download-Formular).
@@ -219,7 +220,7 @@ internal object OneFichierFreePage {
 
         // --- endgueltig: Datei weg, nur mit Konto, geschuetzt ---
         if (Regex("""File not found|The requested file (?:has been deleted|do(?:es)? not exist)""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Permanent("Datei ist offline")
+            return OneFichierBlock.Permanent(Texts.t("hoster_file_offline"))
         }
         if (Regex(
                 """not possible to free unregistered users|is not possible to unregistered users|""" +
@@ -227,13 +228,13 @@ internal object OneFichierFreePage {
                 ic
             ).containsMatchIn(t)
         ) {
-            return OneFichierBlock.Permanent("1fichier: Datei nur mit Konto ladbar (Besitzer sperrt Free-Download)")
+            return OneFichierBlock.Permanent(Texts.t("hoster_onefichier_account_required"))
         }
         if (Regex("""Access to this file is protected|This file is protected""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Permanent("1fichier: Zugriff auf die Datei ist vom Besitzer eingeschränkt")
+            return OneFichierBlock.Permanent(Texts.t("hoster_onefichier_access_restricted"))
         }
         if (Regex("""Bad password|Mauvais mot de passe""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Permanent("1fichier: Passwort falsch")
+            return OneFichierBlock.Permanent(Texts.t("hoster_onefichier_bad_password"))
         }
 
         // --- Wartezeit mit Zahl (Minuten) ---
@@ -247,10 +248,10 @@ internal object OneFichierFreePage {
                 's' -> n
                 else -> n * 60
             }
-            return OneFichierBlock.Wait(secs + 1, "1fichier: nächster Free-Download in ${waitText(secs)}")
+            return OneFichierBlock.Wait(secs + 1, Texts.t("hoster_onefichier_next_free_in", HosterDurations.text(secs)))
         }
         if (Regex("""IP Locked|Will be unlocked within 1\s*h""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Wait(3600 + 1, "1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde")
+            return OneFichierBlock.Wait(3600 + 1, Texts.t("hoster_onefichier_ip_locked"))
         }
 
         // --- nur ein Free-Download je IP (ohne Zahl: 5 Minuten) - nicht auf der Dateiseite mit Formular ---
@@ -263,27 +264,27 @@ internal object OneFichierFreePage {
                 ic
             ).containsMatchIn(t)
         ) {
-            return OneFichierBlock.Wait(5 * 60 + 1, "1fichier: im Free-Modus nur ein Download gleichzeitig je Adresse")
+            return OneFichierBlock.Wait(5 * 60 + 1, Texts.t("hoster_onefichier_one_at_a_time"))
         }
 
         // --- weitere voruebergehende Zustaende ---
         if (Regex("""Free download is temporarily limited due to high demand""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Wait(60 + 1, "1fichier: derzeit keine freien Download-Plätze")
+            return OneFichierBlock.Wait(60 + 1, Texts.t("hoster_onefichier_no_free_slots"))
         }
         if (Regex("""Your requests are too fast""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Wait(30 + 1, "1fichier: Anfragen zu schnell – kurze Pause")
+            return OneFichierBlock.Wait(30 + 1, Texts.t("hoster_onefichier_too_fast"))
         }
         if (Regex("""Software error|Can't connect DB|Connexion à la base de données impossible""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Wait(5 * 60 + 1, "1fichier: Serverfehler – in fünf Minuten erneut")
+            return OneFichierBlock.Wait(5 * 60 + 1, Texts.t("hoster_onefichier_server_error"))
         }
         if (Regex("""Our services are in maintenance""", ic).containsMatchIn(t)) {
-            return OneFichierBlock.Wait(20 * 60 + 1, "1fichier: Wartung – in 20 Minuten erneut")
+            return OneFichierBlock.Wait(20 * 60 + 1, Texts.t("hoster_onefichier_maintenance"))
         }
         if (Regex("""The free offer is intended to""", ic).containsMatchIn(t) &&
             Regex("""You already downloaded for free more than|It is not designed for intensive or continuous use""", ic)
                 .containsMatchIn(t)
         ) {
-            return OneFichierBlock.Wait(3600 + 1, "1fichier: Free-Nutzung vorübergehend gesperrt (zu viele Downloads)")
+            return OneFichierBlock.Wait(3600 + 1, Texts.t("hoster_onefichier_free_overuse"))
         }
         if (Regex(
                 """Accès restreint|professional infrastructure detected|""" +
@@ -291,17 +292,9 @@ internal object OneFichierFreePage {
                 ic
             ).containsMatchIn(t)
         ) {
-            return OneFichierBlock.Transient(
-                "1fichier: Free-Download von Server-/VPN-Adressen gesperrt – VPN ausschalten oder Konto hinterlegen"
-            )
+            return OneFichierBlock.Transient(Texts.t("hoster_onefichier_vpn_blocked"))
         }
         return null
-    }
-
-    private fun waitText(seconds: Int): String = when {
-        seconds % 3600 == 0 -> "${seconds / 3600} Stunde${if (seconds / 3600 == 1) "" else "n"}"
-        seconds % 60 == 0 -> "${seconds / 60} Minute${if (seconds / 60 == 1) "" else "n"}"
-        else -> "$seconds Sekunden"
     }
 
     private fun unescape(s: String): String =

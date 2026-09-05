@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -74,6 +75,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.jdandroid.R
 import com.jdandroid.core.AppMessages
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.Account
@@ -81,9 +83,8 @@ import com.jdandroid.data.hasPremium
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterRegistry
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
-import java.util.Locale
 
 /** Akzent fuer Avatare und Auswahl: Material-You-Primaerfarbe statt Markenfarben. */
 @Composable
@@ -163,7 +164,7 @@ fun AccountsScreen(
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { TopAppBar(title = { Text("Konten") }, colors = jdTopBarColors()) }
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.accounts_title)) }, colors = jdTopBarColors()) }
     ) { padding ->
         // Seitliche Insets (Displayausschnitt, Querformat) freihalten
         val content = Modifier
@@ -173,8 +174,7 @@ fun AccountsScreen(
         if (accounts.isEmpty()) {
             Box(content.padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
-                    "Noch keine Konten.\n\nMit + einen Premium-Account oder API-Key " +
-                        "hinterlegen, damit Downloads starten können.",
+                    stringResource(R.string.accounts_empty_hint),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -199,7 +199,8 @@ fun AccountsScreen(
 @Composable
 private fun AccountRow(account: Account, vm: AccountViewModel) {
     val hoster = HosterRegistry.byId(account.hosterId)
-    val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY) }
+    // Datum in der Schreibweise der Geraetesprache
+    val dateFormat = remember { DateFormat.getDateInstance(DateFormat.MEDIUM) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val isPremium = account.hasPremium()
 
@@ -217,7 +218,11 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    account.username ?: "API-Key hinterlegt",
+                    // Ohne Benutzername: per Browser uebernommene Session oder API-Key
+                    account.username ?: stringResource(
+                        if (account.cookies != null) R.string.accounts_browser_login
+                        else R.string.accounts_api_key_stored
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -234,11 +239,15 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                     }
                     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(4.dp))
-                    val details = buildString {
-                        append(account.statusText ?: "Noch nicht geprüft")
-                        if (isPremium && account.premiumUntil > 0) {
-                            append(" · bis ${dateFormat.format(Date(account.premiumUntil))}")
-                        }
+                    val status = account.statusText ?: stringResource(R.string.accounts_not_checked)
+                    val details = if (isPremium && account.premiumUntil > 0) {
+                        stringResource(
+                            R.string.accounts_status_premium_until,
+                            status,
+                            dateFormat.format(Date(account.premiumUntil))
+                        )
+                    } else {
+                        status
                     }
                     Text(details, style = MaterialTheme.typography.bodySmall, color = tint)
                 }
@@ -248,19 +257,24 @@ private fun AccountRow(account: Account, vm: AccountViewModel) {
                 }
             }
             IconButton(onClick = { vm.check(account.id) }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Prüfen")
+                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.accounts_check))
             }
             IconButton(onClick = { confirmDelete = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Löschen")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete))
             }
         }
     }
     if (confirmDelete) {
         ConfirmDeleteDialog(
-            title = "Konto löschen?",
-            text = "${hoster?.displayName ?: account.hosterId}: " +
-                "${account.username ?: "API-Key"} wird entfernt. Downloads dieses Hosters " +
-                "können danach nicht mehr starten.",
+            title = stringResource(R.string.accounts_delete_title),
+            text = stringResource(
+                R.string.accounts_delete_text,
+                hoster?.displayName ?: account.hosterId,
+                account.username ?: stringResource(
+                    if (account.cookies != null) R.string.accounts_browser_login
+                    else R.string.accounts_api_key
+                )
+            ),
             onConfirm = { vm.delete(account) },
             onDismiss = { confirmDelete = false }
         )
@@ -283,15 +297,15 @@ private fun TrafficLine(account: Account) {
     val minutesAgo = ((now - account.lastChecked) / 60_000L).coerceAtLeast(0)
     // Frisch geprueft braucht keinen Zusatz (der Stand wird ohnehin jede Minute
     // nachgeladen); nur ein aelterer Stand wird benannt
-    val checked = when {
-        account.lastChecked == 0L || minutesAgo < 2 -> ""
-        minutesAgo < 60 -> " · vor $minutesAgo min"
-        else -> " · vor ${minutesAgo / 60} h"
+    val amount = when {
+        account.trafficUnlimited -> stringResource(R.string.accounts_traffic_unlimited)
+        left >= 0 -> formatBytes(left)
+        else -> stringResource(R.string.accounts_traffic_unknown)
     }
     val text = when {
-        account.trafficUnlimited -> "unbegrenzt$checked"
-        left >= 0 -> "${formatBytes(left)}$checked"
-        else -> "Restmenge unbekannt$checked"
+        account.lastChecked == 0L || minutesAgo < 2 -> amount
+        minutesAgo < 60 -> stringResource(R.string.accounts_traffic_age_minutes, amount, minutesAgo)
+        else -> stringResource(R.string.accounts_traffic_age_hours, amount, minutesAgo / 60)
     }
     val low = left in 0 until (1L shl 30) && !account.trafficUnlimited
     Text(
@@ -334,7 +348,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
     // auch bei offener Tastatur und auf kleinen Displays. Der Inhalt scrollt.
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Konto hinzufügen", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.accounts_add_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 Modifier
@@ -343,7 +357,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "Hoster wählen",
+                    stringResource(R.string.accounts_choose_hoster),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -375,7 +389,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                         OutlinedTextField(
                             value = username,
                             onValueChange = { username = it },
-                            label = { Text("Benutzername / E-Mail") },
+                            label = { Text(stringResource(R.string.accounts_username_label)) },
                             leadingIcon = { Icon(Icons.Default.Person, null) },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Email,
@@ -388,7 +402,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                         OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
-                            label = { Text("Passwort") },
+                            label = { Text(stringResource(R.string.accounts_password_label)) },
                             leadingIcon = { Icon(JdIcons.Key, null) },
                             visualTransformation = PasswordVisualTransformation(),
                             // Passwort-Tastatur: keine Autokorrektur, kein Leerzeichen nach Punkt
@@ -403,7 +417,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                         OutlinedTextField(
                             value = apiKey,
                             onValueChange = { apiKey = it },
-                            label = { Text("API-Key") },
+                            label = { Text(stringResource(R.string.accounts_api_key)) },
                             leadingIcon = { Icon(JdIcons.Key, null) },
                             // Wie die Browser-Adresszeile: keine Autokorrektur, keine Leerzeichen
                             keyboardOptions = KeyboardOptions(
@@ -422,8 +436,8 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Person, null)
-                            Spacer(Modifier.height(0.dp))
-                            Text("  Im Browser anmelden (Benutzer/Passwort)")
+                            Spacer(Modifier.size(8.dp))
+                            Text(stringResource(R.string.accounts_web_login_button))
                         }
                     }
                 }
@@ -436,10 +450,10 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                     hoster?.let { vm.addAccount(it, username, password, apiKey) }
                     onDismiss()
                 }
-            ) { Text("Speichern & prüfen") }
+            ) { Text(stringResource(R.string.accounts_save_and_check)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Abbrechen") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         }
     )
 }
@@ -473,10 +487,12 @@ private fun HosterSelectCard(hoster: Hoster, selected: Boolean, onClick: () -> U
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    when (hoster.accountType) {
-                        AccountType.USERNAME_PASSWORD -> "Login mit Benutzername & Passwort"
-                        AccountType.API_KEY -> "Login mit API-Key"
-                    },
+                    stringResource(
+                        when (hoster.accountType) {
+                            AccountType.USERNAME_PASSWORD -> R.string.accounts_login_user_password
+                            AccountType.API_KEY -> R.string.accounts_login_api_key
+                        }
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -484,7 +500,7 @@ private fun HosterSelectCard(hoster: Hoster, selected: Boolean, onClick: () -> U
             if (selected) {
                 Icon(
                     Icons.Default.CheckCircle,
-                    contentDescription = "Ausgewählt",
+                    contentDescription = stringResource(R.string.accounts_selected),
                     tint = hosterColor(hoster.id)
                 )
             }

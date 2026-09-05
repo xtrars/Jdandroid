@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 import com.jdandroid.core.FileNames
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainApiKey
@@ -37,10 +38,8 @@ class DdownloadHoster internal constructor(
     // headless nicht lösbar. Deshalb zwei Wege: API-Key (empfohlen, läuft ohne
     // CAPTCHA) oder Anmeldung im eingebetteten Browser mit Session-Übernahme.
     override val accountType = AccountType.API_KEY
-    override val accountHint =
-        "Empfohlen: API-Key aus dem ddownload-Konto (my.ddownload.com → API). " +
-            "Alternativ unten \"Im Browser anmelden\" für Benutzername/Passwort – " +
-            "der Login verlangt ein CAPTCHA und geht nur im Browser."
+    override val accountHint: String
+        get() = Texts.t("hoster_ddownload_account_hint")
     override val webLoginUrl = "https://ddownload.com/login.html"
 
     /** Free-Downloads (Wartezeit + Turnstile im Browser) sind umgesetzt. */
@@ -118,7 +117,7 @@ class DdownloadHoster internal constructor(
 
     private fun fileCode(url: String): String =
         pattern.find(url)?.groupValues?.get(1)
-            ?: throw HosterException("Ungültiger ddownload-Link", true)
+            ?: throw HosterException(Texts.t("hoster_ddownload_invalid_link"), true)
 
     private data class Resp(
         val code: Int,
@@ -211,11 +210,7 @@ class DdownloadHoster internal constructor(
             resp.body.contains("Attention Required", true) ||
             resp.body.contains("Enable JavaScript and cookies", true)
         if (blocked) {
-            throw HosterException(
-                "ddownload: Zugriff von Cloudflare blockiert (HTTP ${resp.code}). " +
-                    "Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.",
-                permanent = false
-            )
+            throw HosterException(Texts.t("hoster_ddownload_cloudflare_blocked", resp.code), permanent = false)
         }
     }
 
@@ -232,11 +227,7 @@ class DdownloadHoster internal constructor(
     private fun sessionAndAccountPage(account: Account): Pair<OkHttpClient, String> {
         val raw = account.plainCookies
         if (raw.isNullOrBlank()) {
-            throw HosterException(
-                "ddownload: keine Anmeldung hinterlegt. Entweder API-Key eintragen " +
-                    "oder \"Im Browser anmelden\" verwenden (Login verlangt ein CAPTCHA).",
-                permanent = true
-            )
+            throw HosterException(Texts.t("hoster_ddownload_no_login"), permanent = true)
         }
         val client = clientFor(account.id)
         seedCookies(account.id, raw)
@@ -246,7 +237,7 @@ class DdownloadHoster internal constructor(
         if (page.code !in 200..299) {
             // Serverfehler oder Wartungsseite: voruebergehend, kein Grund, das
             // Konto abzuschalten
-            throw HosterException("ddownload: Kontoseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+            throw HosterException(Texts.t("hoster_ddownload_account_page_unreachable", page.code), permanent = false)
         }
         if (!isLoggedIn(page.body)) {
             // Der Cookie-Speicher kann eine vom Server "geloeschte" Session
@@ -257,15 +248,11 @@ class DdownloadHoster internal constructor(
             page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
             checkBlocked(page)
             if (page.code !in 200..299) {
-                throw HosterException("ddownload: Kontoseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+                throw HosterException(Texts.t("hoster_ddownload_account_page_unreachable", page.code), permanent = false)
             }
         }
         if (!isLoggedIn(page.body)) {
-            throw HosterException(
-                "ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut " +
-                    "\"Im Browser anmelden\".",
-                permanent = true
-            )
+            throw HosterException(Texts.t("hoster_ddownload_session_expired"), permanent = true)
         }
         return client to page.body
     }
@@ -359,9 +346,8 @@ class DdownloadHoster internal constructor(
             trafficLeft = traffic.left,
             trafficTotal = trafficTotal,
             trafficUnlimited = traffic.unlimited,
-            statusText = buildString {
-                append(if (premium) tier else freeStatusText)
-                if (traffic.left < 0 && !traffic.unlimited) append(" · Kontingent nicht lesbar")
+            statusText = (if (premium) tier else freeStatusText).let { status ->
+                if (traffic.left < 0 && !traffic.unlimited) Texts.t("hoster_status_quota_unreadable", status) else status
             }
         )
     }
@@ -449,7 +435,7 @@ class DdownloadHoster internal constructor(
     private fun checkViaApi(key: String): AccountInfo {
         val json = apiCall("account/info", mapOf("key" to key))
         val result = json.optJSONObject("result")
-            ?: throw HosterException("ddownload: unerwartete API-Antwort", true)
+            ?: throw HosterException(Texts.t("hoster_ddownload_unexpected_api_response"), true)
         val expire = parseExpire(result.opt("premium_expire")?.toString())
         // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
         // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
@@ -496,27 +482,25 @@ class DdownloadHoster internal constructor(
         ).execute().use { it.code to it.peekBody(Http.MAX_TEXT_BYTES).string() }
         // Cloudflare-/Fehlerseiten sind kein JSON: voruebergehend, nicht "Konto ungueltig"
         val json = runCatching { org.json.JSONObject(text) }.getOrElse {
-            throw HosterException("ddownload-API: keine JSON-Antwort (HTTP $code)", permanent = false)
+            throw HosterException(Texts.t("hoster_ddownload_api_not_json", code), permanent = false)
         }
         val status = json.optInt("status")
         if (status != 200) {
-            val msg = json.optString("msg").ifBlank { "HTTP $status" }
+            val msg = json.optString("msg").ifBlank { Texts.t("hoster_http_status", status) }
             // Dauerhaft nur, was der Text als solches ausweist (Datei weg,
             // Schluessel ungueltig); Tageslimit, Sperren und Serverfehler sind
             // voruebergehend
             val permanent = status == 404 ||
                 msg.contains("not found", true) || msg.contains("invalid key", true) ||
                 msg.contains("wrong key", true) || msg.contains("no such", true)
-            throw HosterException("ddownload: $msg", permanent = permanent)
+            throw HosterException(Texts.t("hoster_ddownload_api_error", msg), permanent = permanent)
         }
         return json
     }
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
-            if (account == null) throw HosterException(
-                "ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).", true
-            )
+            if (account == null) throw HosterException(Texts.t("hoster_ddownload_premium_required"), true)
             val code = fileCode(url)
             account.plainApiKey?.takeIf { it.isNotBlank() }?.let { key ->
                 return@withContext resolveViaApi(key, code)
@@ -526,7 +510,7 @@ class DdownloadHoster internal constructor(
             // zum Direktlink (kein Formular, keine Weiterleitungskette)
             apiKeyFromPage(accountHtml)?.let { key ->
                 runCatching { resolveViaApi(key, code) }
-                    .onFailure { if (it is HosterException && it.permanent && it.message?.contains("offline") == true) throw it }
+                    .onFailure { if (it is FileOfflineException) throw it }
                     .getOrNull()?.let { return@withContext it }
             }
             val pageUrl = "$siteBase/$code"
@@ -583,15 +567,15 @@ class DdownloadHoster internal constructor(
                 val freeMode = page.body.contains("countdown", true) ||
                     Regex("""(?i)name=["']method_free["'][^>]*value=["'][^"']+""").containsMatchIn(page.body)
                 val hint = when {
-                    limitReached -> "Tageslimit erreicht oder Sperre – wird später erneut versucht"
+                    limitReached -> Texts.t("hoster_hint_limit_reached")
                     text.contains("premium", true) && text.contains("only", true) ->
-                        "Datei ist nur für Premium verfügbar"
-                    freeMode -> "Server verlangt Wartezeit (Free-Modus)"
-                    page.code in 300..399 -> "Weiterleitung ohne Datei"
-                    else -> "unerwartete Antwort"
+                        Texts.t("hoster_hint_premium_only")
+                    freeMode -> Texts.t("hoster_hint_free_wait")
+                    page.code in 300..399 -> Texts.t("hoster_hint_redirect_without_file")
+                    else -> Texts.t("hoster_hint_unexpected_response")
                 }
                 throw HosterException(
-                    "ddownload: kein Direktlink erhalten (HTTP ${page.code}, $hint).",
+                    Texts.t("hoster_ddownload_no_direct_link_hint", page.code, hint),
                     permanent = resolveFailurePermanent(page.code, limitReached)
                 )
             }
@@ -640,10 +624,10 @@ class DdownloadHoster internal constructor(
                 val page = client.fetch(pageUrl, referer = siteBase)
                 checkBlocked(page)
                 if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
-                    throw HosterException("Datei ist offline", true)
+                    throw FileOfflineException()
                 }
                 if (page.code !in 200..299) {
-                    throw HosterException("ddownload: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+                    throw HosterException(Texts.t("hoster_ddownload_file_page_unreachable", page.code), permanent = false)
                 }
                 checkFreeBlockers(page.body)
                 fileName = pageFileName(page.body)
@@ -653,10 +637,10 @@ class DdownloadHoster internal constructor(
                     is FreeCaptcha.Span -> mapOf("code" to captcha.code)
                     FreeCaptcha.None -> emptyMap()
                     is FreeCaptcha.Browser -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Captcha (${captcha.kind}) – nur im Browser lösbar"
+                        pageUrl, Texts.t("hoster_ddownload_captcha_browser", captcha.kind)
                     )
                     is FreeCaptcha.Image -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Bild-Captcha – nur im Browser lösbar"
+                        pageUrl, Texts.t("hoster_ddownload_image_captcha")
                     )
                 }
                 form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
@@ -673,7 +657,7 @@ class DdownloadHoster internal constructor(
             // Zeiten als Wartezeit an die Engine zurueckgeben (Formular bleibt
             // in [freeSessions])
             if (countdown > MAX_INLINE_COUNTDOWN) {
-                throw WaitException(countdown + 1, WAIT_TEXT)
+                throw WaitException(countdown + 1, Texts.t("hoster_ddownload_free_countdown"))
             }
             if (countdown > 0) kotlinx.coroutines.delay((countdown + 1) * 1000L)
 
@@ -701,18 +685,18 @@ class DdownloadHoster internal constructor(
                 val body = resp.body
                 when {
                     DdownloadFreePage.isWrongCaptcha(body) -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Captcha abgelehnt – bitte im Browser lösen"
+                        pageUrl, Texts.t("hoster_ddownload_captcha_rejected")
                     )
                     DdownloadFreePage.isExpiredSession(body) -> throw HosterException(
-                        "ddownload: Download-Sitzung abgelaufen – wird erneut versucht", permanent = false
+                        Texts.t("hoster_ddownload_download_session_expired"), permanent = false
                     )
                     DdownloadFreePage.isSkippedCountdown(body) -> throw WaitException(
-                        countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, "ddownload: Countdown nicht eingehalten"
+                        countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, Texts.t("hoster_ddownload_countdown_skipped")
                     )
                 }
                 checkFreeBlockers(body)
                 // Unbekannte Antwort: ein neuer Versuch kostet nichts, daher nie endgueltig
-                throw HosterException("ddownload: kein Direktlink erhalten (HTTP ${resp.code})", permanent = false)
+                throw HosterException(Texts.t("hoster_ddownload_no_direct_link", resp.code), permanent = false)
             }
             ResolvedLink(
                 direct,
@@ -751,9 +735,6 @@ class DdownloadHoster internal constructor(
     /** Countdowns bis hierhin laufen im Prozess ab; laengere werden zur Wartezeit der Engine. */
     private val MAX_INLINE_COUNTDOWN = 180
 
-    /** Grund der Wartezeit vor dem Free-Download (der Countdown steht in der Engine-Meldung). */
-    private val WAIT_TEXT = "ddownload: Countdown vor dem Free-Download"
-
     /** Mindestwartezeit nach einer Sperre ohne konkrete Zeitangabe (Sekunden). */
     private val MIN_RETRY_WAIT = 60
 
@@ -762,7 +743,7 @@ class DdownloadHoster internal constructor(
 
     /** Grund einer Sperre; die Restzeit zaehlt die Engine-Meldung selbst herunter. */
     private fun waitText(@Suppress("UNUSED_PARAMETER") seconds: Int): String =
-        "ddownload: Sperre bis zum nächsten Free-Download"
+        Texts.t("hoster_ddownload_free_locked")
 
     /**
      * Dauerhafte und zeitliche Sperren der Free-Seite: Wartung (vorübergehend),
@@ -771,13 +752,13 @@ class DdownloadHoster internal constructor(
      */
     private fun checkFreeBlockers(html: String) {
         if (DdownloadFreePage.isMaintenance(html)) {
-            throw HosterException("ddownload: Server in Wartung – später erneut", permanent = false)
+            throw HosterException(Texts.t("hoster_ddownload_maintenance"), permanent = false)
         }
-        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException("ddownload: $it", true) }
+        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException(it, true) }
         val wait = DdownloadFreePage.waitSeconds(html)
         if (wait > 0) throw WaitException(wait + 1, waitText(wait + 1))
         if (DdownloadFreePage.isLimitWithoutTime(html)) {
-            throw WaitException(LIMIT_FALLBACK_WAIT, "ddownload: Download-Limit erreicht – in einer Stunde erneut")
+            throw WaitException(LIMIT_FALLBACK_WAIT, Texts.t("hoster_ddownload_limit_reached_hour"))
         }
     }
 
@@ -841,12 +822,12 @@ class DdownloadHoster internal constructor(
             if (!key.isNullOrBlank()) {
                 val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
                     .optJSONArray("result")?.optJSONObject(0)
-                    ?: return@withContext LinkInfo(online = null, note = "Keine Antwort der API")
+                    ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_api_no_response"))
                 val status = info.optInt("status")
                 return@withContext if (status != 200) {
                     // 404 = nicht gefunden; jeder andere Status ist ebenfalls "nicht online"
                     val note = info.optString("msg").ifBlank { null }
-                        ?: if (status == 404) "Datei nicht gefunden" else "Status $status"
+                        ?: if (status == 404) Texts.t("hoster_file_not_found") else Texts.t("hoster_status_code", status)
                     LinkInfo(online = false, note = note)
                 } else {
                     LinkInfo(
@@ -861,16 +842,16 @@ class DdownloadHoster internal constructor(
             val resp = clientFor(0L).fetch("$siteBase/$code")
             val html = resp.body
             if (resp.code == 404 || html.contains("File Not Found", true) || html.contains("No such file", true)) {
-                return@withContext LinkInfo(online = false, note = "Datei nicht gefunden")
+                return@withContext LinkInfo(online = false, note = Texts.t("hoster_file_not_found"))
             }
             if (html.contains("Just a moment", true) || html.contains("cf-challenge", true) ||
                 html.contains("challenge-platform", true) || html.contains("Attention Required", true)
             ) {
-                return@withContext LinkInfo(online = null, note = "Cloudflare-Prüfung – Status unbekannt")
+                return@withContext LinkInfo(online = null, note = Texts.t("hoster_cloudflare_check_unknown"))
             }
             // Fehlerseite (5xx, 403) ist kein Beleg fuer "online"
             if (resp.code !in 200..299) {
-                return@withContext LinkInfo(online = null, note = "HTTP ${resp.code} – Status unbekannt")
+                return@withContext LinkInfo(online = null, note = Texts.t("hoster_http_status_unknown", resp.code))
             }
             LinkInfo(
                 online = true,
@@ -924,14 +905,14 @@ class DdownloadHoster internal constructor(
             val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
                 .optJSONArray("result")?.optJSONObject(0)
             fileName = info?.optString("name")?.ifBlank { null }
-            if (info?.optInt("status") == 404) throw HosterException("Datei ist offline", true)
+            if (info?.optInt("status") == 404) throw FileOfflineException()
         }.onFailure { if (it is HosterException && it.permanent) throw it }
         val result = apiCall("file/direct_link", mapOf("key" to key, "file_code" to code))
             .optJSONObject("result")
-            ?: throw HosterException("ddownload lieferte keine Download-URL", true)
+            ?: throw HosterException(Texts.t("hoster_ddownload_no_download_url"), true)
         val direct = result.optString("url")
         if (direct.isBlank()) {
-            throw HosterException("ddownload lieferte keine Download-URL (Premium nötig?)", true)
+            throw HosterException(Texts.t("hoster_ddownload_no_download_url_premium"), true)
         }
         return ResolvedLink(direct, fileName, result.optLong("size", -1))
     }
@@ -941,7 +922,7 @@ class DdownloadHoster internal constructor(
             html.contains("file was deleted", true) ||
             html.contains("No such file", true)
         ) {
-            throw HosterException("Datei ist offline", true)
+            throw FileOfflineException()
         }
     }
 

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accounts (AccountsScreen), main frame (MainActivity: tabs, plus button,
+         messages) and view models. Keys: accounts_<meaning>. -->
+
+    <!-- Account list -->
+    <string name="accounts_title">Accounts</string>
+    <string name="accounts_empty_hint">No accounts yet.\n\nTap + to add a premium account or API key so downloads can start.</string>
+    <string name="accounts_api_key_stored">API key stored</string>
+    <string name="accounts_browser_login">Browser login</string>
+    <string name="accounts_not_checked">Not checked yet</string>
+    <string name="accounts_status_premium_until">%1$s · until %2$s</string>
+    <string name="accounts_check">Check</string>
+    <string name="accounts_delete_title">Delete account?</string>
+    <string name="accounts_delete_text">%1$s: %2$s will be removed. Downloads from this hoster can no longer start afterwards.</string>
+    <string name="accounts_api_key">API key</string>
+
+    <!-- Remaining traffic: text plus age of the reading -->
+    <string name="accounts_traffic_unlimited">unlimited</string>
+    <string name="accounts_traffic_unknown">Remaining traffic unknown</string>
+    <string name="accounts_traffic_age_minutes">%1$s · %2$d min ago</string>
+    <string name="accounts_traffic_age_hours">%1$s · %2$d h ago</string>
+
+    <!-- "Add account" dialog -->
+    <string name="accounts_add_title">Add account</string>
+    <string name="accounts_choose_hoster">Choose hoster</string>
+    <string name="accounts_username_label">Username / email</string>
+    <string name="accounts_password_label">Password</string>
+    <string name="accounts_web_login_button">Sign in via browser (username/password)</string>
+    <string name="accounts_save_and_check">Save &amp; check</string>
+    <string name="accounts_login_user_password">Login with username &amp; password</string>
+    <string name="accounts_login_api_key">Login with API key</string>
+    <string name="accounts_selected">Selected</string>
+    <string name="accounts_web_login_initial">Please sign in – including \"I am not a robot\".</string>
+
+    <!-- Main frame: tabs and plus button -->
+    <string name="accounts_tab_downloads">Downloads</string>
+    <string name="accounts_tab_collector">Link Grabber</string>
+    <string name="accounts_tab_settings">Settings</string>
+    <string name="accounts_add_links">Add links</string>
+
+    <!-- Messages after adding links -->
+    <plurals name="accounts_links_collected">
+        <item quantity="one">%1$d link added to the Link Grabber</item>
+        <item quantity="other">%1$d links added to the Link Grabber</item>
+    </plurals>
+    <plurals name="accounts_links_started">
+        <item quantity="one">%1$d link started</item>
+        <item quantity="other">%1$d links started</item>
+    </plurals>
+    <string name="accounts_no_new_links">No new links – all already present</string>
+
+    <!-- DLC import -->
+    <string name="accounts_not_dlc_opened">The opened file is not a DLC container.</string>
+    <string name="accounts_not_dlc_chosen">The selected file is not a DLC container</string>
+    <string name="accounts_dlc_read_failed">The DLC file could not be read</string>
+    <string name="accounts_dlc_decrypting">Decrypting DLC …</string>
+    <plurals name="accounts_dlc_links">
+        <item quantity="one">%1$d link</item>
+        <item quantity="other">%1$d links</item>
+    </plurals>
+    <plurals name="accounts_dlc_packages">
+        <item quantity="one">%1$d package</item>
+        <item quantity="other">%1$d packages</item>
+    </plurals>
+    <string name="accounts_dlc_started">%1$s in %2$s started</string>
+    <string name="accounts_dlc_collected">%1$s in %2$s added to the Link Grabber</string>
+    <plurals name="accounts_dlc_no_new_links">
+        <item quantity="one">DLC read, but no new supported links (%1$d link in total)</item>
+        <item quantity="other">DLC read, but no new supported links (%1$d links in total)</item>
+    </plurals>
+    <string name="accounts_dlc_import_failed">DLC import failed</string>
+    <string name="accounts_dlc_invalid">DLC import failed: the file is not a valid container</string>
+
+    <!-- Packages -->
+    <string name="accounts_no_package">No package</string>
+    <string name="accounts_no_finished_archives">No finished archives in this package</string>
+</resources>

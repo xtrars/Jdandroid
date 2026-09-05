@@ -47,10 +47,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jdandroid.R
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.OnlineState
@@ -90,17 +93,17 @@ fun LinkGrabberScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Linksammler") },
+                title = { Text(stringResource(R.string.linkgrabber_title)) },
                 colors = jdTopBarColors(),
                 actions = {
                     IconButton(onClick = { dlcPicker.launch(arrayOf("*/*")) }) {
-                        Icon(JdIcons.UploadFile, contentDescription = "DLC-Datei importieren")
+                        Icon(JdIcons.UploadFile, contentDescription = stringResource(R.string.linkgrabber_import_dlc))
                     }
                     IconButton(onClick = { vm.recheckCollected() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Erneut prüfen")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.linkgrabber_recheck))
                     }
                     TextButton(enabled = total > 0, onClick = { vm.startAllCollected() }) {
-                        Text("Alle starten")
+                        Text(stringResource(R.string.linkgrabber_start_all))
                     }
                 }
             )
@@ -114,9 +117,7 @@ fun LinkGrabberScreen(
         if (groups.isEmpty()) {
             Box(content.padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
-                    "Der Linksammler ist leer.\n\nNeue Links (Einfügen, Teilen, DLC über das " +
-                        "Datei-Symbol, Click'n'Load) erscheinen hier, werden online geprüft " +
-                        "und starten erst auf Wunsch.",
+                    stringResource(R.string.linkgrabber_empty_hint),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -135,10 +136,10 @@ fun LinkGrabberScreen(
                             Modifier.fillMaxWidth().padding(bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            StatusPill("$offline offline", Tone.ERROR)
+                            StatusPill(pluralStringResource(R.plurals.linkgrabber_offline_count, offline, offline), Tone.ERROR)
                             Spacer(Modifier.weight(1f))
                             TextButton(onClick = { vm.removeOfflineCollected() }) {
-                                Text("Offline-Links entfernen")
+                                Text(stringResource(R.string.linkgrabber_remove_offline))
                             }
                         }
                     }
@@ -187,7 +188,7 @@ private fun CollectorPackageHeader(
             IconButton(onClick = onToggle) {
                 Icon(
                     if (collapsed) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (collapsed) "Aufklappen" else "Zuklappen"
+                    contentDescription = stringResource(if (collapsed) R.string.linkgrabber_expand else R.string.linkgrabber_collapse)
                 )
             }
             Column(Modifier.weight(1f)) {
@@ -198,29 +199,32 @@ private fun CollectorPackageHeader(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
-                MetaRow(
-                    buildString {
-                        append("${group.items.size} Link(s) · $online online")
-                        if (checking > 0) append(" · $checking in Prüfung")
-                        if (known > 0) append(" · ${formatBytes(known)}")
-                        group.pkg.source?.let { append(" · von $it") }
-                    }
-                )
+                // Vollstaendige Formatstrings je Baustein, mit " · " verbunden
+                val parts = buildList {
+                    add(pluralStringResource(R.plurals.linkgrabber_link_count, group.items.size, group.items.size))
+                    add(pluralStringResource(R.plurals.linkgrabber_online_count, online, online))
+                    if (checking > 0) add(pluralStringResource(R.plurals.linkgrabber_checking_count, checking, checking))
+                    if (known > 0) add(formatBytes(known))
+                    group.pkg.source?.let { add(stringResource(R.string.linkgrabber_source, it)) }
+                }
+                MetaRow(parts.joinToString(" · "))
             }
             if (group.pkg.id != 0L) {
                 IconButton(onClick = { vm.startCollectedPackage(group.pkg.id) }) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Paket starten", tint = MaterialTheme.colorScheme.primary)
+                    Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.linkgrabber_start_package), tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = { confirmDelete = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Paket verwerfen")
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.linkgrabber_discard_package))
                 }
             }
         }
     }
     if (confirmDelete) {
         ConfirmDeleteDialog(
-            title = "Paket verwerfen?",
-            text = "\"${group.pkg.name}\" mit ${group.items.size} Link(s) wird aus dem Linksammler entfernt.",
+            title = stringResource(R.string.linkgrabber_discard_package_question),
+            text = pluralStringResource(
+                R.plurals.linkgrabber_discard_package_text, group.items.size, group.pkg.name, group.items.size
+            ),
             onConfirm = { vm.deletePackage(group.pkg.id) },
             onDismiss = { confirmDelete = false }
         )
@@ -242,16 +246,19 @@ private fun CollectorRow(item: DownloadItem, vm: DownloadViewModel, modifier: Mo
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
+                val stateText = stringResource(
+                    when (item.online) {
+                        OnlineState.ONLINE -> R.string.linkgrabber_state_online
+                        OnlineState.OFFLINE -> R.string.linkgrabber_state_offline
+                        OnlineState.CHECKING -> R.string.linkgrabber_state_checking
+                        else -> R.string.linkgrabber_state_unchecked
+                    }
+                )
                 MetaRow(
                     buildString {
                         append(hosterName)
                         if (item.fileSize > 0) append(" · ${formatBytes(item.fileSize)}")
-                        when (item.online) {
-                            OnlineState.ONLINE -> append(" · online")
-                            OnlineState.OFFLINE -> append(" · offline")
-                            OnlineState.CHECKING -> append(" · wird geprüft …")
-                            else -> append(" · nicht geprüft")
-                        }
+                        append(" · ").append(stateText)
                         if (item.online != OnlineState.ONLINE) item.errorMessage?.let { append(" ($it)") }
                     },
                     color = if (item.online == OnlineState.OFFLINE) MaterialTheme.colorScheme.error
@@ -260,7 +267,7 @@ private fun CollectorRow(item: DownloadItem, vm: DownloadViewModel, modifier: Mo
                 )
             }
             IconButton(onClick = { vm.delete(item.id) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Link entfernen")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.linkgrabber_remove_link))
             }
         }
     }
@@ -270,18 +277,18 @@ private fun CollectorRow(item: DownloadItem, vm: DownloadViewModel, modifier: Mo
 private fun OnlineIcon(state: Int) {
     when (state) {
         OnlineState.ONLINE -> Icon(
-            Icons.Default.CheckCircle, contentDescription = "Online",
+            Icons.Default.CheckCircle, contentDescription = stringResource(R.string.linkgrabber_icon_online),
             tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp)
         )
         OnlineState.OFFLINE -> Icon(
-            JdIcons.Error, contentDescription = "Offline",
+            JdIcons.Error, contentDescription = stringResource(R.string.linkgrabber_icon_offline),
             tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp)
         )
         OnlineState.CHECKING -> CircularProgressIndicator(
             modifier = Modifier.size(20.dp), strokeWidth = 2.dp
         )
         else -> Icon(
-            JdIcons.Help, contentDescription = "Nicht geprüft",
+            JdIcons.Help, contentDescription = stringResource(R.string.linkgrabber_icon_unchecked),
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)
         )
     }

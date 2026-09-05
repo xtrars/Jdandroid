@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Linksammler (LinkGrabberScreen, AddLinksDialog, Captcha- und Login-Browser). Schluessel: linkgrabber_<bedeutung>. -->
+
+    <!-- LinkGrabberScreen -->
+    <string name="linkgrabber_title">Linksammler</string>
+    <string name="linkgrabber_import_dlc">DLC-Datei importieren</string>
+    <string name="linkgrabber_recheck">Erneut prüfen</string>
+    <string name="linkgrabber_start_all">Alle starten</string>
+    <string name="linkgrabber_empty_hint">Der Linksammler ist leer.\n\nNeue Links (Einfügen, Teilen, DLC über das Datei-Symbol, Click\'n\'Load) erscheinen hier, werden online geprüft und starten erst auf Wunsch.</string>
+    <plurals name="linkgrabber_offline_count">
+        <item quantity="one">%1$d offline</item>
+        <item quantity="other">%1$d offline</item>
+    </plurals>
+    <string name="linkgrabber_remove_offline">Offline-Links entfernen</string>
+    <string name="linkgrabber_expand">Aufklappen</string>
+    <string name="linkgrabber_collapse">Zuklappen</string>
+    <plurals name="linkgrabber_link_count">
+        <item quantity="one">%1$d Link</item>
+        <item quantity="other">%1$d Links</item>
+    </plurals>
+    <plurals name="linkgrabber_online_count">
+        <item quantity="one">%1$d online</item>
+        <item quantity="other">%1$d online</item>
+    </plurals>
+    <plurals name="linkgrabber_checking_count">
+        <item quantity="one">%1$d in Prüfung</item>
+        <item quantity="other">%1$d in Prüfung</item>
+    </plurals>
+    <string name="linkgrabber_source">von %1$s</string>
+    <string name="linkgrabber_start_package">Paket starten</string>
+    <string name="linkgrabber_discard_package">Paket verwerfen</string>
+    <string name="linkgrabber_discard_package_question">Paket verwerfen?</string>
+    <plurals name="linkgrabber_discard_package_text">
+        <item quantity="one">„%1$s“ mit %2$d Link wird aus dem Linksammler entfernt.</item>
+        <item quantity="other">„%1$s“ mit %2$d Links wird aus dem Linksammler entfernt.</item>
+    </plurals>
+    <string name="linkgrabber_remove_link">Link entfernen</string>
+    <string name="linkgrabber_state_online">online</string>
+    <string name="linkgrabber_state_offline">offline</string>
+    <string name="linkgrabber_state_checking">wird geprüft …</string>
+    <string name="linkgrabber_state_unchecked">nicht geprüft</string>
+    <string name="linkgrabber_icon_online">Online</string>
+    <string name="linkgrabber_icon_offline">Offline</string>
+    <string name="linkgrabber_icon_unchecked">Nicht geprüft</string>
+
+    <!-- AddLinksDialog -->
+    <string name="linkgrabber_add_title">Links hinzufügen</string>
+    <string name="linkgrabber_add_placeholder">Links hier einfügen (einer pro Zeile oder beliebiger Text)</string>
+    <string name="linkgrabber_add_package_name">Paketname (optional)</string>
+    <string name="linkgrabber_add_none_recognized">Keine unterstützten Links erkannt (Rapidgator, 1fichier, ddownload)</string>
+    <plurals name="linkgrabber_add_recognized">
+        <item quantity="one">%1$d Link erkannt: %2$s</item>
+        <item quantity="other">%1$d Links erkannt: %2$s</item>
+    </plurals>
+    <string name="linkgrabber_add_hoster_count">%1$d× %2$s</string>
+    <string name="linkgrabber_add_confirm">Hinzufügen</string>
+
+    <!-- CaptchaScreen -->
+    <string name="linkgrabber_captcha_title">Captcha lösen – %1$s</string>
+    <string name="linkgrabber_captcha_hint">Captcha lösen und den Download starten – die Datei lädt danach die App.</string>
+    <string name="linkgrabber_captcha_blocked">Blockiert: %1$s (nur %2$s und Captcha-Dienste sind erlaubt).</string>
+    <string name="linkgrabber_unknown_address">unbekannte Adresse</string>
+
+    <!-- WebLoginScreen -->
+    <string name="linkgrabber_login_title">Im Browser anmelden</string>
+    <string name="linkgrabber_login_accept">Übernehmen</string>
+    <string name="linkgrabber_login_no_session">Noch keine Session gefunden – bitte zuerst anmelden.</string>
+    <string name="linkgrabber_login_blocked">Blockiert: %1$s (nur %2$s ist erlaubt).</string>
+    <string name="linkgrabber_login_detected">Anmeldung erkannt – oben auf „Übernehmen“ tippen.</string>
+</resources>

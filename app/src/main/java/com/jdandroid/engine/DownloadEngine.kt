@@ -14,7 +14,10 @@ import com.jdandroid.core.FileNames
 import com.jdandroid.core.FreeMode
 import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
+import com.jdandroid.core.Texts
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
+import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
 import com.jdandroid.data.hasPremium
@@ -170,7 +173,7 @@ class DownloadEngine(
             context.contentResolver.openOutputStream(target.uri)?.use { out ->
                 file.inputStream().use { it.copyTo(out) }
             } ?: run { target.delete(); return null }
-            "${dir.name ?: "Zielordner"}/${target.name ?: candidate}"
+            "${dir.name ?: Texts.t("engine_target_folder")}/${target.name ?: candidate}"
         } catch (e: Exception) {
             target.delete()
             null
@@ -322,7 +325,7 @@ class DownloadEngine(
                 }
             }
             val hoster = HosterRegistry.byId(item.hosterId)
-                ?: throw HosterException("Unbekannter Hoster", true)
+                ?: throw HosterException(Texts.t("engine_unknown_hoster"), true)
             // Nur ein Premium-Konto nimmt den Premium-Weg: ein gueltiges
             // Free-Konto wuerde dort dauerhaft scheitern ("benoetigt Premium")
             val account = accountDao.validForHoster(item.hosterId)
@@ -334,8 +337,8 @@ class DownloadEngine(
                 // fuer genau diesen Versuch
                 app.settings.currentFreeMode() ->
                     hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
-                account != null -> throw HosterException(FreeMode.NO_PREMIUM_MESSAGE, true)
-                else -> throw HosterException(FreeMode.DISABLED_MESSAGE, true)
+                account != null -> throw HosterException(FreeMode.noPremiumMessage(), true)
+                else -> throw HosterException(FreeMode.disabledMessage(), true)
             }
 
             var current = dao.byId(id) ?: return
@@ -355,14 +358,14 @@ class DownloadEngine(
             if (e.permanent) {
                 dao.setStatus(id, DownloadStatus.FAILED, e.message)
             } else {
-                handleTransientFailure(id, e.message ?: "Fehler")
+                handleTransientFailure(id, e.message ?: Texts.t("engine_generic_error"))
             }
         } catch (e: com.jdandroid.data.Secrets.SecretsException) {
             // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
             dao.setStatus(id, DownloadStatus.FAILED, e.message)
         } catch (e: IllegalArgumentException) {
             // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
-            dao.setStatus(id, DownloadStatus.FAILED, "Ungültige Download-Adresse: ${e.message}")
+            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_invalid_download_url", e.message ?: ""))
         } catch (e: Exception) {
             // Abbruch (Pause/Loeschen) kommt von OkHttp als IOException("Canceled"):
             // nicht als voruebergehenden Fehler zaehlen, sondern sauber beenden
@@ -389,16 +392,13 @@ class DownloadEngine(
         val item = dao.byId(id) ?: return
         val attempts = item.attempts + 1
         if (attempts > MAX_ATTEMPTS) {
-            dao.setStatus(
-                id, DownloadStatus.FAILED,
-                "$message (nach $MAX_ATTEMPTS Versuchen aufgegeben)"
-            )
+            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_gave_up", message, MAX_ATTEMPTS))
             return
         }
         val backoff = backoffMillis(attempts)
         dao.scheduleRetry(
             id, attempts, System.currentTimeMillis() + backoff,
-            "$message – Versuch $attempts/$MAX_ATTEMPTS in ${backoff / 1000}s"
+            Texts.t("engine_retry_scheduled", message, attempts, MAX_ATTEMPTS, backoff / 1000)
         )
         // Den Folgeversuch stoesst der Timer aus pump() an (run() ruft pump() im finally)
     }
@@ -407,27 +407,29 @@ class DownloadEngine(
      * Free-Modus: der Hoster verlangt eine Wartezeit. Der Eintrag bleibt
      * QUEUED mit retryAt nach Ablauf; pump() ueberspringt ihn bis dahin
      * (nextQueued prueft retryAt) und stellt den Timer ([armRetryTimer]).
-     * Kein Fehlversuch - Warten ist kein Fehler. Der Grund des Hosters
-     * ("Tageslimit erreicht") bleibt in der Meldung sichtbar.
+     * Kein Fehlversuch - Warten ist kein Fehler. Gespeichert wird der Code
+     * [FreeMode.WAIT_CODE] samt Grund des Hosters ("Tageslimit erreicht");
+     * die Anzeige baut daraus Countdown und Text.
      */
     private suspend fun scheduleFreeWait(id: Long, seconds: Int, reason: String?) {
         val item = dao.byId(id) ?: return
         val retryAt = FreeMode.retryAt(System.currentTimeMillis(), seconds)
-        dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitMessage(seconds, reason))
+        dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitNote(reason))
     }
 
     /**
      * Free-Modus: Captcha noetig. Der Eintrag bleibt QUEUED, aber mit retryAt
      * weit in der Zukunft - erst "Captcha loesen" (Browser) gibt ihn wieder
      * frei. Seite und Session-Cookies merkt sich [FreeDownloads] prozessweit;
-     * die Meldung nennt den Grund des Hosters (Passwort, Turnstile).
+     * gespeichert wird der Code [FreeMode.CAPTCHA_CODE] samt Grund des
+     * Hosters (Passwort, Turnstile).
      */
     private suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
         val item = dao.byId(id) ?: return
         FreeDownloads.captchaRequired(id, CaptchaPage(e.pageUrl, e.cookieUrl, e.cookies))
         dao.scheduleRetry(
             id, item.attempts, System.currentTimeMillis() + FreeMode.CAPTCHA_HOLD_MS,
-            FreeMode.captchaMessage(e.message)
+            FreeMode.captchaNote(e.message)
         )
     }
 
@@ -539,15 +541,14 @@ class DownloadEngine(
             // Teildatei zu lang (z.B. Fremdinhalt): muss neu geladen werden
             ResponseKind.RestartMismatch -> {
                 target.delete()
-                throw HosterException("Teildatei passt nicht zur Dateigröße – Neustart")
+                throw HosterException(Texts.t("engine_part_size_mismatch"))
             }
-            ResponseKind.HttpError -> throw HosterException("Server antwortete mit HTTP ${resp.code}")
+            ResponseKind.HttpError -> throw HosterException(Texts.t("engine_http_error", resp.code))
             // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
             // niemals als Dateiinhalt speichern - sonst landet die Seite in der
             // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
             ResponseKind.HtmlPage -> throw HosterException(
-                "Server lieferte eine HTML-Seite statt der Datei (${resp.request.url.host}) – " +
-                    "Link wird neu aufgelöst"
+                Texts.t("engine_html_instead_of_file", resp.request.url.host)
             )
             // Server ignoriert Range -> von vorn beginnen
             ResponseKind.RangeIgnored -> {
@@ -556,7 +557,7 @@ class DownloadEngine(
             }
             ResponseKind.Continue -> Unit
         }
-        val body = resp.body ?: throw HosterException("Leere Antwort beim Download")
+        val body = resp.body ?: throw HosterException(Texts.t("engine_empty_response"))
         val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
 
         // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
@@ -565,8 +566,7 @@ class DownloadEngine(
         val free = downloadDir().usableSpace
         if (needed > 0 && free in 0 until needed) {
             throw HosterException(
-                "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
-                    "${free / (1 shl 20)} MiB frei",
+                Texts.t("engine_not_enough_space", formatBytes(needed), formatBytes(free)),
                 permanent = true
             )
         }
@@ -648,7 +648,7 @@ class DownloadEngine(
             }
         }
         if (total > 0 && written < total) {
-            throw IOException("Download unvollständig ($written von $total Bytes)")
+            throw IOException(Texts.t("engine_download_incomplete", formatBytes(written), formatBytes(total)))
         }
         return true
     }
@@ -708,7 +708,7 @@ class DownloadEngine(
             val clash = archiveFile.isFile && temp.path != archiveFile.path &&
                 dao.countSameNameElsewhere(fileName, packageId) > 0
             if (clash) {
-                markCompleted(id, finish(temp, fileName), "Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt")
+                markCompleted(id, finish(temp, fileName), Texts.t("engine_archive_name_clash"))
                 return@withLock null
             }
             // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
@@ -745,7 +745,7 @@ class DownloadEngine(
         val primary = Extractor.findPrimaryVolume(downloadDir(), set.base)
         if (primary == null) {
             dao.byId(set.id)?.let { com.jdandroid.data.AccountRefresher.refreshHoster(app, it.hosterId) }
-            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
+            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, Texts.t("engine_first_volume_missing_not_extracted"))
             return
         }
         // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
@@ -819,10 +819,10 @@ class DownloadEngine(
     }
 
     private suspend fun extractNowInner(id: Long): String? {
-        val item = dao.byId(id) ?: return "Eintrag nicht gefunden"
-        if (item.status == DownloadStatus.EXTRACTING) return "Wird bereits entpackt"
-        if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
-        var name = item.fileName ?: return "Dateiname unbekannt"
+        val item = dao.byId(id) ?: return Texts.t("engine_entry_not_found")
+        if (item.status == DownloadStatus.EXTRACTING) return Texts.t("engine_already_extracting")
+        if (item.status != DownloadStatus.COMPLETED) return Texts.t("engine_only_completed_extractable")
+        var name = item.fileName ?: return Texts.t("engine_file_name_unknown")
         var base = ArchiveNames.archiveBase(name)
         if (base == null) {
             // Namen wie "name part1 rar": alle Teile des Sets umbenennen (Datei
@@ -850,29 +850,29 @@ class DownloadEngine(
             // Vielleicht ein Archiv ohne passende Endung
             val local = File(downloadDir(), name).takeIf { it.isFile }
                 ?: run { val f = File(downloadDir(), name); if (restoreArchive(item, f)) f else null }
-            val ext = local?.let { Extractor.sniffExtension(it) } ?: return "Kein Archiv: $name"
+            val ext = local?.let { Extractor.sniffExtension(it) } ?: return Texts.t("engine_not_an_archive", name)
             val renamed = File(downloadDir(), "$name.$ext")
             local.renameTo(renamed)
             name = renamed.name
             dao.renameFile(id, name)
-            base = ArchiveNames.archiveBase(name) ?: return "Kein Archiv: $name"
+            base = ArchiveNames.archiveBase(name) ?: return Texts.t("engine_not_an_archive", name)
         }
         for (part in dao.completedParts(item.packageId, base)) {
             val partName = part.fileName ?: continue
             val local = File(downloadDir(), partName)
             if (!local.isFile && !restoreArchive(part, local)) {
-                return "Archivteil nicht mehr vorhanden: $partName"
+                return Texts.t("engine_archive_part_missing", partName)
             }
         }
         val primary = Extractor.findPrimaryVolume(downloadDir(), base)
-            ?: return "Erstes Archiv-Teil fehlt"
-        if (ExtractionRegistry.isActive(base)) return "Wird bereits entpackt"
+            ?: return Texts.t("engine_first_volume_missing")
+        if (ExtractionRegistry.isActive(base)) return Texts.t("engine_already_extracting")
         val set = ArchiveSet(id, item.packageId, base)
         completionMutex.withLock {
             // Laufende Teile gehoeren nicht ins Set: sie wuerden auf EXTRACTING
             // gesetzt und nach dem Entpacken als "fertig" markiert, obwohl sie noch laden
             if (dao.pendingLoadingParts(item.packageId, base, id) > 0) {
-                return "Archiv unvollständig – weitere Teile werden noch geladen"
+                return Texts.t("engine_archive_incomplete_loading")
             }
             dao.setExtractingSet(archiveSetIds(set))
         }
@@ -1028,7 +1028,7 @@ class DownloadEngine(
             }
             return if (allOk) {
                 dir.deleteRecursively()
-                "${root.name ?: "Zielordner"}/$base"
+                "${root.name ?: Texts.t("engine_target_folder")}/$base"
             } else dir.absolutePath
         }
         // Direkter SDK_INT-Vergleich statt Hilfsvariable: Lint (AGP 8.13) erkennt
@@ -1097,7 +1097,7 @@ class DownloadEngine(
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (!actual.equals(expected, ignoreCase = true)) {
             file.delete()
-            throw HosterException("Prüfsumme ($algorithm) stimmt nicht – Datei wird erneut geladen")
+            throw HosterException(Texts.t("engine_hash_mismatch", algorithm))
         }
     }
 
@@ -1178,8 +1178,12 @@ class DownloadEngine(
         /** Maximale automatische Wiederholversuche je Download. */
         const val MAX_ATTEMPTS = 5
 
-        /** Hinweis an fertigen Archiv-Teilen, solange andere Teile noch laden. */
-        const val WAITING_NOTE = "Warte auf weitere Archiv-Teile"
+        /**
+         * Vermerk an fertigen Archiv-Teilen, solange andere Teile noch laden.
+         * Untranslatierter Code (SQL-Vergleich in [com.jdandroid.data.ArchiveSets.WAITING_PARTS]);
+         * die Anzeige uebersetzt ihn (`downloads_waiting_for_parts`).
+         */
+        const val WAITING_NOTE = DownloadNotes.WAITING_PARTS
 
         /** Wartezeit vor dem [attempt]-ten Wiederholversuch: 10 s, 20 s, ... hoechstens 5 min. */
         fun backoffMillis(attempt: Int): Long {

@@ -7,7 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Reine Logik des Free-Modus: Wartezeit-Anzeige, retryAt, Captcha-Erkennung. */
+/** Reine Logik des Free-Modus: gespeicherte Codes, Wartezeit-Anzeige, retryAt, Captcha-Erkennung. */
 class FreeModeTest {
 
     @Test
@@ -31,48 +31,56 @@ class FreeModeTest {
     }
 
     @Test
-    fun meldungTraegtPraefix() {
-        val message = FreeMode.waitMessage(90)
-        assertEquals("Wartezeit im Free-Modus: 01:30", message)
-        assertTrue(FreeMode.isWaitMessage(message))
+    fun vermerkTraegtDenCode() {
+        val note = FreeMode.waitNote()
+        assertEquals("FREE_WAIT", note)
+        assertTrue(FreeMode.isWaitMessage(note))
         assertFalse(FreeMode.isWaitMessage("Server antwortete mit HTTP 503"))
         assertFalse(FreeMode.isWaitMessage(null))
     }
 
     @Test
-    fun grundDerWartezeitBleibtInDerMeldungUndBeimHerunterzaehlen() {
-        val message = FreeMode.waitMessage(3 * 3600, "Rapidgator: Tageslimit im Free-Modus erreicht")
-        assertEquals("Wartezeit im Free-Modus: 3:00:00 – Rapidgator: Tageslimit im Free-Modus erreicht", message)
-        assertTrue(FreeMode.isWaitMessage(message))
-        assertEquals("Rapidgator: Tageslimit im Free-Modus erreicht", FreeMode.waitReason(message))
-        // Die Liste zaehlt herunter und haengt den Grund wieder an
+    fun grundDerWartezeitBleibtImVermerkUndInDerAnzeige() {
+        val note = FreeMode.waitNote("Rapidgator: Tageslimit im Free-Modus erreicht")
+        assertEquals("FREE_WAIT|Rapidgator: Tageslimit im Free-Modus erreicht", note)
+        assertTrue(FreeMode.isWaitMessage(note))
+        assertEquals("Rapidgator: Tageslimit im Free-Modus erreicht", FreeMode.waitReason(note))
+        // Die Anzeige zaehlt anhand von retryAt herunter und haengt den Grund an
+        val now = 5_000_000L
         assertEquals(
             "Wartezeit im Free-Modus: 2:59:00 – Rapidgator: Tageslimit im Free-Modus erreicht",
-            FreeMode.waitMessage(3 * 3600 - 60, FreeMode.waitReason(message))
+            FreeMode.displayText(note, now + (3 * 3600 - 60) * 1000L, now)
         )
         // Ein Grund mit eigenem Gedankenstrich bleibt ganz erhalten
-        val ip = FreeMode.waitMessage(3601, "1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde")
+        val ip = FreeMode.waitNote("1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde")
         assertEquals("1fichier: IP-Adresse gesperrt – Freigabe in einer Stunde", FreeMode.waitReason(ip))
         // Ohne Grund nur der Countdown
-        assertEquals("Wartezeit im Free-Modus: 01:30", FreeMode.waitMessage(90, null))
-        assertEquals("Wartezeit im Free-Modus: 01:30", FreeMode.waitMessage(90, "  "))
-        assertNull(FreeMode.waitReason(FreeMode.waitMessage(90)))
+        assertEquals("FREE_WAIT", FreeMode.waitNote(null))
+        assertEquals("FREE_WAIT", FreeMode.waitNote("  "))
+        assertEquals("Wartezeit im Free-Modus: 01:30", FreeMode.displayText(FreeMode.waitNote(), now + 90_000, now))
+        assertNull(FreeMode.waitReason(FreeMode.waitNote()))
         assertNull(FreeMode.waitReason("Fehler – Versuch 2/5 in 20s"))
         assertNull(FreeMode.waitReason(null))
+        // Fremde Vermerke bekommen keinen Anzeigetext
+        assertNull(FreeMode.displayText("Fehler – Versuch 2/5 in 20s", now + 20_000, now))
+        assertNull(FreeMode.displayText(null, 0, now))
     }
 
     @Test
-    fun captchaMeldungNenntDenGrundUndDenMenuepunkt() {
-        val message = FreeMode.captchaMessage("1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben")
+    fun captchaVermerkNenntDenGrundUndDieAnzeigeDenMenuepunkt() {
+        val note = FreeMode.captchaNote("1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben")
+        assertEquals("FREE_CAPTCHA|1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben", note)
         assertEquals(
-            "1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben – im Menü \"Captcha lösen\"",
-            message
+            "1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben – im Menü „Captcha lösen“",
+            FreeMode.displayText(note, 0, 0)
         )
-        assertTrue(FreeMode.isCaptchaHold(message, 0, 0))
-        assertEquals(FreeMode.CAPTCHA_MESSAGE, FreeMode.captchaMessage(null))
-        assertEquals(FreeMode.CAPTCHA_MESSAGE, FreeMode.captchaMessage(""))
-        assertTrue(FreeMode.isCaptchaHold(FreeMode.CAPTCHA_MESSAGE, 0, 0))
-        // Ein Hoster-Text ohne Hinweis ist keine Captcha-Meldung
+        assertTrue(FreeMode.isCaptchaHold(note, 0, 0))
+        assertEquals("FREE_CAPTCHA", FreeMode.captchaNote(null))
+        assertEquals("FREE_CAPTCHA", FreeMode.captchaNote(""))
+        assertEquals("Captcha nötig – im Menü „Captcha lösen“", FreeMode.displayText(FreeMode.captchaNote(), 0, 0))
+        assertNull(FreeMode.captchaReason(FreeMode.captchaNote()))
+        assertTrue(FreeMode.isCaptchaHold(FreeMode.captchaNote(), 0, 0))
+        // Ein Hoster-Text ohne Code ist kein Captcha-Vermerk
         assertFalse(FreeMode.isCaptchaHold("Rapidgator: Captcha (Turnstile) – nur im Browser lösbar", 0, 0))
     }
 
@@ -98,10 +106,10 @@ class FreeModeTest {
     @Test
     fun captchaEintragErkanntAnMeldungOderFernemRetryAt() {
         val now = 5_000_000L
-        assertTrue(FreeMode.isCaptchaHold(FreeMode.CAPTCHA_MESSAGE, 0, now))
+        assertTrue(FreeMode.isCaptchaHold(FreeMode.captchaNote(), 0, now))
         assertTrue(FreeMode.isCaptchaHold(null, now + FreeMode.CAPTCHA_HOLD_MS, now))
         // Normale Wartezeit oder Backoff ist kein Captcha
-        assertFalse(FreeMode.isCaptchaHold(FreeMode.waitMessage(120), now + 120_000, now))
+        assertFalse(FreeMode.isCaptchaHold(FreeMode.waitNote(), now + 120_000, now))
         assertFalse(FreeMode.isCaptchaHold("Fehler – Versuch 2/5 in 20s", now + 20_000, now))
         assertFalse(FreeMode.isCaptchaHold(null, 0, now))
     }

@@ -33,8 +33,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.jdandroid.R
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -103,10 +106,10 @@ fun CaptchaScreen(
     onCancel: () -> Unit,
     onDirectLink: (url: String, cookies: String?) -> Unit
 ) {
+    val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var status by remember {
-        mutableStateOf("Captcha lösen und den Download starten – die Datei lädt danach die App.")
-    }
+    val captchaHint = stringResource(R.string.linkgrabber_captcha_hint)
+    var status by remember { mutableStateOf(captchaHint) }
     val pageHost = remember(pageUrl) { android.net.Uri.parse(pageUrl).host }
     // Nur einmal uebernehmen: Weiterleitung und DownloadListener koennen
     // dieselbe Adresse mehrfach melden
@@ -153,10 +156,10 @@ fun CaptchaScreen(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
-                title = { Text("Captcha lösen – $hosterName") },
+                title = { Text(stringResource(R.string.linkgrabber_captcha_title, hosterName)) },
                 navigationIcon = {
                     IconButton(onClick = { cancel() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Abbrechen")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_cancel))
                     }
                 }
             )
@@ -194,8 +197,11 @@ fun CaptchaScreen(
                                     CaptchaRequestAction.CAPTURE -> { capture(url); true }
                                     CaptchaRequestAction.LOAD -> false
                                     CaptchaRequestAction.BLOCK -> {
-                                        status = "Blockiert: ${host ?: "unbekannte Adresse"} " +
-                                            "(nur $hosterName und Captcha-Dienste sind erlaubt)."
+                                        status = context.getString(
+                                            R.string.linkgrabber_captcha_blocked,
+                                            host ?: context.getString(R.string.linkgrabber_unknown_address),
+                                            hosterName
+                                        )
                                         true
                                     }
                                 }

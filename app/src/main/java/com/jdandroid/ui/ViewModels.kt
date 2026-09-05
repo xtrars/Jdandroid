@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
+import com.jdandroid.R
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.container.ContainerFiles
 import com.jdandroid.core.AppMessages
@@ -59,10 +60,15 @@ data class DownloadGroup(
 
 /**
  * Gruppiert Eintraege nach Paketen. Eintraege ohne Paket (aeltere Versionen)
- * oder mit einem nicht mehr vorhandenen Paket landen unter "Ohne Paket" -
- * sonst waeren sie in keiner Gruppe und damit unsichtbar.
+ * oder mit einem nicht mehr vorhandenen Paket landen unter [looseName]
+ * (uebersetzt vom Aufrufer) - sonst waeren sie in keiner Gruppe und damit
+ * unsichtbar.
  */
-internal fun groupDownloads(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
+internal fun groupDownloads(
+    items: List<DownloadItem>,
+    packages: List<DownloadPackage>,
+    looseName: String
+): List<DownloadGroup> {
     val byPackage = items.groupBy { it.packageId }
     val known = packages.mapNotNull { pkg ->
         byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
@@ -71,7 +77,7 @@ internal fun groupDownloads(items: List<DownloadItem>, packages: List<DownloadPa
     val loose = items.filter { it.packageId !in packageIds }
     return if (loose.isEmpty()) known
     else known + DownloadGroup(
-        DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
+        DownloadPackage(id = 0, name = looseName, autoNamed = false),
         loose
     )
 }
@@ -138,15 +144,18 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val groups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll(), ProgressBus.state) { items, packages, live ->
             val visible = items.filter { it.status != DownloadStatus.COLLECTED }
-            groupDownloads(overlayProgress(visible, live), packages)
+            groupDownloads(overlayProgress(visible, live), packages, noPackageName())
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Linksammler: noch nicht gestartete Links nach Paketen. */
     val collectorGroups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
-            groupDownloads(items.filter { it.status == DownloadStatus.COLLECTED }, packages)
+            groupDownloads(items.filter { it.status == DownloadStatus.COLLECTED }, packages, noPackageName())
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Uebersetzte Beschriftung der Sammelgruppe fuer Eintraege ohne Paket. */
+    private fun noPackageName(): String = getApplication<Application>().getString(R.string.accounts_no_package)
 
     fun startCollectedPackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -222,29 +231,38 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
      * enthaltenen Links ein. Meldet Ergebnis/Fehler ueber [onResult].
      */
     fun importDlc(content: String) {
-        AppMessages.progress("DLC wird entschlüsselt …")
+        val app = getApplication<Application>()
+        val res = app.resources
+        AppMessages.progress(app.getString(R.string.accounts_dlc_decrypting))
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Paketstruktur des DLC uebernehmen - wie im JDownloader
                 val packages = ContainerDecrypter.decryptDlcPackages(content)
                 var added = 0
                 packages.forEach { pkg ->
-                    added += LinkSink.addUrls(getApplication(), pkg.urls, pkg.name)
+                    added += LinkSink.addUrls(app, pkg.urls, pkg.name)
                 }
                 val total = packages.sumOf { it.urls.size }
-                val target = if (jdApp.settings.currentAutoStartLinks()) "gestartet"
-                else "in den Linksammler übernommen"
                 if (added > 0) {
-                    AppMessages.success("$added Link(s) in ${packages.size} Paket(en) $target")
-                } else {
-                    AppMessages.info(
-                        "DLC gelesen, aber keine neuen unterstützten Links ($total Link(s) insgesamt)"
+                    // "3 Links in 2 Paketen gestartet": Mengen als Plurals,
+                    // Satz als Formatstring
+                    val links = res.getQuantityString(R.plurals.accounts_dlc_links, added, added)
+                    val count = packages.size
+                    val pkgs = res.getQuantityString(R.plurals.accounts_dlc_packages, count, count)
+                    AppMessages.success(
+                        app.getString(
+                            if (jdApp.settings.currentAutoStartLinks()) R.string.accounts_dlc_started
+                            else R.string.accounts_dlc_collected,
+                            links, pkgs
+                        )
                     )
+                } else {
+                    AppMessages.info(res.getQuantityString(R.plurals.accounts_dlc_no_new_links, total, total))
                 }
             } catch (e: ContainerDecrypter.ContainerException) {
-                AppMessages.error(e.message ?: "DLC-Import fehlgeschlagen")
+                AppMessages.error(e.message ?: app.getString(R.string.accounts_dlc_import_failed))
             } catch (e: Exception) {
-                AppMessages.error("DLC-Import fehlgeschlagen: Datei ist kein gültiger Container")
+                AppMessages.error(app.getString(R.string.accounts_dlc_invalid))
             }
         }
     }
@@ -258,12 +276,13 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = runCatching { ContainerFiles.readText(resolver, uri) }
             val content = result.getOrNull()
+            val app = getApplication<Application>()
             when {
                 content == null -> AppMessages.error(
-                    result.exceptionOrNull()?.message ?: "DLC-Datei konnte nicht gelesen werden"
+                    result.exceptionOrNull()?.message ?: app.getString(R.string.accounts_dlc_read_failed)
                 )
                 !ContainerFiles.looksLikeDlc(content) ->
-                    AppMessages.error("Die gewählte Datei ist kein DLC-Container")
+                    AppMessages.error(app.getString(R.string.accounts_not_dlc_chosen))
                 else -> importDlc(content)
             }
         }
@@ -298,7 +317,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                 !ArchiveNames.isSecondaryVolume(ArchiveNames.repairName(item.fileName ?: return@filter false))
             }
             if (archives.isEmpty()) {
-                AppMessages.info("Keine fertigen Archive in diesem Paket")
+                AppMessages.info(getApplication<Application>().getString(R.string.accounts_no_finished_archives))
                 return@launch
             }
             archives.forEach { extract(it.id) }
@@ -353,7 +372,7 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
      * Drehen neu erzeugt, die bereits erkannte Session und die Statuszeile
      * duerfen dabei nicht verloren gehen.
      */
-    private val _webLoginStatus = MutableStateFlow(WEB_LOGIN_INITIAL_STATUS)
+    private val _webLoginStatus = MutableStateFlow(webLoginInitialStatus())
     val webLoginStatus: StateFlow<String> = _webLoginStatus
 
     private val _webLoginCookies = MutableStateFlow<String?>(null)
@@ -369,8 +388,12 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeMessage() { _message.value = null }
 
+    /** Erste Statuszeile des Browser-Logins, in der Geraetesprache. */
+    private fun webLoginInitialStatus(): String =
+        getApplication<Application>().getString(R.string.accounts_web_login_initial)
+
     fun requestWebLogin(hoster: Hoster) {
-        _webLoginStatus.value = WEB_LOGIN_INITIAL_STATUS
+        _webLoginStatus.value = webLoginInitialStatus()
         _webLoginCookies.value = null
         _webLogin.value = hoster
     }
@@ -410,9 +433,10 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     fun addAccountWithCookies(hoster: Hoster, cookies: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val account = try {
+                // Kein Benutzername: die Kontenliste zeigt anhand der Cookies
+                // "Browser-Login" in der Geraetesprache an
                 Account(
                     hosterId = hoster.id,
-                    username = "Browser-Login",
                     cookies = Secrets.encrypt(cookies)
                 )
             } catch (e: Secrets.SecretsException) {
@@ -435,9 +459,5 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(account: Account) {
         viewModelScope.launch(Dispatchers.IO) { dao.delete(account) }
-    }
-
-    companion object {
-        const val WEB_LOGIN_INITIAL_STATUS = "Bitte anmelden – inklusive \"Ich bin kein Roboter\"."
     }
 }

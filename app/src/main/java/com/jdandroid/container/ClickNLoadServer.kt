@@ -33,13 +33,13 @@ class ClickNLoadServer(
 ) : NanoHTTPD(hostname, port) {
 
     override fun serve(session: IHTTPSession): Response {
-        var outcome = "ok"
+        var outcome = ContainerTexts.t("service_cnl_result_ok")
         val response = try {
             when {
                 // CORS-Preflight: neuere Chrome-Versionen (Local Network Access)
                 // fragen vor fetch/XHR an localhost per OPTIONS nach.
                 session.method == Method.OPTIONS -> {
-                    outcome = "Preflight beantwortet"
+                    outcome = ContainerTexts.t("service_cnl_result_preflight")
                     newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, "")
                 }
                 session.uri == "/jdcheck.js" -> newFixedLengthResponse(
@@ -63,11 +63,11 @@ class ClickNLoadServer(
             }
         } catch (e: ContainerDecrypter.ContainerException) {
             Log.w("ClickNLoad", "Abgelehnt bei ${session.uri}: ${e.message}")
-            outcome = "abgelehnt: ${e.message}"
+            outcome = ContainerTexts.t("service_cnl_result_rejected", e.message.orEmpty())
             newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n")
         } catch (e: Exception) {
             Log.w("ClickNLoad", "Fehler bei ${session.uri}: ${e.message}")
-            outcome = "Fehler: ${e.message ?: e.javaClass.simpleName}"
+            outcome = ContainerTexts.t("service_cnl_result_error", e.message ?: e.javaClass.simpleName)
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "failed\r\n")
         }
         CnlStatus.record(session.method.name, session.uri, outcome)
@@ -101,7 +101,7 @@ class ClickNLoadServer(
         val length = session.headers["content-length"]?.trim()?.toLongOrNull()
         if (length != null && length > MAX_BODY_BYTES) {
             return newFixedLengthResponse(Response.Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n") to
-                "Anfrage zu gross"
+                ContainerTexts.t("service_cnl_result_too_large")
         }
         val body = HashMap<String, String>()
         if (session.method == Method.POST || session.method == Method.PUT) {
@@ -129,8 +129,10 @@ class ClickNLoadServer(
             // Wie JDownloader: die Seite zeigt dann "fehlgeschlagen" statt
             // faelschlich Erfolg zu melden.
             val note = if (crypted.isNullOrBlank() && plainUrls.isNullOrBlank()) {
-                "keine Links im Formular (Felder: ${params.keys.joinToString(",").ifBlank { "keine" }})"
-            } else "keine Links entschlüsselt"
+                val fields = params.keys.joinToString(",")
+                    .ifBlank { ContainerTexts.t("service_cnl_result_no_fields") }
+                ContainerTexts.t("service_cnl_result_no_links_in_form", fields)
+            } else ContainerTexts.t("service_cnl_result_nothing_decrypted")
             return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n") to note
         }
 
@@ -151,7 +153,9 @@ class ClickNLoadServer(
                     ?: session.headers["referer"]?.takeIf { it.isNotBlank() }
             )
         )
-        return newFixedLengthResponse("success\r\n") to "${links.size} Link(s) übernommen"
+        return newFixedLengthResponse("success\r\n") to ContainerTexts.quantity(
+            "service_cnl_result_links_taken_one", "service_cnl_result_links_taken_other", links.size
+        )
     }
 
     companion object {
@@ -177,10 +181,11 @@ class ClickNLoadServer(
             connection.readTimeout = 3000
             try {
                 val code = connection.responseCode
-                if (code in 200..299) "Server antwortet (HTTP $code)." else "Server antwortet mit HTTP $code."
+                if (code in 200..299) ContainerTexts.t("service_cnl_selftest_ok", code)
+                else ContainerTexts.t("service_cnl_selftest_http", code)
             } finally {
                 connection.disconnect()
             }
-        }.getOrElse { "Server nicht erreichbar: ${it.message}" }
+        }.getOrElse { ContainerTexts.t("service_cnl_selftest_unreachable", it.message ?: it.javaClass.simpleName) }
     }
 }

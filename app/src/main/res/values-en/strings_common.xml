@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Buttons and actions shared across screens. Keys: common_<meaning>. -->
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_close">Close</string>
+    <string name="common_pause">Pause</string>
+    <string name="common_resume">Resume</string>
+    <string name="common_extract">Extract</string>
+    <string name="common_copy">Copy</string>
+</resources>

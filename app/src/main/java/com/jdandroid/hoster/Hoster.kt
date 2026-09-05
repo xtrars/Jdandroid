@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -46,6 +47,9 @@ data class AccountInfo(
  */
 open class HosterException(message: String, val permanent: Boolean = false) : Exception(message)
 
+/** Datei beim Hoster nicht (mehr) vorhanden - dauerhaft, ohne Textvergleich erkennbar. */
+class FileOfflineException : HosterException(Texts.t("hoster_file_offline"), permanent = true)
+
 /**
  * Free-Modus: der Hoster verlangt eine Wartezeit von [seconds] Sekunden,
  * bevor der Download (erneut) versucht werden darf. Nicht permanent - die
@@ -83,6 +87,19 @@ data class FreeHints(
     val direktUrlAusBrowser: String? = null,
     val cookies: String? = null
 )
+
+/**
+ * Zeitspannen in Hoster-Meldungen ("in 5 min"). Texts.t kennt keine
+ * Plurals, daher Einheitenkuerzel: volle Stunden als h, volle Minuten als
+ * min, sonst Sekunden.
+ */
+object HosterDurations {
+    fun text(seconds: Int): String = when {
+        seconds >= 3600 && seconds % 3600 == 0 -> Texts.t("hoster_duration_hours", seconds / 3600)
+        seconds >= 60 && seconds % 60 == 0 -> Texts.t("hoster_duration_minutes", seconds / 60)
+        else -> Texts.t("hoster_duration_seconds", seconds)
+    }
+}
 
 /**
  * Standard fuer [Hoster.isDirectDownloadUrl]: Fileserver-Adressen liegen auf
@@ -133,7 +150,7 @@ interface Hoster {
 
     /** Kontostatus eines Kontos ohne Premium. */
     val freeStatusText: String
-        get() = if (supportsFree) "Free" else "Free (Downloads nicht möglich)"
+        get() = if (supportsFree) Texts.t("hoster_free_status") else Texts.t("hoster_free_status_unsupported")
 
     fun matches(url: String): Boolean
 
@@ -151,7 +168,7 @@ interface Hoster {
      * [ResolvedLink.headers]). Standard: nicht unterstuetzt (permanent).
      */
     suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
-        throw HosterException("Free-Download wird von diesem Hoster nicht unterstützt", true)
+        throw HosterException(Texts.t("hoster_free_unsupported"), true)
 
     /**
      * Erkennt in der Captcha-Ansicht die Navigation auf den Fileserver: diese
@@ -164,7 +181,7 @@ interface Hoster {
      * Name und Groesse (Linksammler). Standard: nicht pruefbar.
      */
     suspend fun checkLink(url: String, account: Account?): LinkInfo =
-        LinkInfo(online = null, note = "Keine Prüfung möglich")
+        LinkInfo(online = null, note = Texts.t("hoster_no_check_possible"))
 }
 
 object Http {

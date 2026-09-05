@@ -16,8 +16,7 @@ object ContainerFiles {
     const val MAX_BYTES = 2L * 1024 * 1024
 
     class TooLargeException(size: Long) : IOException(
-        "Datei ist zu groß für einen DLC-Container (${size / 1024} KiB, erlaubt sind " +
-            "${MAX_BYTES / 1024} KiB)"
+        ContainerTexts.t("service_dlc_file_too_large", size / 1024, MAX_BYTES / 1024)
     )
 
     /**
@@ -29,7 +28,7 @@ object ContainerFiles {
         querySize(resolver, uri)?.let { size ->
             if (size > MAX_BYTES) throw TooLargeException(size)
         }
-        val input = resolver.openInputStream(uri) ?: throw IOException("Datei nicht lesbar")
+        val input = resolver.openInputStream(uri) ?: throw IOException(ContainerTexts.t("service_dlc_file_unreadable"))
         input.use { stream ->
             val out = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)

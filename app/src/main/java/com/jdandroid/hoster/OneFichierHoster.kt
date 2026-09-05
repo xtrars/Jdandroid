@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainApiKey
 import kotlinx.coroutines.Dispatchers
@@ -29,8 +30,8 @@ class OneFichierHoster : Hoster {
     override val id = "onefichier"
     override val displayName = "1fichier"
     override val accountType = AccountType.API_KEY
-    override val accountHint =
-        "API-Key aus den 1fichier-Kontoeinstellungen (Bereich \"API\"), Premium/Access nötig."
+    override val accountHint: String
+        get() = Texts.t("hoster_onefichier_account_hint")
 
     private val base = "https://api.1fichier.com/v1"
     private val jsonType = "application/json; charset=utf-8".toMediaType()
@@ -177,15 +178,15 @@ class OneFichierHoster : Hoster {
      * [downloadOffered]). Kehrt zurueck, wenn nichts dagegen spricht.
      */
     private fun checkPage(resp: Resp, downloadOffered: Boolean = false) {
-        if (resp.code == 404 || OneFichierFreePage.isOffline(resp.body)) throw HosterException("Datei ist offline", true)
+        if (resp.code == 404 || OneFichierFreePage.isOffline(resp.body)) throw FileOfflineException()
         OneFichierFreePage.classify(OneFichierFreePage.visibleText(resp.body), downloadOffered)?.let { blockFor(it) }
         when {
-            resp.code == 503 -> throw WaitException(20 * 60 + 1, "1fichier: Wartung – in 20 Minuten erneut")
+            resp.code == 503 -> throw WaitException(20 * 60 + 1, Texts.t("hoster_onefichier_maintenance"))
             resp.code == 403 || resp.code == 429 -> throw WaitException(
-                15 * 60 + 1, "1fichier: Zugriff vorübergehend gesperrt (HTTP ${resp.code}) – in 15 Minuten erneut"
+                15 * 60 + 1, Texts.t("hoster_onefichier_temporarily_blocked", resp.code)
             )
             resp.code !in 200..299 -> throw HosterException(
-                "1fichier: Dateiseite nicht erreichbar (HTTP ${resp.code})", permanent = false
+                Texts.t("hoster_onefichier_file_page_unreachable", resp.code), permanent = false
             )
         }
     }
@@ -205,7 +206,7 @@ class OneFichierHoster : Hoster {
      */
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
         withContext(Dispatchers.IO) {
-            val link = normalize(url) ?: throw HosterException("Ungültiger 1fichier-Link", true)
+            val link = normalize(url) ?: throw HosterException(Texts.t("hoster_onefichier_invalid_link"), true)
             val id = link.substringAfter("?")
             val pageUrl = "$link&lg=en"
 
@@ -226,11 +227,11 @@ class OneFichierHoster : Hoster {
             // Countdown: kurze Reste im Prozess abwarten, lange an die Engine
             val remaining = session.readyAt - System.currentTimeMillis()
             if (remaining > MAX_INLINE_WAIT_MS) {
-                throw WaitException(((remaining + 999) / 1000).toInt() + 1, WAIT_TEXT)
+                throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_onefichier_free_countdown"))
             }
             if (remaining > 0) delay(remaining + 500)
 
-            val form = session.form ?: throw IllegalStateException("Formular fehlt")
+            val form = session.form ?: throw HosterException(Texts.t("hoster_onefichier_form_missing"), permanent = false)
             val action = form.action?.takeIf { it.startsWith("http", true) } ?: link
             var resp = session.fetch(action, referer = pageUrl, form = form.fields, followRedirects = false)
             var direct: String? = null
@@ -255,9 +256,9 @@ class OneFichierHoster : Hoster {
             if (direct.isNullOrBlank()) {
                 checkPage(resp)
                 if (OneFichierFreePage.hasCaptcha(resp.body)) {
-                    throw CaptchaRequiredException(pageUrl, "1fichier: Bestätigung im Browser nötig")
+                    throw CaptchaRequiredException(pageUrl, Texts.t("hoster_onefichier_confirm_in_browser"))
                 }
-                throw HosterException("1fichier: kein Direktlink erhalten (HTTP ${resp.code})", permanent = false)
+                throw HosterException(Texts.t("hoster_onefichier_no_direct_link", resp.code), permanent = false)
             }
             ResolvedLink(
                 secure(direct),
@@ -290,11 +291,11 @@ class OneFichierHoster : Hoster {
         val form = OneFichierFreePage.downloadForm(page.body, id)
         checkPage(page, downloadOffered = form != null)
         if (OneFichierFreePage.hasCaptcha(page.body)) {
-            throw CaptchaRequiredException(pageUrl, "1fichier: Bestätigung im Browser nötig")
+            throw CaptchaRequiredException(pageUrl, Texts.t("hoster_onefichier_confirm_in_browser"))
         }
-        if (form == null) throw HosterException("1fichier: Seite bietet keinen Free-Download an", permanent = false)
+        if (form == null) throw HosterException(Texts.t("hoster_onefichier_no_free_offer"), permanent = false)
         if (form.needsPassword) {
-            throw CaptchaRequiredException(pageUrl, "1fichier: Datei ist passwortgeschützt – Passwort im Browser eingeben")
+            throw CaptchaRequiredException(pageUrl, Texts.t("hoster_onefichier_password_in_browser"))
         }
         session.form = form
         session.fileName = OneFichierFreePage.fileName(page.body)
@@ -337,7 +338,6 @@ class OneFichierHoster : Hoster {
         /** Countdown-Reste bis hierhin laufen im Prozess ab, laengere gehen als Wartezeit an die Engine. */
         const val MAX_INLINE_WAIT_MS = 90_000L
         const val SESSION_MAX_AGE_MS = 10L * 60 * 1000
-        const val WAIT_TEXT = "1fichier: Countdown vor dem Free-Download"
     }
 
     /**
@@ -355,7 +355,7 @@ class OneFichierHoster : Hoster {
             .post(body.toString().toRequestBody(jsonType))
             .build()
         val (code, text) = Http.client.newCall(request).execute().use { resp ->
-            if (resp.body == null) throw HosterException("Leere Antwort von 1fichier")
+            if (resp.body == null) throw HosterException(Texts.t("hoster_onefichier_empty_response"))
             // begrenzt lesen, siehe Http.MAX_TEXT_BYTES
             resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
@@ -367,15 +367,15 @@ class OneFichierHoster : Hoster {
         // ein pauschales 403 waere sonst das Aus fuer alle 1fichier-Downloads.
         val flood = msg?.let { it.contains("Flood", true) || it.contains("try again", true) } == true
         if (flood || code == 429 || code in 500..599) {
-            throw HosterException("1fichier: ${msg ?: "Zu viele Anfragen (HTTP $code)"}", permanent = false)
+            throw HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_too_many_requests", code)), permanent = false)
         }
         if (code == 401 || (code == 403 && msg?.contains("Not authenticated", true) == true)) {
-            throw AuthException("1fichier: ${msg ?: "Nicht angemeldet (HTTP $code)"}")
+            throw AuthException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_not_authenticated", code)))
         }
         if (code == 403) {
-            throw HosterException("1fichier: ${msg ?: "Zugriff blockiert (HTTP 403)"}", permanent = false)
+            throw HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_access_blocked")), permanent = false)
         }
-        if (json == null) throw HosterException("1fichier: unerwartete Antwort (HTTP $code)", permanent = false)
+        if (json == null) throw HosterException(Texts.t("hoster_onefichier_unexpected_response", code), permanent = false)
         if (json.optString("status") == "KO") throw koFailure(msg)
         return json
     }
@@ -387,8 +387,8 @@ class OneFichierHoster : Hoster {
      * kommt auch nach fuenf Versuchen nicht durch.
      */
     internal fun koFailure(message: String?): HosterException {
-        val m = message?.ifBlank { null } ?: "Unbekannter Fehler"
-        if (m.contains("Not authenticated", true)) return AuthException("1fichier: $m")
+        val m = message?.ifBlank { null } ?: Texts.t("hoster_unknown_error")
+        if (m.contains("Not authenticated", true)) return AuthException(Texts.t("hoster_onefichier_api_error", m))
         val transient = m.contains("Flood", true) || m.contains("try again", true)
         val permanent = !transient && (
             m.contains("not found", true) ||
@@ -399,7 +399,7 @@ class OneFichierHoster : Hoster {
                 m.contains("premium", true) ||
                 m.contains("must be", true)
         )
-        return HosterException("1fichier: $m", permanent = permanent)
+        return HosterException(Texts.t("hoster_onefichier_api_error", m), permanent = permanent)
     }
 
     /**
@@ -410,11 +410,11 @@ class OneFichierHoster : Hoster {
      */
     internal fun parseCheckLine(line: String): LinkInfo {
         val parts = line.trim().split(';').map { it.trim() }
-        if (parts.size < 2) return LinkInfo(online = null, note = "Unerwartete Antwort")
+        if (parts.size < 2) return LinkInfo(online = null, note = Texts.t("hoster_unexpected_response"))
         val status = parts.last()
         val offline = listOf("NOT FOUND", "BAD LINK", "DELETED").any { status.contains(it, true) }
         if (offline) return LinkInfo(online = false, note = status.lowercase().replaceFirstChar { it.uppercase() })
-        if (parts.size < 3) return LinkInfo(online = null, note = "Unerwartete Antwort")
+        if (parts.size < 3) return LinkInfo(online = null, note = Texts.t("hoster_unexpected_response"))
         val name = parts[1].ifBlank { null }
         val size = parts[2].toLongOrNull() ?: -1
         return LinkInfo(online = true, fileName = name, fileSize = size)
@@ -423,7 +423,7 @@ class OneFichierHoster : Hoster {
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
             val link = normalize(url)
-                ?: return@withContext LinkInfo(online = null, note = "Ungültiger 1fichier-Link")
+                ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_onefichier_invalid_link"))
             val form = okhttp3.FormBody.Builder().add("links[]", link).build()
             val request = Request.Builder()
                 .url("https://1fichier.com/check_links.pl")
@@ -434,12 +434,12 @@ class OneFichierHoster : Hoster {
                 resp.peekBody(Http.MAX_TEXT_BYTES).string()
             }
             val line = text.lines().firstOrNull { it.contains("1fichier.com") }
-                ?: return@withContext LinkInfo(online = null, note = "Keine Antwort vom Link-Check")
+                ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_onefichier_check_no_response"))
             parseCheckLine(line)
         }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val key = account.plainApiKey ?: throw HosterException("Kein API-Key hinterlegt", true)
+        val key = account.plainApiKey ?: throw HosterException(Texts.t("hoster_no_api_key"), true)
         val now = System.currentTimeMillis()
         // Auch Fehlschlaege zwischenspeichern: 1fichier erlaubt user/info nur
         // alle 5 Minuten, und die Kontenansicht fragt jede Minute nach. Ein
@@ -475,20 +475,16 @@ class OneFichierHoster : Hoster {
             premiumUntil = end,
             trafficLeft = -1,
             trafficUnlimited = premium,
-            statusText = buildString {
-                append(if (premium) "Premium/Access" else freeStatusText)
-                if (cdnGb != null && cdnGb > 0) append(" · CDN-Guthaben ${"%.1f".format(Locale.GERMANY, cdnGb)} GB")
+            statusText = (if (premium) "Premium/Access" else freeStatusText).let { status ->
+                if (cdnGb != null && cdnGb > 0) Texts.t("hoster_status_cdn_credit", status, cdnGb) else status
             }
         )
     }
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
-            val key = account?.plainApiKey ?: throw HosterException(
-                "1fichier benötigt einen API-Key (unter Konten hinzufügen).",
-                permanent = true
-            )
-            val link = normalize(url) ?: throw HosterException("Ungültiger 1fichier-Link", true)
+            val key = account?.plainApiKey ?: throw HosterException(Texts.t("hoster_onefichier_api_key_required"), permanent = true)
+            val link = normalize(url) ?: throw HosterException(Texts.t("hoster_onefichier_invalid_link"), true)
             var fileName: String? = null
             var size = -1L
             try {
@@ -503,7 +499,7 @@ class OneFichierHoster : Hoster {
             }
             val token = post("download/get_token.cgi", key, JSONObject().put("url", link))
             val direct = token.optString("url")
-            if (direct.isBlank()) throw HosterException("1fichier lieferte keine Download-URL", true)
+            if (direct.isBlank()) throw HosterException(Texts.t("hoster_onefichier_no_download_url"), true)
             // Die von 1fichier gelieferte Pruefsumme ist Whirlpool (128 Hex), kein
             // SHA-1/MD5 - fuer die Integritaetspruefung daher nicht verwendbar.
             ResolvedLink(direct, fileName, size, hash = null)

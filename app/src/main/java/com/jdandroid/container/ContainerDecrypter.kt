@@ -38,14 +38,13 @@ object ContainerDecrypter {
                     .header("User-Agent", Http.USER_AGENT).build()
             ).execute().use { it.peekBody(Http.MAX_TEXT_BYTES).string() }
         } catch (e: Exception) {
-            throw ContainerException("DLC-Dienst nicht erreichbar: ${e.message}")
+            throw ContainerException(
+                ContainerTexts.t("service_dlc_service_unreachable", e.message ?: e.javaClass.simpleName)
+            )
         }
         return Regex("<rc>(.+?)</rc>", RegexOption.DOT_MATCHES_ALL).find(response)
             ?.groupValues?.get(1)?.trim()
-            ?: throw ContainerException(
-                "DLC konnte nicht entschlüsselt werden – der JDownloader-DLC-Dienst " +
-                    "hat keinen Schlüssel geliefert (Dienst evtl. abgeschaltet)."
-            )
+            ?: throw ContainerException(ContainerTexts.t("service_dlc_service_no_key"))
     }
 
     /**
@@ -54,7 +53,7 @@ object ContainerDecrypter {
      */
     internal fun deriveKey(rcBase64: String): ByteArray {
         val rc = base64(rcBase64)
-        if (rc.size < 16) throw ContainerException("DLC-Dienst lieferte ungültige Antwort")
+        if (rc.size < 16) throw ContainerException(ContainerTexts.t("service_dlc_service_invalid_reply"))
         // exakt ein Block: eine laengere Antwort wuerde bei NoPadding werfen
         return aesCbcDecrypt(rc.copyOf(16), DLC_KEY, DLC_IV).copyOf(16)
     }
@@ -67,17 +66,17 @@ object ContainerDecrypter {
         // Kommt der Container per Formular (Click'n'Load /flash/addcrypted),
         // hat der Browser "+" bereits zu Leerzeichen dekodiert - zurueckwandeln.
         val data = dlcContent.replace(' ', '+').filterNot { it.isWhitespace() }
-        if (data.length < 88) throw ContainerException("DLC-Datei zu kurz oder ungültig")
+        if (data.length < 88) throw ContainerException(ContainerTexts.t("service_dlc_too_short"))
 
         val dlcKey = data.substring(data.length - 88)
         val dlcData = base64(data.substring(0, data.length - 88))
-        if (dlcData.size % 16 != 0) throw ContainerException("DLC-Datei beschädigt")
+        if (dlcData.size % 16 != 0) throw ContainerException(ContainerTexts.t("service_dlc_corrupt"))
 
         val realKey = deriveKey(fetchRc(dlcKey))
         val xml = decodeXml(aesCbcDecrypt(dlcData, realKey, realKey))
         val packages = parsePackages(xml)
         if (packages.all { it.urls.isEmpty() }) {
-            throw ContainerException("DLC enthielt keine lesbaren Links")
+            throw ContainerException(ContainerTexts.t("service_dlc_no_links"))
         }
         return packages.filter { it.urls.isNotEmpty() }
     }
@@ -130,18 +129,18 @@ object ContainerDecrypter {
         val hexKey = literals.firstOrNull { it.length == 32 }
             ?: literals.joinToString("").takeIf { it.length == 32 }
             ?: literals.firstOrNull { it.length >= 16 }
-            ?: throw ContainerException("Click'n'Load: kein Schlüssel gefunden (jk nicht auswertbar)")
+            ?: throw ContainerException(ContainerTexts.t("service_cnl_key_missing"))
         // Das Protokoll ist AES-128: genau 16 Byte, die zugleich als IV dienen.
         // Ein laengerer Wert ergaebe einen unbrauchbaren IV und eine kryptische
         // Exception statt einer klaren Meldung.
         if (hexKey.length != 32) {
-            throw ContainerException("Click'n'Load: Schlüssel hat ungültige Länge (${hexKey.length / 2} Byte)")
+            throw ContainerException(ContainerTexts.t("service_cnl_key_invalid_length", hexKey.length / 2))
         }
         val key = hexKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         // Rohes "+" im Formular wird vom Browser als Leerzeichen dekodiert
         val decoded = base64(crypted.replace(' ', '+').trim())
         if (decoded.isEmpty() || decoded.size % 16 != 0) {
-            throw ContainerException("Click'n'Load: Daten beschädigt (Länge ${decoded.size})")
+            throw ContainerException(ContainerTexts.t("service_cnl_data_corrupt", decoded.size))
         }
         val plain = aesCbcDecrypt(decoded, key, key)
         // Nullbytes (Blockpadding) entfernen, sonst haengen sie am letzten Link

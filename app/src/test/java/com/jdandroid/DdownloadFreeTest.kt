@@ -1,5 +1,6 @@
 package com.jdandroid
 
+import com.jdandroid.core.Texts
 import com.jdandroid.hoster.CaptchaRequiredException
 import com.jdandroid.hoster.DdownloadFreePage
 import com.jdandroid.hoster.DdownloadHoster
@@ -174,18 +175,18 @@ class DdownloadFreeTest {
     }
 
     @Test
-    fun premiumGrenzenSindDauerhaftMitDeutscherMeldung() {
+    fun premiumGrenzenSindDauerhaftMitMeldung() {
         val zuGross = wrongCaptcha.replace("Wrong captcha", "You can download files up to 500 MB only")
         assertEquals(
-            "Free-Download nur bis 500 MB – für diese Datei ist ein Premium-Konto nötig",
+            Texts.t("hoster_ddownload_free_size_limit", "500 MB"),
             DdownloadFreePage.premiumOnlyReason(zuGross)
         )
         assertEquals(
-            "Datei ist nur mit Premium-Konto ladbar",
+            Texts.t("hoster_ddownload_premium_only"),
             DdownloadFreePage.premiumOnlyReason(""">This file is available for Premium Users only<""")
         )
         assertEquals(
-            "Datei ist nur mit Premium-Konto ladbar",
+            Texts.t("hoster_ddownload_premium_only"),
             DdownloadFreePage.premiumOnlyReason(wrongCaptcha.replace("Wrong captcha", "The file you requested reached max downloads limit for Free Users"))
         )
     }

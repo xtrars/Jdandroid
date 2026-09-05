@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Downloads screen (DownloadsScreen, package/item rows, status labels, messages). Keys: downloads_<meaning>. -->
+
+    <!-- Top bar, search, filters -->
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_search_open">Search</string>
+    <string name="downloads_search_close">Close search</string>
+    <string name="downloads_search_placeholder">Search file name or package</string>
+    <string name="downloads_start_all">Start all</string>
+    <string name="downloads_filter_all">All</string>
+    <string name="downloads_filter_active">Running</string>
+    <string name="downloads_filter_waiting">Waiting</string>
+    <string name="downloads_filter_done">Finished</string>
+    <string name="downloads_filter_failed">Failed</string>
+    <string name="downloads_empty_hint">No downloads yet.\n\nLinks are added in the Link Grabber (plus button, sharing from the browser, DLC, Click\'n\'Load) and started from there.</string>
+    <string name="downloads_empty_filter">No entries match this filter.</string>
+
+    <!-- Package header -->
+    <string name="downloads_expand">Expand</string>
+    <string name="downloads_collapse">Collapse</string>
+    <plurals name="downloads_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <plurals name="downloads_summary_finished">
+        <item quantity="one">%1$d finished</item>
+        <item quantity="other">%1$d finished</item>
+    </plurals>
+    <plurals name="downloads_summary_failed">
+        <item quantity="one">%1$d failed</item>
+        <item quantity="other">%1$d failed</item>
+    </plurals>
+    <string name="downloads_bytes_of_total">%1$s / %2$s</string>
+    <string name="downloads_speed">%1$s/s</string>
+    <string name="downloads_summary_extracting">extracting</string>
+    <string name="downloads_summary_extracting_percent">extracting %1$d%%</string>
+    <string name="downloads_summary_source">from %1$s</string>
+    <string name="downloads_pause_package">Pause package</string>
+    <string name="downloads_start_package">Start package</string>
+    <string name="downloads_package_actions">Package actions</string>
+    <string name="downloads_menu_rename">Rename</string>
+    <string name="downloads_menu_extract_archives">Extract archives</string>
+    <string name="downloads_menu_delete_package">Delete package</string>
+    <string name="downloads_delete_package_title">Delete package?</string>
+    <plurals name="downloads_delete_package_text">
+        <item quantity="one">\"%1$s\" with %2$d download will be removed. Partially downloaded files will be deleted.</item>
+        <item quantity="other">\"%1$s\" with %2$d downloads will be removed. Partially downloaded files will be deleted.</item>
+    </plurals>
+    <string name="downloads_rename_title">Rename package</string>
+    <string name="downloads_save">Save</string>
+
+    <!-- Item row -->
+    <string name="downloads_delete_item_title">Delete download?</string>
+    <string name="downloads_delete_item_completed">%1$s\n\nThe finished file will be kept.</string>
+    <string name="downloads_delete_item_partial">%1$s\n\nData downloaded so far will be lost.</string>
+    <string name="downloads_status_running">Downloading</string>
+    <string name="downloads_status_queued">Waiting</string>
+    <string name="downloads_status_collected">Link Grabber</string>
+    <string name="downloads_status_paused">Paused</string>
+    <string name="downloads_status_extracting">Extracting</string>
+    <string name="downloads_status_completed">Finished</string>
+    <string name="downloads_status_failed">Failed</string>
+    <string name="downloads_status_offline">Offline</string>
+    <string name="downloads_item_actions">Actions</string>
+    <string name="downloads_menu_solve_captcha">Solve captcha</string>
+    <string name="downloads_menu_retry">Retry</string>
+    <string name="downloads_menu_redownload">Download again</string>
+    <string name="downloads_free_wait">Free mode wait: %1$s</string>
+    <string name="downloads_free_wait_reason">Free mode wait: %1$s – %2$s</string>
+    <string name="downloads_in_queue">queued</string>
+    <string name="downloads_not_started">not started yet</string>
+    <string name="downloads_loaded_bytes">%1$s downloaded</string>
+    <string name="downloads_extracting_archive">Extracting archive …</string>
+    <string name="downloads_extracting_archive_percent">Extracting archive … %1$d%%</string>
+    <string name="downloads_completed_note">%1$s (%2$s)</string>
+    <string name="downloads_waiting_for_parts">Waiting for more archive parts</string>
+    <string name="downloads_waiting_for_wifi">Waiting for Wi-Fi</string>
+    <string name="downloads_unknown_error">unknown error</string>
+    <string name="downloads_file_offline">File no longer available at the hoster</string>
+    <string name="downloads_hoster_status">%1$s · %2$s</string>
+</resources>

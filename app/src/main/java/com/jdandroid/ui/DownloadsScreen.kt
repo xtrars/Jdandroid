@@ -62,19 +62,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jdandroid.R
 import com.jdandroid.core.FreeMode
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
+import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.DownloadStatus
-import com.jdandroid.engine.Extractor
 import com.jdandroid.hoster.HosterRegistry
 
-/** Ziffern mit fester Breite, damit Zahlen beim Aktualisieren nicht springen. */
-private const val TABULAR = "tnum"
+/** Trennzeichen zwischen den Angaben einer Meta-Zeile. */
+private const val SEPARATOR = " · "
+
+/**
+ * Uebersetzt gespeicherte Vermerk-Codes ([DownloadNotes], Free-Modus-Vermerke
+ * aus [FreeMode]) erst bei der Anzeige; fremde Texte (Hoster-Meldungen)
+ * bleiben unveraendert. [retryAt] und [now] braucht nur der Free-Modus fuer
+ * die Restzeit.
+ */
+@Composable
+private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String = when (note) {
+    DownloadNotes.WAITING_PARTS -> stringResource(R.string.downloads_waiting_for_parts)
+    DownloadNotes.WAITING_WIFI -> stringResource(R.string.downloads_waiting_for_wifi)
+    else -> FreeMode.displayText(note, retryAt, now) ?: note
+}
 
 /** Rueckfrage vor unwiderruflichem Loeschen. */
 @Composable
@@ -90,20 +106,20 @@ fun ConfirmDeleteDialog(
         text = { Text(text) },
         confirmButton = {
             TextButton(onClick = { onConfirm(); onDismiss() }) {
-                Text("Löschen", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
 /** Filter der Download-Liste (V5). */
-private enum class ListFilter(val label: String, val matches: (DownloadItem) -> Boolean) {
-    ALL("Alle", { true }),
-    ACTIVE("Läuft", { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING }),
-    WAITING("Wartend", { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.PAUSED }),
-    DONE("Fertig", { it.status == DownloadStatus.COMPLETED }),
-    FAILED("Fehler", { it.status == DownloadStatus.FAILED || it.status == DownloadStatus.OFFLINE })
+private enum class ListFilter(val label: Int, val matches: (DownloadItem) -> Boolean) {
+    ALL(R.string.downloads_filter_all, { true }),
+    ACTIVE(R.string.downloads_filter_active, { it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING }),
+    WAITING(R.string.downloads_filter_waiting, { it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.PAUSED }),
+    DONE(R.string.downloads_filter_done, { it.status == DownloadStatus.COMPLETED }),
+    FAILED(R.string.downloads_filter_failed, { it.status == DownloadStatus.FAILED || it.status == DownloadStatus.OFFLINE })
 }
 
 /** Zugeklappte Pakete ueber Drehen/Tabwechsel behalten: nur die IDs sichern. */
@@ -152,17 +168,19 @@ fun DownloadsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Downloads") },
+                title = { Text(stringResource(R.string.downloads_title)) },
                 colors = jdTopBarColors(),
                 actions = {
                     IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
                         Icon(
                             if (searchOpen) Icons.Default.Close else Icons.Default.Search,
-                            contentDescription = if (searchOpen) "Suche schließen" else "Suchen"
+                            contentDescription = stringResource(
+                                if (searchOpen) R.string.downloads_search_close else R.string.downloads_search_open
+                            )
                         )
                     }
-                    TextButton(onClick = { vm.resumeAll() }) { Text("Alle starten") }
-                    TextButton(onClick = { vm.pauseAll() }) { Text("Pause") }
+                    TextButton(onClick = { vm.resumeAll() }) { Text(stringResource(R.string.downloads_start_all)) }
+                    TextButton(onClick = { vm.pauseAll() }) { Text(stringResource(R.string.common_pause)) }
                 }
             )
         },
@@ -178,7 +196,7 @@ fun DownloadsScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Dateiname oder Paket suchen") },
+                placeholder = { Text(stringResource(R.string.downloads_search_placeholder)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
@@ -197,18 +215,17 @@ fun DownloadsScreen(
                 FilterChip(
                     selected = filter == f,
                     onClick = { filter = f },
-                    label = { Text(f.label) }
+                    label = { Text(stringResource(f.label)) }
                 )
             }
         }
         if (groups.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    if (allGroups.isEmpty()) {
-                        "Noch keine Downloads.\n\nLinks werden im Linksammler hinzugefügt " +
-                            "(Plus-Knopf, Teilen aus dem Browser, DLC, Click'n'Load) und " +
-                            "von dort gestartet."
-                    } else "Keine Einträge für diesen Filter.",
+                    stringResource(
+                        if (allGroups.isEmpty()) R.string.downloads_empty_hint
+                        else R.string.downloads_empty_filter
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -263,7 +280,9 @@ private fun PackageHeader(
                     Icon(
                         if (collapsed) Icons.Default.KeyboardArrowRight
                         else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (collapsed) "Aufklappen" else "Zuklappen"
+                        contentDescription = stringResource(
+                            if (collapsed) R.string.downloads_expand else R.string.downloads_collapse
+                        )
                     )
                 }
                 Column(Modifier.weight(1f)) {
@@ -273,21 +292,30 @@ private fun PackageHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    val summary = buildString {
-                        append("${group.items.size} Datei(en)")
-                        append(" · ${group.finished} fertig")
-                        if (group.failed > 0) append(" · ${group.failed} fehlerhaft")
+                    // Jede Angabe ist ein eigener uebersetzter Baustein; zusammengesetzt mit SEPARATOR
+                    val parts = buildList {
+                        add(pluralStringResource(R.plurals.downloads_file_count, group.items.size, group.items.size))
+                        add(pluralStringResource(R.plurals.downloads_summary_finished, group.finished, group.finished))
+                        if (group.failed > 0) add(pluralStringResource(R.plurals.downloads_summary_failed, group.failed, group.failed))
                         if (group.total > 0) {
-                            append(" · ${formatBytes(group.done)} / ${formatBytes(group.total)}")
+                            add(
+                                stringResource(
+                                    R.string.downloads_bytes_of_total,
+                                    formatBytes(group.done), formatBytes(group.total)
+                                )
+                            )
                         }
-                        if (group.speed > 0) append(" · ${formatBytes(group.speed)}/s")
+                        if (group.speed > 0) add(stringResource(R.string.downloads_speed, formatBytes(group.speed)))
                         if (group.extracting) {
-                            append(" · wird entpackt")
-                            if (group.extractPercent >= 0) append(" ${group.extractPercent} %")
+                            add(
+                                if (group.extractPercent >= 0) {
+                                    stringResource(R.string.downloads_summary_extracting_percent, group.extractPercent)
+                                } else stringResource(R.string.downloads_summary_extracting)
+                            )
                         }
-                        group.pkg.source?.let { append(" · von $it") }
+                        group.pkg.source?.let { add(stringResource(R.string.downloads_summary_source, it)) }
                     }
-                    MetaRow(summary)
+                    MetaRow(parts.joinToString(SEPARATOR))
                 }
                 if (group.pkg.id != 0L) {
                     // Eine Aktion direkt (Start/Pause), alles Weitere im Menue -
@@ -298,30 +326,32 @@ private fun PackageHeader(
                     }) {
                         Icon(
                             if (group.active) JdIcons.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (group.active) "Paket pausieren"
-                            else "Paket starten"
+                            contentDescription = stringResource(
+                                if (group.active) R.string.downloads_pause_package
+                                else R.string.downloads_start_package
+                            )
                         )
                     }
                     var menuOpen by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Paketaktionen")
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.downloads_package_actions))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Umbenennen") },
+                                text = { Text(stringResource(R.string.downloads_menu_rename)) },
                                 leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                                 onClick = { menuOpen = false; renaming = true }
                             )
                             if (group.finished > 0) {
                                 DropdownMenuItem(
-                                    text = { Text("Archive entpacken") },
+                                    text = { Text(stringResource(R.string.downloads_menu_extract_archives)) },
                                     leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
                                     onClick = { menuOpen = false; vm.extractPackage(group.pkg.id) }
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Paket löschen") },
+                                text = { Text(stringResource(R.string.downloads_menu_delete_package)) },
                                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                                 onClick = { menuOpen = false; confirmDelete = true }
                             )
@@ -347,9 +377,11 @@ private fun PackageHeader(
 
     if (confirmDelete) {
         ConfirmDeleteDialog(
-            title = "Paket löschen?",
-            text = "\"${group.pkg.name}\" mit ${group.items.size} Download(s) wird entfernt. " +
-                "Bereits geladene Teildateien werden gelöscht.",
+            title = stringResource(R.string.downloads_delete_package_title),
+            text = pluralStringResource(
+                R.plurals.downloads_delete_package_text, group.items.size,
+                group.pkg.name, group.items.size
+            ),
             onConfirm = { vm.deletePackage(group.pkg.id) },
             onDismiss = { confirmDelete = false }
         )
@@ -359,7 +391,7 @@ private fun PackageHeader(
         var name by rememberSaveable { mutableStateOf(group.pkg.name) }
         AlertDialog(
             onDismissRequest = { renaming = false },
-            title = { Text("Paket umbenennen") },
+            title = { Text(stringResource(R.string.downloads_rename_title)) },
             text = {
                 OutlinedTextField(
                     value = name,
@@ -372,9 +404,11 @@ private fun PackageHeader(
                 TextButton(
                     enabled = name.isNotBlank(),
                     onClick = { vm.renamePackage(group.pkg.id, name.trim()); renaming = false }
-                ) { Text("Speichern") }
+                ) { Text(stringResource(R.string.downloads_save)) }
             },
-            dismissButton = { TextButton(onClick = { renaming = false }) { Text("Abbrechen") } }
+            dismissButton = {
+                TextButton(onClick = { renaming = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
         )
     }
 }
@@ -400,10 +434,12 @@ private fun DownloadRow(
     }
     if (confirmDelete) {
         ConfirmDeleteDialog(
-            title = "Download löschen?",
-            text = (item.fileName ?: item.url) +
-                if (item.status == DownloadStatus.COMPLETED) "\n\nDie fertige Datei bleibt erhalten."
-                else "\n\nBereits geladene Daten gehen verloren.",
+            title = stringResource(R.string.downloads_delete_item_title),
+            text = stringResource(
+                if (item.status == DownloadStatus.COMPLETED) R.string.downloads_delete_item_completed
+                else R.string.downloads_delete_item_partial,
+                item.fileName ?: item.url
+            ),
             onConfirm = { vm.delete(item.id) },
             onDismiss = { confirmDelete = false }
         )
@@ -419,54 +455,54 @@ private fun DownloadRow(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.size(8.dp))
-                val (pillText, tone) = when (item.status) {
-                    DownloadStatus.RUNNING -> "Lädt" to Tone.ACTIVE
-                    DownloadStatus.QUEUED -> "Wartend" to Tone.NEUTRAL
-                    DownloadStatus.COLLECTED -> "Linksammler" to Tone.NEUTRAL
-                    DownloadStatus.PAUSED -> "Pausiert" to Tone.WARNING
-                    DownloadStatus.EXTRACTING -> "Entpacken" to Tone.ACTIVE
-                    DownloadStatus.COMPLETED -> "Fertig" to Tone.SUCCESS
-                    DownloadStatus.FAILED -> "Fehler" to Tone.ERROR
-                    DownloadStatus.OFFLINE -> "Offline" to Tone.ERROR
+                val (pillRes, tone) = when (item.status) {
+                    DownloadStatus.RUNNING -> R.string.downloads_status_running to Tone.ACTIVE
+                    DownloadStatus.QUEUED -> R.string.downloads_status_queued to Tone.NEUTRAL
+                    DownloadStatus.COLLECTED -> R.string.downloads_status_collected to Tone.NEUTRAL
+                    DownloadStatus.PAUSED -> R.string.downloads_status_paused to Tone.WARNING
+                    DownloadStatus.EXTRACTING -> R.string.downloads_status_extracting to Tone.ACTIVE
+                    DownloadStatus.COMPLETED -> R.string.downloads_status_completed to Tone.SUCCESS
+                    DownloadStatus.FAILED -> R.string.downloads_status_failed to Tone.ERROR
+                    DownloadStatus.OFFLINE -> R.string.downloads_status_offline to Tone.ERROR
                 }
-                StatusPill(pillText, tone)
+                StatusPill(stringResource(pillRes), tone)
                 var menuOpen by remember { mutableStateOf(false) }
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Aktionen")
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.downloads_item_actions))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (captchaHold) {
                             DropdownMenuItem(
-                                text = { Text("Captcha lösen") },
+                                text = { Text(stringResource(R.string.downloads_menu_solve_captcha)) },
                                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                                 onClick = { menuOpen = false; vm.solveCaptcha(item) }
                             )
                         }
                         when (item.status) {
                             DownloadStatus.RUNNING, DownloadStatus.QUEUED -> DropdownMenuItem(
-                                text = { Text("Pause") },
+                                text = { Text(stringResource(R.string.common_pause)) },
                                 leadingIcon = { Icon(JdIcons.Pause, contentDescription = null) },
                                 onClick = { menuOpen = false; vm.pause(item.id) }
                             )
                             DownloadStatus.PAUSED -> DropdownMenuItem(
-                                text = { Text("Fortsetzen") },
+                                text = { Text(stringResource(R.string.common_resume)) },
                                 leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                                 onClick = { menuOpen = false; vm.resume(item) }
                             )
                             DownloadStatus.FAILED, DownloadStatus.OFFLINE -> DropdownMenuItem(
-                                text = { Text("Erneut versuchen") },
+                                text = { Text(stringResource(R.string.downloads_menu_retry)) },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 onClick = { menuOpen = false; vm.retry(item) }
                             )
                             DownloadStatus.COMPLETED -> {
                                 DropdownMenuItem(
-                                    text = { Text("Entpacken") },
+                                    text = { Text(stringResource(R.string.common_extract)) },
                                     leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
                                     onClick = { menuOpen = false; vm.extract(item.id) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Erneut laden") },
+                                    text = { Text(stringResource(R.string.downloads_menu_redownload)) },
                                     leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                     onClick = { menuOpen = false; vm.redownload(item) }
                                 )
@@ -474,7 +510,7 @@ private fun DownloadRow(
                             DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
                         }
                         DropdownMenuItem(
-                            text = { Text("Löschen") },
+                            text = { Text(stringResource(R.string.common_delete)) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                             onClick = { menuOpen = false; confirmDelete = true }
                         )
@@ -483,28 +519,43 @@ private fun DownloadRow(
             }
             Spacer(Modifier.height(3.dp))
             val statusLine = when (item.status) {
-                DownloadStatus.RUNNING ->
-                    "${formatBytes(item.downloadedBytes)} / ${formatBytes(item.fileSize)}" +
-                        if (item.speedBps > 0) " · ${formatBytes(item.speedBps)}/s" else ""
-                DownloadStatus.QUEUED -> when {
-                    freeWaiting && item.retryAt > now ->
-                        FreeMode.waitMessage(
-                            FreeMode.remainingSeconds(item.retryAt, now), FreeMode.waitReason(item.errorMessage)
-                        )
-                    else -> item.errorMessage ?: "in der Warteschlange"
+                DownloadStatus.RUNNING -> {
+                    val progress = stringResource(
+                        R.string.downloads_bytes_of_total,
+                        formatBytes(item.downloadedBytes), formatBytes(item.fileSize)
+                    )
+                    if (item.speedBps > 0) {
+                        progress + SEPARATOR + stringResource(R.string.downloads_speed, formatBytes(item.speedBps))
+                    } else progress
                 }
-                DownloadStatus.COLLECTED -> "noch nicht gestartet"
-                DownloadStatus.PAUSED -> "${formatBytes(item.downloadedBytes)} geladen"
+                DownloadStatus.QUEUED -> when {
+                    freeWaiting && item.retryAt > now -> {
+                        // Countdown laeuft in der Oberflaeche; der Grund stammt aus der gespeicherten Meldung
+                        val remaining = FreeMode.formatWait(FreeMode.remainingSeconds(item.retryAt, now))
+                        val reason = FreeMode.waitReason(item.errorMessage)
+                        if (reason == null) stringResource(R.string.downloads_free_wait, remaining)
+                        else stringResource(R.string.downloads_free_wait_reason, remaining, reason)
+                    }
+                    else -> item.errorMessage?.let { noteText(it, item.retryAt, now) }
+                        ?: stringResource(R.string.downloads_in_queue)
+                }
+                DownloadStatus.COLLECTED -> stringResource(R.string.downloads_not_started)
+                DownloadStatus.PAUSED ->
+                    stringResource(R.string.downloads_loaded_bytes, formatBytes(item.downloadedBytes))
                 DownloadStatus.EXTRACTING ->
-                    if (item.extractProgress >= 0) "Archiv wird entpackt … ${item.extractProgress} %"
-                    else "Archiv wird entpackt …"
-                DownloadStatus.COMPLETED ->
-                    (item.localPath ?: "") + (item.errorMessage?.let { " ($it)" } ?: "")
-                DownloadStatus.FAILED -> item.errorMessage ?: "unbekannter Fehler"
-                DownloadStatus.OFFLINE -> "Datei beim Hoster nicht mehr vorhanden"
+                    if (item.extractProgress >= 0) {
+                        stringResource(R.string.downloads_extracting_archive_percent, item.extractProgress)
+                    } else stringResource(R.string.downloads_extracting_archive)
+                DownloadStatus.COMPLETED -> {
+                    val path = item.localPath ?: ""
+                    item.errorMessage?.let { stringResource(R.string.downloads_completed_note, path, noteText(it)) }
+                        ?: path
+                }
+                DownloadStatus.FAILED -> item.errorMessage ?: stringResource(R.string.downloads_unknown_error)
+                DownloadStatus.OFFLINE -> stringResource(R.string.downloads_file_offline)
             }
             MetaRow(
-                "$hosterName · $statusLine",
+                stringResource(R.string.downloads_hoster_status, hosterName, statusLine),
                 color = if (item.status == DownloadStatus.FAILED || item.status == DownloadStatus.OFFLINE)
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 hosterId = item.hosterId

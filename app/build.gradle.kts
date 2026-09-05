@@ -64,6 +64,12 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        // Nur die eigenen Sprachen einpacken (AndroidX-Uebersetzungen anderer
+        // Sprachen bleiben draussen); der Release-Lint prueft, dass jeder
+        // Schluessel in values/ und values-en/ steht.
+        localeFilters += listOf("de", "en")
+    }
     testOptions {
         // Noetig: ClickNLoadServerTest laeuft gegen android.util.Log (ohne
         // Stub wirft die Methode "not mocked").

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bildschirmuebergreifende Schaltflaechen und Aktionen. Schluessel: common_<bedeutung>.
+         Nur hier eintragen, was auf mehreren Bildschirmen gleichlautend vorkommt. -->
+    <string name="common_cancel">Abbrechen</string>
+    <string name="common_delete">Löschen</string>
+    <string name="common_close">Schließen</string>
+    <string name="common_pause">Pause</string>
+    <string name="common_resume">Fortsetzen</string>
+    <string name="common_extract">Entpacken</string>
+    <string name="common_copy">Kopieren</string>
+</resources>
