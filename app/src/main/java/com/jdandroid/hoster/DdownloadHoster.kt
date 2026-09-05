@@ -25,7 +25,11 @@ import java.util.concurrent.TimeUnit
  */
 class DdownloadHoster internal constructor(
     /** Website address; tests replace it with a local server. */
-    internal val siteBase: String
+    internal val siteBase: String,
+    /** API address; tests replace it with a local server. */
+    private val apiBase: String = "https://api-v2.ddownload.com/api",
+    /** Client for API calls (the website uses one cookie store per account). */
+    private val apiClient: OkHttpClient = Http.client
 ) : Hoster {
 
     constructor() : this("https://ddownload.com")
@@ -42,7 +46,8 @@ class DdownloadHoster internal constructor(
 
     override val supportsFree = true
 
-    private val apiBase = "https://api-v2.ddownload.com/api"
+    /** Host of [siteBase]; domain of the session cookies taken over from the browser. */
+    private val siteHost = siteBase.toHttpUrl().host
 
     /**
      * File codes are exactly 12 chars [a-z0-9]; the lookahead prevents longer
@@ -223,7 +228,7 @@ class DdownloadHoster internal constructor(
                 if (name.isNotEmpty()) {
                     Cookie.Builder()
                         .name(name).value(value)
-                        .domain("ddownload.com").path("/")
+                        .domain(siteHost).path("/")
                         .build()
                         .let { store.add(it) }
                 }
@@ -339,7 +344,7 @@ class DdownloadHoster internal constructor(
         val query = params.entries.joinToString("&") {
             "${it.key}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
         }
-        val (code, text) = Http.client.newCall(
+        val (code, text) = apiClient.newCall(
             okhttp3.Request.Builder().url("$apiBase/$path?$query")
                 .header("User-Agent", browserUa).build()
         ).execute().use { it.code to it.peekBody(Http.MAX_TEXT_BYTES).string() }
@@ -348,16 +353,21 @@ class DdownloadHoster internal constructor(
             throw HosterException(Texts.t("hoster_ddownload_api_not_json", code), permanent = false)
         }
         val status = json.optInt("status")
-        if (status != 200) {
-            val msg = json.optString("msg").ifBlank { Texts.t("hoster_http_status", status) }
-            // Permanent only what the text identifies as such (file gone, key
-            // invalid); daily limit, blocks and server errors are temporary
-            val permanent = status == 404 ||
-                msg.contains("not found", true) || msg.contains("invalid key", true) ||
-                msg.contains("wrong key", true) || msg.contains("no such", true)
-            throw HosterException(Texts.t("hoster_ddownload_api_error", msg), permanent = permanent)
-        }
+        if (status != 200) throw apiFailure(status, json.optString("msg"))
         return json
+    }
+
+    /**
+     * Classification of an API reply with status != 200. Permanent only what
+     * the text identifies as such (file gone, key invalid); daily limit,
+     * blocks and server errors are temporary.
+     */
+    internal fun apiFailure(status: Int, message: String): HosterException {
+        val msg = message.ifBlank { Texts.t("hoster_http_status", status) }
+        val permanent = status == 404 ||
+            msg.contains("not found", true) || msg.contains("invalid key", true) ||
+            msg.contains("wrong key", true) || msg.contains("no such", true)
+        return HosterException(Texts.t("hoster_ddownload_api_error", msg), permanent = permanent)
     }
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
@@ -523,7 +533,9 @@ class DdownloadHoster internal constructor(
             .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         Regex("""value=(["'])(.*?)\1\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
-        return Regex("""<title>([^<]+?)(?:\s*[-|–].*)?</title>""", RegexOption.IGNORE_CASE)
+        // The site suffix is separated by " - " or " | "; a hyphen inside the
+        // name ("scn-smps8-S37E02 rar") is part of it
+        return Regex("""<title>([^<]+?)(?:\s+[-|–]\s+.*)?</title>""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.trim()
             ?.removePrefix("Download ")?.trim()
             ?.let { com.jdandroid.core.ArchiveNames.repairName(it) }

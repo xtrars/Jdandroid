@@ -11,6 +11,7 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -26,7 +27,19 @@ import java.util.concurrent.ConcurrentHashMap
  * an account the website's free flow ([resolveFree]: file page, countdown,
  * form, direct link).
  */
-class OneFichierHoster : Hoster {
+class OneFichierHoster internal constructor(
+    /** API address; tests replace it with a local server. */
+    private val base: String,
+    /** Website address; tests replace it with a local server. */
+    private val siteBase: String,
+    /** Public link check; tests replace it with a local server. */
+    private val checkLinksUrl: String,
+    private val client: OkHttpClient
+) : Hoster {
+
+    constructor() : this(
+        "https://api.1fichier.com/v1", "https://1fichier.com", "https://1fichier.com/check_links.pl", Http.client
+    )
 
     override val id = "onefichier"
     override val displayName = "1fichier"
@@ -34,7 +47,6 @@ class OneFichierHoster : Hoster {
     override val accountHint: String
         get() = Texts.t("hoster_onefichier_account_hint")
 
-    private val base = "https://api.1fichier.com/v1"
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     /**
@@ -64,7 +76,8 @@ class OneFichierHoster : Hoster {
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
-    private val siteBase = "https://1fichier.com"
+    /** Host of [siteBase]; domain of the cookies set by the app itself. */
+    private val siteHost = siteBase.toHttpUrl().host
 
     /**
      * Browser user agent as in the captcha view: file page, form and file
@@ -80,7 +93,7 @@ class OneFichierHoster : Hoster {
      * `LG=en`), the parsed form and the time from which it may be submitted.
      * Lives only in-process.
      */
-    private class FreeSession(val pageUrl: String) {
+    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) {
         var form: OneFichierForm? = null
         /** Hotlink: the file page already served the file, no form needed. */
         var hotlink: ResolvedLink? = null
@@ -89,7 +102,7 @@ class OneFichierHoster : Hoster {
         var readyAt = 0L
         val createdAt = System.currentTimeMillis()
         val store = mutableListOf<Cookie>()
-        val client: OkHttpClient = Http.client.newBuilder()
+        val client: OkHttpClient = baseClient.newBuilder()
             .followRedirects(true)
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -204,7 +217,7 @@ class OneFichierHoster : Hoster {
         withContext(Dispatchers.IO) {
             val link = normalize(url) ?: throw HosterException(Texts.t("hoster_onefichier_invalid_link"), true)
             val id = link.substringAfter("?")
-            val pageUrl = "$link&lg=en"
+            val pageUrl = "$siteBase/?$id&lg=en"
 
             hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
                 val session = freeSessions.remove(id)
@@ -228,7 +241,7 @@ class OneFichierHoster : Hoster {
             if (remaining > 0) delay(remaining + 500)
 
             val form = session.form ?: throw HosterException(Texts.t("hoster_onefichier_form_missing"), permanent = false)
-            val action = form.action?.takeIf { it.startsWith("http", true) } ?: link
+            val action = form.action?.takeIf { it.startsWith("http", true) } ?: "$siteBase/?$id"
             var resp = session.fetch(action, referer = pageUrl, form = form.fields, followRedirects = false)
             var direct: String? = null
             var hops = 0
@@ -271,9 +284,9 @@ class OneFichierHoster : Hoster {
      */
     private fun startFreeSession(id: String, link: String, pageUrl: String): FreeSession {
         freeSessions.remove(id)
-        val session = FreeSession(pageUrl)
+        val session = FreeSession(pageUrl, client)
         // Force English texts so the error patterns match
-        session.store.add(Cookie.Builder().name("LG").value("en").domain("1fichier.com").path("/").build())
+        session.store.add(Cookie.Builder().name("LG").value("en").domain(siteHost).path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
         if (page.isFile) {
             // Hotlink: the owner pays the traffic, no wait
@@ -354,28 +367,37 @@ class OneFichierHoster : Hoster {
             .header("User-Agent", Http.USER_AGENT)
             .post(body.toString().toRequestBody(jsonType))
             .build()
-        val (code, text) = Http.client.newCall(request).execute().use { resp ->
+        val (code, text) = client.newCall(request).execute().use { resp ->
             resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
         val json = runCatching { JSONObject(text) }.getOrNull()
         val msg = json?.optString("message")?.ifBlank { null }
-        // Temporary first: flood block (also comes as HTTP 403), rate limit,
-        // server error, Cloudflare page. Only a clearly stated authentication
-        // error may disable the account permanently; a blanket 403 would
-        // otherwise kill all 1fichier downloads.
+        httpFailure(code, msg, isJson = json != null)?.let { throw it }
+        if (json!!.optString("status") == "KO") throw koFailure(msg)
+        return json
+    }
+
+    /**
+     * Classification of an API reply by HTTP status and message; null = no
+     * error at this level. Temporary first: flood block (also comes as HTTP
+     * 403), rate limit, server error, non-JSON body (Cloudflare page). Only a
+     * clearly stated authentication error may disable the account
+     * permanently; a blanket 403 would otherwise kill all 1fichier downloads.
+     */
+    internal fun httpFailure(code: Int, message: String?, isJson: Boolean): HosterException? {
+        val msg = message?.ifBlank { null }
         val flood = msg?.let { it.contains("Flood", true) || it.contains("try again", true) } == true
         if (flood || code == 429 || code in 500..599) {
-            throw HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_too_many_requests", code)), permanent = false)
+            return HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_too_many_requests", code)), permanent = false)
         }
         if (code == 401 || (code == 403 && msg?.contains("Not authenticated", true) == true)) {
-            throw AuthException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_not_authenticated", code)))
+            return AuthException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_not_authenticated", code)))
         }
         if (code == 403) {
-            throw HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_access_blocked")), permanent = false)
+            return HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_access_blocked")), permanent = false)
         }
-        if (json == null) throw HosterException(Texts.t("hoster_onefichier_unexpected_response", code), permanent = false)
-        if (json.optString("status") == "KO") throw koFailure(msg)
-        return json
+        if (!isJson) return HosterException(Texts.t("hoster_onefichier_unexpected_response", code), permanent = false)
+        return null
     }
 
     /**
@@ -424,11 +446,11 @@ class OneFichierHoster : Hoster {
                 ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_onefichier_invalid_link"))
             val form = okhttp3.FormBody.Builder().add("links[]", link).build()
             val request = Request.Builder()
-                .url("https://1fichier.com/check_links.pl")
+                .url(checkLinksUrl)
                 .header("User-Agent", Http.USER_AGENT)
                 .post(form)
                 .build()
-            val text = Http.client.newCall(request).execute().use { resp ->
+            val text = client.newCall(request).execute().use { resp ->
                 resp.peekBody(Http.MAX_TEXT_BYTES).string()
             }
             val line = text.lines().firstOrNull { it.contains("1fichier.com") }

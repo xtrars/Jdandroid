@@ -20,7 +20,15 @@ import java.util.concurrent.ConcurrentHashMap
  * rapidgator.net: official API v2 for premium accounts; without an account the
  * website's free flow ([resolveFree]: timer, unlock, captcha).
  */
-class RapidgatorHoster : Hoster {
+class RapidgatorHoster internal constructor(
+    /** API address; tests replace it with a local server. */
+    private val base: String,
+    /** Website address; tests replace it with a local server. */
+    private val siteBase: String,
+    private val client: OkHttpClient
+) : Hoster {
+
+    constructor() : this("https://rapidgator.net/api/v2", "https://rapidgator.net", Http.client)
 
     override val id = "rapidgator"
     override val displayName = "Rapidgator"
@@ -28,7 +36,6 @@ class RapidgatorHoster : Hoster {
     override val accountHint: String
         get() = Texts.t("hoster_rapidgator_account_hint")
 
-    private val base = "https://rapidgator.net/api/v2"
     private val pattern = Regex("""https?://(?:www\.)?(?:rapidgator\.net|rg\.to)/file/\S+""")
 
     /** Session token cache per account id. */
@@ -40,7 +47,8 @@ class RapidgatorHoster : Hoster {
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
-    private val siteBase = "https://rapidgator.net"
+    /** Host of [siteBase]; domain of the cookies set by the app itself. */
+    private val siteHost = siteBase.toHttpUrl().host
 
     /** Captcha page: the user solves the Turnstile there in the embedded browser. */
     private val captchaPageUrl get() = "$siteBase/download/captcha"
@@ -59,13 +67,13 @@ class RapidgatorHoster : Hoster {
      * sdata__), timer id and the time from which the link may be unlocked.
      * Lives only in-process; after a restart the flow starts over.
      */
-    private class FreeSession(val pageUrl: String) {
+    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) {
         lateinit var vars: RapidgatorFreeVars
         var fileName: String? = null
         var fileSize = -1L
         var hash: String? = null
         val store = mutableListOf<Cookie>()
-        val client: OkHttpClient = Http.client.newBuilder()
+        val client: OkHttpClient = baseClient.newBuilder()
             .followRedirects(true)
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -251,9 +259,9 @@ class RapidgatorHoster : Hoster {
      */
     private fun startFreeSession(id: String, pageUrl: String): Nothing {
         freeSessions.remove(id)
-        val session = FreeSession(pageUrl)
+        val session = FreeSession(pageUrl, client)
         // Force English texts so the error patterns match
-        session.store.add(Cookie.Builder().name("lang").value("en").domain("rapidgator.net").path("/").build())
+        session.store.add(Cookie.Builder().name("lang").value("en").domain(siteHost).path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
         // Unknown id: 302 to /article/premium; rg.to redirects to rapidgator.net
         if (page.code == 404 || !page.finalUrl.contains("/file/$id", ignoreCase = true) ||
@@ -361,7 +369,7 @@ class RapidgatorHoster : Hoster {
             .header("User-Agent", Http.USER_AGENT)
             .post(body)
             .build()
-        return Http.client.newCall(request).execute().use { resp ->
+        return client.newCall(request).execute().use { resp ->
             resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
     }
