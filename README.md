@@ -222,8 +222,6 @@ die fünf neuesten APKs im Repository unter [`release/`](release/):
 | **0.2.0** (aktuell) | 43 | [Release v0.2.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.2.0) · [`release/JDAndroid-0.2.0.apk`](release/JDAndroid-0.2.0.apk) |
 | 0.1.1 | 42 | [Release v0.1.1](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.1) · [`release/JDAndroid-0.1.1.apk`](release/JDAndroid-0.1.1.apk) |
 | 0.1.0 | 41 | [Release v0.1.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.0) · [`release/JDAndroid-0.1.0.apk`](release/JDAndroid-0.1.0.apk) |
-| 0.0.16 | 40 | [`release/JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk) |
-| 0.0.15 | 39 | [`release/JDAndroid-0.0.15.apk`](release/JDAndroid-0.0.15.apk) |
 
 **Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
 Schlüssel signiert, der im Repository lag und deshalb als kompromittiert

@@ -14,7 +14,8 @@ Deutsch. Kommentare im Code sind Englisch.
   GitHub-Release an) und die APK per Datei senden.
 - In `release/` bleiben nur die fünf neuesten APKs; ältere werden mit
   `git rm` entfernt (Reihenfolge nach Version, `versionCode` in
-  `app/build.gradle.kts` ist maßgeblich).
+  `app/build.gradle.kts` ist maßgeblich). APKs mit dem alten, öffentlichen
+  Schlüssel (bis 0.0.16) sind entfernt und dürfen nie wieder verteilt werden.
 - Versionsschema `a.b.c` (Major.Minor.Patch): `0.x` seit der ersten
   Veröffentlichung (0.1.0, versionCode 41); Minor für neue Funktionen, Patch
   für Behebungen. `1.0.0` erst nach Store-Reife. `versionCode` zählt bei
