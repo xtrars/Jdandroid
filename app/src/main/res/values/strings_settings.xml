@@ -145,4 +145,32 @@
     <string name="settings_nfs_exports_empty">Der Server meldet keine Freigaben.</string>
     <string name="settings_nfs_exports_use_server">Nur Server übernehmen, Pfad von Hand eintragen</string>
     <string name="settings_nfs_exports_back">Zurück</string>
+
+    <!-- Backup and restore -->
+    <string name="settings_backup_section">Sicherung</string>
+    <string name="settings_backup_summary">Einstellungen und Konten als Datei sichern oder wiederherstellen</string>
+    <string name="settings_backup_include_credentials_title">Zugangsdaten einschließen</string>
+    <string name="settings_backup_include_credentials_subtitle">Die Sicherungsdatei enthält dann Passwörter, API-Keys und Cookies im Klartext.</string>
+    <string name="settings_backup_save">Sichern</string>
+    <string name="settings_backup_restore">Wiederherstellen</string>
+    <!-- %1$s: date (yyyy-mm-dd) -->
+    <string name="settings_backup_file_name">JDAndroid-Sicherung-%1$s.json</string>
+    <string name="settings_backup_saved">Sicherung gespeichert.</string>
+    <string name="settings_backup_saved_with_credentials">Sicherung mit Zugangsdaten gespeichert.</string>
+    <!-- %1$s: settings count, %2$s: accounts count (plurals below) -->
+    <string name="settings_backup_restored">%1$s, %2$s wiederhergestellt.</string>
+    <plurals name="settings_backup_restored_settings">
+        <item quantity="one">%1$d Einstellung</item>
+        <item quantity="other">%1$d Einstellungen</item>
+    </plurals>
+    <plurals name="settings_backup_restored_accounts">
+        <item quantity="one">%1$d Konto</item>
+        <item quantity="other">%1$d Konten</item>
+    </plurals>
+    <string name="settings_backup_failed">Fehlgeschlagen: %1$s</string>
+    <string name="settings_backup_error_invalid">Keine gültige Sicherungsdatei.</string>
+    <string name="settings_backup_error_version">Sicherungsversion %1$d wird nicht unterstützt.</string>
+    <string name="settings_backup_confirm_title">Einstellungen ersetzen?</string>
+    <string name="settings_backup_confirm_text">Die Werte aus der Datei ersetzen die aktuellen Einstellungen. Enthaltene Konten werden angelegt oder aktualisiert.</string>
+    <string name="settings_backup_confirm_ok">Ersetzen</string>
 </resources>

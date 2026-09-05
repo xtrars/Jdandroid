@@ -137,6 +137,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
             ClickNLoadSection(settings)
+            BackupSection()
 
             Spacer(Modifier.height(24.dp))
             Text(

@@ -145,4 +145,32 @@
     <string name="settings_nfs_exports_empty">The server reports no exports.</string>
     <string name="settings_nfs_exports_use_server">Use server only, enter the path by hand</string>
     <string name="settings_nfs_exports_back">Back</string>
+
+    <!-- Backup and restore -->
+    <string name="settings_backup_section">Backup</string>
+    <string name="settings_backup_summary">Save settings and accounts to a file or restore them</string>
+    <string name="settings_backup_include_credentials_title">Include credentials</string>
+    <string name="settings_backup_include_credentials_subtitle">The backup file then contains passwords, API keys and cookies in plain text.</string>
+    <string name="settings_backup_save">Back up</string>
+    <string name="settings_backup_restore">Restore</string>
+    <!-- %1$s: date (yyyy-mm-dd) -->
+    <string name="settings_backup_file_name">JDAndroid-backup-%1$s.json</string>
+    <string name="settings_backup_saved">Backup saved.</string>
+    <string name="settings_backup_saved_with_credentials">Backup with credentials saved.</string>
+    <!-- %1$s: settings count, %2$s: accounts count (plurals below) -->
+    <string name="settings_backup_restored">%1$s, %2$s restored.</string>
+    <plurals name="settings_backup_restored_settings">
+        <item quantity="one">%1$d setting</item>
+        <item quantity="other">%1$d settings</item>
+    </plurals>
+    <plurals name="settings_backup_restored_accounts">
+        <item quantity="one">%1$d account</item>
+        <item quantity="other">%1$d accounts</item>
+    </plurals>
+    <string name="settings_backup_failed">Failed: %1$s</string>
+    <string name="settings_backup_error_invalid">Not a valid backup file.</string>
+    <string name="settings_backup_error_version">Backup version %1$d is not supported.</string>
+    <string name="settings_backup_confirm_title">Replace settings?</string>
+    <string name="settings_backup_confirm_text">The values from the file replace the current settings. Accounts it contains are created or updated.</string>
+    <string name="settings_backup_confirm_ok">Replace</string>
 </resources>
