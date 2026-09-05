@@ -21,7 +21,9 @@ parallel downloads, global speed limit, Wi-Fi-only mode, checksum
 verification (MD5/SHA-1 where the hoster provides one), remaining-traffic
 overview per account, password list and exclude patterns for extraction,
 extraction into a folder named after the package with per-file and
-per-package progress, Material You theming, Click'n'Load server bound to
+per-package progress, optional NFS share on a NAS as storage target
+(NFSv3, finished files and extracted content are uploaded and retried
+until the NAS is reachable), Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
 **Install.** No store release. Download the newest APK from the
@@ -116,7 +118,8 @@ Hoster lassen sich über das `Hoster`-Interface ergänzen (siehe
 - Suche und Filter in der Download-Liste (Läuft, Wartend, Fertig, Fehler),
   Zustände `QUEUED`, `RUNNING`, `PAUSED`, `EXTRACTING`, `COMPLETED`, `FAILED`.
 - Zielordner wählbar über das Storage Access Framework (auch SD-Karte);
-  Standard ist `Downloads/JDAndroid/`. Einheiten sind durchgehend
+  Standard ist `Downloads/JDAndroid/`. Alternativ eine **NFS-Freigabe auf
+  einem NAS** (siehe [NAS-Ziel](#nas-ziel-nfs)). Einheiten sind durchgehend
   1024-basiert (KiB, MiB, GiB, TiB).
 
 ### Click'n'Load 2
@@ -163,7 +166,25 @@ meldet die App das; Click'n'Load funktioniert davon unabhängig.
 - Dateinamen, in denen ddownload Punkte durch Leerzeichen ersetzt hat
   („name part1 rar“), werden vor dem Entpacken repariert.
 - Fertige Dateien werden nach `Downloads/JDAndroid/` bzw. in den gewählten
-  Zielordner exportiert (abschaltbar).
+  Zielordner exportiert (abschaltbar) – oder auf das NAS, wenn das
+  NFS-Ziel eingeschaltet ist.
+
+### NAS-Ziel (NFS)
+
+In den Einstellungen lässt sich unter „NFS-Freigabe (NAS)“ eine
+NFSv3-Freigabe im eigenen Netz als Speicherziel eintragen (Server,
+Export-Pfad, optionaler Unterordner, uid/gid; „Verbindung prüfen“ hängt
+den Export ein, listet den Zielordner und zeigt den freien Platz).
+Download und Entpacken bleiben lokal; fertige Dateien und entpackte Inhalte
+werden danach in `Export-Pfad/Unterordner/<Paketname>/` hochgeladen und
+lokal gelöscht. Ist das NAS nicht erreichbar, bleibt die Datei mit dem
+Vermerk „Wartet auf NAS“ liegen und wird bei Netzwechsel bzw. im
+Minutentakt erneut hochgeladen. Das NFS-Ziel hat Vorrang vor dem
+SAF-Zielordner und `Downloads/JDAndroid/`. Am NAS müssen NFSv3, die Ports
+111/2049/mountd und Verbindungen von nicht-privilegierten Ports erlaubt
+sein; NFSv3 ist unverschlüsselt und nur für das eigene Netz gedacht.
+Einrichtung für Synology, QNAP, TrueNAS und Linux, Fehlerbilder und
+Grenzen stehen in [`docs/NFS.md`](docs/NFS.md).
 
 ### Konten
 
@@ -354,6 +375,8 @@ Die App ist noch nicht in einem Store. Die Unterlagen dafür liegen vor:
 - [`docs/PLAY_DATA_SAFETY.md`](docs/PLAY_DATA_SAFETY.md) – Antworten für
   das Play-Formular „Datensicherheit“, Begründung der Vordergrunddienst-Typen
   und Berechtigungen.
+- [`docs/NFS.md`](docs/NFS.md) – Einrichtung des NAS-Ziels (NFSv3) auf
+  Synology, QNAP, TrueNAS und Linux, Fehlerbilder, Sicherheitshinweise.
 
 ## Projektstruktur
 
@@ -368,7 +391,8 @@ app/src/main/java/com/jdandroid/
 │                       DdownloadHoster, RapidgatorHoster, OneFichierHoster
 ├── container/          Click'n'Load-Server (eigener Mini-HTTP-Server), DLC-Entschlüsselung, CnL-Status
 ├── engine/             DownloadService (Vordergrund), DownloadEngine (Warteschlange,
-│                       Range-Resume, Prüfsummen), Extractor, SpeedLimiter, BootReceiver
+│                       Range-Resume, Prüfsummen), Extractor, SpeedLimiter, BootReceiver,
+│                       StorageTarget (SAF/MediaStore), nfs/ (NFS-Ziel)
 └── ui/                 Compose: Downloads, Linksammler, Konten, Einstellungen,
                         Browser-Login, Dialoge, ViewModels, Theme (Material You)
 ```
@@ -376,7 +400,8 @@ app/src/main/java/com/jdandroid/
 Datenfluss: Text / Teilen / DLC / Click'n'Load → `LinkParser` → Linksammler
 (`LinkChecker`) → Paket + Downloads in Room → `DownloadService` /
 `DownloadEngine` (Hoster `resolve()` → OkHttp mit Range-Resume) → `Extractor`
-(sobald alle Teile fertig sind) → Export nach `Downloads/JDAndroid/`.
+(sobald alle Teile fertig sind) → Export auf das NAS (NFS), in den
+SAF-Zielordner oder nach `Downloads/JDAndroid/`.
 Ausführlicher in [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md); das
 Room-Schema liegt exportiert unter `app/schemas/`, die Prüf-Checkliste für
 Reviews unter [`docs/PRUEFUNG.md`](docs/PRUEFUNG.md).
@@ -403,6 +428,9 @@ Android-Version, Hoster, Konto-Typ, Archivtyp). Die Regeln stehen in
 ## Bekannte Grenzen
 
 - Kein Captcha-Handling, daher keine Free-Downloads.
+- NAS-Ziel nur über NFSv3 mit uid/gid (kein NFSv4, kein Kerberos, kein
+  SMB); Download und Entpacken bleiben lokal, das NAS ist reines
+  Ablageziel.
 - Der DLC-Webdienst ist ein Fremddienst; seine Verfügbarkeit liegt außerhalb
   der App.
 - Android 15 begrenzt `dataSync`-Vordergrunddienste auf 6 Stunden am Tag.
@@ -427,6 +455,8 @@ Eingebundene Bibliotheken und ihre Lizenzen:
 | zip4j 2.11.6 | Apache-2.0 | ZIP inkl. AES |
 | Apache Commons Compress 1.28.0, XZ for Java 1.12 | Apache-2.0, 0BSD | 7z |
 | OkHttp 5.4.0 (mit Okio) | Apache-2.0 | HTTP |
+| nfs-client 1.1.0 (com.emc.ecs; mit Netty 3.10.6.Final, commons-lang3 3.12.0) | Apache-2.0 | NFSv3-Ziel (NAS) |
+| slf4j-api 1.7.36 | MIT | Logging-Fassade von nfs-client |
 | Kotlin, kotlinx-coroutines, AndroidX, Jetpack Compose, Room | Apache-2.0 | Sprache, Plattform, UI, Datenbank |
 | JUnit 4, androidx.test | EPL-1.0, Apache-2.0 | nur Tests |
 
