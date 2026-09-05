@@ -15,9 +15,13 @@ Deutsch. Kommentare im Code sind Englisch.
 - In `release/` bleiben nur die fünf neuesten APKs; ältere werden mit
   `git rm` entfernt (Reihenfolge nach Version, `versionCode` in
   `app/build.gradle.kts` ist maßgeblich).
-- Versionsschema: `0.1.x` seit der ersten Veröffentlichung (0.1.0,
-  versionCode 41); `1.0.0` erst nach Store-Reife. `versionCode` zählt bei
-  jedem Build hoch (sonst verweigert Android das Update).
+- Versionsschema `a.b.c` (Major.Minor.Patch): `0.x` seit der ersten
+  Veröffentlichung (0.1.0, versionCode 41); Minor für neue Funktionen, Patch
+  für Behebungen. `1.0.0` erst nach Store-Reife. `versionCode` zählt bei
+  jedem Build hoch (sonst verweigert Android das Update). Mit `1.0.0` wird
+  der `versionCode` auf 1 zurückgesetzt (Wunsch des Nutzers); Nutzer der
+  0.x-Versionen müssen dann einmal deinstallieren, weil Android keinen
+  kleineren versionCode installiert.
 - Branch: `claude/android-jdownloader-app-1zqi1n`. Nie auf einen anderen Branch
   pushen. Push mit `git push -u origin <branch>`.
 - Commit-Texte enden mit den Zeilen
