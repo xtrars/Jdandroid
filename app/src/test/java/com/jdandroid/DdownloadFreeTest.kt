@@ -144,7 +144,7 @@ class DdownloadFreeTest {
         """.trimIndent()
         assertEquals("1759", DdownloadFreePage.solveSpanCaptcha(html))
         assertEquals(FreeCaptcha.Span("1759"), DdownloadFreePage.captcha(html))
-        val form = hoster.freeDownloadForm(html, "abc123def456", "https://ddownload.com/abc123def456", mapOf("code" to "1759"))
+        val form = hoster.free.freeDownloadForm(html, "abc123def456", "https://ddownload.com/abc123def456", mapOf("code" to "1759"))
         assertEquals("1759", form["code"])
         assertEquals("Free Download", form["method_free"])
         assertEquals("", form["method_premium"])
@@ -210,7 +210,7 @@ class DdownloadFreeTest {
 
     @Test
     fun freeFormularUebernimmtRandUndSetztReferer() {
-        val form = hoster.freeDownloadForm(seite, "chnaz5epeg4t", "https://ddownload.com/chnaz5epeg4t")
+        val form = hoster.free.freeDownloadForm(seite, "chnaz5epeg4t", "https://ddownload.com/chnaz5epeg4t")
         assertEquals("download2", form["op"])
         assertEquals("chnaz5epeg4t", form["id"])
         assertEquals("4n4yng6b5hgxdjgygbu7oom6r5apolomedgsk57f2e", form["rand"])
