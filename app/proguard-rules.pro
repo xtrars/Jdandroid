@@ -13,6 +13,7 @@
 -keepclassmembers class net.sf.sevenzipjbinding.** { *; }
 -keep class * implements net.sf.sevenzipjbinding.** { *; }
 -keep class com.jdandroid.engine.Extractor$RarOpenCallback { *; }
+-keep class com.jdandroid.engine.Extractor$RarExtractCallback { *; }
 
 # Room-Entities/DAOs brauchen keine Keep-Regeln: Room generiert Code statt
 # Reflection zu nutzen und bringt eigene Consumer-Regeln mit.

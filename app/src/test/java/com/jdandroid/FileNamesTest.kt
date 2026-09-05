@@ -109,6 +109,16 @@ class FileNamesTest {
     }
 
     @Test
+    fun `uniqueName nummeriert gegen eine Namensmenge`() {
+        val taken = mutableSetOf("film.mkv", "film (2).mkv", "README")
+        assertEquals("neu.mkv", FileNames.uniqueName("neu.mkv") { it in taken })
+        assertEquals("film (3).mkv", FileNames.uniqueName("film.mkv") { it in taken })
+        assertEquals("README (2)", FileNames.uniqueName("README") { it in taken })
+        taken += "README (2)"
+        assertEquals("README (3)", FileNames.uniqueName("README") { it in taken })
+    }
+
+    @Test
     fun `backoff waechst exponentiell und ist begrenzt`() {
         assertEquals(10_000L, DownloadEngine.backoffMillis(1))
         assertEquals(20_000L, DownloadEngine.backoffMillis(2))

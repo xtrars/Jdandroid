@@ -79,19 +79,20 @@ internal object FileNames {
      * Liefert einen freien Dateinamen: "film.mkv" -> "film (2).mkv".
      * Vorher wurde eine bereits vorhandene Datei kommentarlos ueberschrieben.
      */
-    fun uniqueFile(dir: File, fileName: String): File {
-        val candidate = File(dir, fileName)
-        if (!candidate.exists()) return candidate
+    fun uniqueFile(dir: File, fileName: String): File =
+        File(dir, uniqueName(fileName) { File(dir, it).exists() })
+
+    /** Free name for [fileName] where [isTaken] is true for names already in use: "film.mkv" -> "film (2).mkv". */
+    fun uniqueName(fileName: String, isTaken: (String) -> Boolean): String {
+        if (!isTaken(fileName)) return fileName
         val base = fileName.substringBeforeLast('.', fileName)
         val ext = fileName.substringAfterLast('.', "")
         val suffix = if (ext.isEmpty()) "" else ".$ext"
-        var index = 2
-        while (index < 1000) {
-            val next = File(dir, "$base ($index)$suffix")
-            if (!next.exists()) return next
-            index++
+        for (index in 2 until 1000) {
+            val next = "$base ($index)$suffix"
+            if (!isTaken(next)) return next
         }
-        return File(dir, "$base (${System.currentTimeMillis()})$suffix")
+        return "$base (${System.currentTimeMillis()})$suffix"
     }
 
     private const val MAX_BYTES = 200

@@ -1,22 +1,34 @@
 package com.jdandroid.engine
 
 import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.FileNames
 import com.jdandroid.core.Texts
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
+import net.lingala.zip4j.model.FileHeader
+import net.lingala.zip4j.model.UnzipParameters
+import net.sf.sevenzipjbinding.ExtractAskMode
 import net.sf.sevenzipjbinding.ExtractOperationResult
+import net.sf.sevenzipjbinding.IArchiveExtractCallback
 import net.sf.sevenzipjbinding.IArchiveOpenCallback
 import net.sf.sevenzipjbinding.IArchiveOpenVolumeCallback
 import net.sf.sevenzipjbinding.ICryptoGetTextPassword
+import net.sf.sevenzipjbinding.IInArchive
 import net.sf.sevenzipjbinding.IInStream
+import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
+import net.sf.sevenzipjbinding.SevenZipException
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
+import org.apache.commons.compress.PasswordRequiredException
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.utils.MultiReadOnlySeekableByteChannel
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.io.RandomAccessFile
+import java.nio.file.Path
 
 /**
  * Entpackt Archive nach dem Download. Passwoerter werden wie im JDownloader
@@ -28,6 +40,10 @@ object Extractor {
 
     /** Fortschritt hoechstens alle 4 MiB melden. */
     private const val PROGRESS_STEP = 4L * 1024 * 1024
+
+    /** Windows attribute flags as stored by 7-Zip and RAR. */
+    private const val ATTR_REPARSE_POINT = 0x400
+    private const val ATTR_UNIX_EXTENSION = 0x8000
 
     @Volatile
     private var sevenZipReady = false
@@ -79,24 +95,20 @@ object Extractor {
     fun isSecondaryVolume(fileName: String): Boolean = ArchiveNames.isSecondaryVolume(fileName)
 
     /**
-     * Entpackt [archive] nach [destDir]. Probiert erst ohne Passwort, dann
-     * alle Eintraege aus [passwords]. Liefert das verwendete Passwort (oder
-     * null bei unverschluesseltem Archiv), wirft [IOException] wenn nichts passt.
-     */
-    /**
      * Ausschlussmuster wie im JDownloader ("*.nfo", "*sample*", "proof/…"):
      * * steht fuer beliebig viele Zeichen, ? fuer eines; Vergleich ohne
      * Beachtung der Gross-/Kleinschreibung, gegen den Dateinamen und den
      * vollstaendigen Pfad im Archiv.
      */
-    fun isExcluded(entryPath: String, patterns: List<String>): Boolean {
-        if (patterns.isEmpty()) return false
-        val path = entryPath.replace('\\', '/').trimStart('/')
-        val name = path.substringAfterLast('/')
-        return patterns.any { pattern ->
+    fun isExcluded(entryPath: String, patterns: List<String>): Boolean =
+        ExcludeFilter(patterns).matches(entryPath)
+
+    /** Exclude patterns compiled once per extraction. */
+    internal class ExcludeFilter(patterns: List<String>) {
+        private val regexes: List<Regex> = patterns.mapNotNull { pattern ->
             val p = pattern.trim()
-            if (p.isEmpty()) return@any false
-            val regex = buildString {
+            if (p.isEmpty()) return@mapNotNull null
+            buildString {
                 for (c in p) {
                     when (c) {
                         '*' -> append(".*")
@@ -105,15 +117,29 @@ object Extractor {
                     }
                 }
             }.toRegex(RegexOption.IGNORE_CASE)
-            regex.matches(name) || regex.matches(path)
+        }
+
+        fun matches(entryPath: String): Boolean {
+            if (regexes.isEmpty()) return false
+            val path = entryPath.replace('\\', '/').trimStart('/')
+            val name = path.substringAfterLast('/')
+            return regexes.any { it.matches(name) || it.matches(path) }
         }
     }
+
+    /** Failure that another password from the list may fix. */
+    internal class PasswordException(message: String) : IOException(message)
 
     /** Fortschrittsmeldung: entpackte Bytes und Gesamtbytes (0 = unbekannt). */
     fun interface ProgressListener {
         fun onProgress(done: Long, total: Long)
     }
 
+    /**
+     * Entpackt [archive] nach [destDir]. Probiert erst ohne Passwort, dann
+     * alle Eintraege aus [passwords]. Liefert das verwendete Passwort (oder
+     * null bei unverschluesseltem Archiv), wirft [IOException] wenn nichts passt.
+     */
     fun extract(
         archive: File,
         destDir: File,
@@ -129,29 +155,33 @@ object Extractor {
         // nach destDir (gleiche Partition, daher renameTo).
         val workDir = File(destDir, ".extract-" + (archiveBase(archive.name) ?: archive.name))
         val candidates = listOf<String?>(null) + passwords.filter { it.isNotBlank() }
+        val filter = ExcludeFilter(excludes)
         var lastError: Exception? = null
         try {
             for (password in candidates) {
-                workDir.deleteRecursively()
+                FileTrees.deleteTree(workDir)
                 workDir.mkdirs()
+                val target = Destination(workDir)
                 try {
                     val lower = archive.name.lowercase()
                     when {
-                        lower.endsWith(".zip") -> extractZip(archive, workDir, password, excludes, progress, flat)
+                        lower.endsWith(".zip") -> extractZip(archive, target, password, filter, progress, flat)
                         lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
-                            extractSevenZip(archive, workDir, password, excludes, progress, flat)
-                        lower.endsWith(".rar") -> extractRar(archive, workDir, password, excludes, progress, flat)
+                            extractSevenZip(archive, target, password, filter, progress, flat)
+                        lower.endsWith(".rar") -> extractRar(archive, target, password, filter, progress, flat)
                         else -> throw IOException(Texts.t("engine_unknown_archive_format", archive.name))
                     }
                     workDir.listFiles()?.forEach { moveInto(it, File(destDir, it.name)) }
                     return password
-                } catch (e: Exception) {
+                } catch (e: PasswordException) {
                     lastError = e
+                } catch (e: Exception) {
+                    throw IOException(Texts.t("engine_extract_error", e.message ?: e.javaClass.simpleName), e)
                 }
             }
         } finally {
             // Nur die Reste des eigenen Versuchs entfernen, nie fremde Dateien in destDir
-            workDir.deleteRecursively()
+            FileTrees.deleteTree(workDir)
         }
         throw IOException(
             Texts.t("engine_extract_failed", lastError?.message ?: lastError?.javaClass?.simpleName ?: "")
@@ -160,7 +190,8 @@ object Extractor {
 
     /**
      * Verschiebt [src] nach [dst]. Bestehende Ordner werden zusammengefuehrt,
-     * bestehende Dateien ersetzt; schlaegt renameTo fehl, wird kopiert.
+     * bei bestehenden Dateien bekommt der Neuzugang "(2)", "(3)" ...;
+     * schlaegt renameTo fehl, wird kopiert.
      */
     private fun moveInto(src: File, dst: File) {
         if (src.isDirectory && dst.isDirectory) {
@@ -168,42 +199,65 @@ object Extractor {
             src.delete()
             return
         }
-        if (dst.exists()) dst.deleteRecursively()
-        if (!src.renameTo(dst)) {
-            if (!src.copyRecursively(dst, overwrite = true)) {
-                throw IOException(Texts.t("engine_move_failed", src.name, dst.parent ?: ""))
+        val free = if (dst.exists()) FileNames.uniqueFile(dst.parentFile!!, dst.name) else dst
+        if (!src.renameTo(free)) {
+            if (!src.copyRecursively(free, overwrite = true)) {
+                throw IOException(Texts.t("engine_move_failed", src.name, free.parent ?: ""))
             }
-            src.deleteRecursively()
+            FileTrees.deleteTree(src)
         }
     }
 
     private fun extractZip(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
-        flat: Boolean
+        archive: File, target: Destination, password: String?, filter: ExcludeFilter,
+        progress: ProgressListener?, flat: Boolean
     ) {
         val zip = ZipFile(archive)
-        if (zip.isEncrypted) {
-            if (password == null) throw ZipException(Texts.t("engine_password_required"))
+        val encrypted = zip.isEncrypted
+        if (encrypted) {
+            if (password == null) throw PasswordException(Texts.t("engine_password_required"))
             zip.setPassword(password.toCharArray())
-        } else if (password != null) {
-            // unverschluesselt wurde bereits im ersten Durchlauf probiert
-            throw ZipException(Texts.t("engine_no_password_needed"))
         }
         // Datei fuer Datei statt extractAll: so greifen Ausschlussmuster und
         // der Fortschritt laesst sich melden
-        val headers = zip.fileHeaders.filter { !it.isDirectory && !isExcluded(it.fileName, excludes) }
+        val headers = zip.fileHeaders.filter { !it.isDirectory && !isLink(it) && !filter.matches(it.fileName) }
         val total = headers.sumOf { it.uncompressedSize.coerceAtLeast(0) }
         var done = 0L
-        val used = HashSet<String>()
+        val params = UnzipParameters().apply { isExtractSymbolicLinks = false }
         progress?.onProgress(0, total)
         for (header in headers) {
-            val out = targetFile(destDir, header.fileName, flat, used)
-            if (flat) zip.extractFile(header, destDir.absolutePath, out.name)
-            else zip.extractFile(header, destDir.absolutePath)
+            val out = target.fileFor(header.fileName, flat)
+            try {
+                if (flat) zip.extractFile(header, target.dir.absolutePath, out.name, params)
+                else zip.extractFile(header, target.dir.absolutePath, params)
+            } catch (e: ZipException) {
+                val passwordError = e.type == ZipException.Type.WRONG_PASSWORD ||
+                    e.type == ZipException.Type.CHECKSUM_MISMATCH
+                if (encrypted && passwordError) throw PasswordException(Texts.t("engine_wrong_password"))
+                throw e
+            }
             done += header.uncompressedSize.coerceAtLeast(0)
             progress?.onProgress(done, total)
         }
     }
+
+    /** Unix mode lives in the upper two bytes of the ZIP external attributes. */
+    private fun isLink(header: FileHeader): Boolean {
+        val attrs = header.externalFileAttributes ?: return false
+        if (attrs.size < 4) return false
+        return isLinkMode(((attrs[3].toInt() and 0xFF) shl 8) or (attrs[2].toInt() and 0xFF))
+    }
+
+    /** S_IFLNK in a Unix mode word. */
+    internal fun isLinkMode(unixMode: Int): Boolean = unixMode and 0xF000 == 0xA000
+
+    /** 7-Zip/RAR attributes: Unix mode in the high 16 bits when 0x8000 is set, or a Windows reparse point. */
+    internal fun isLinkAttributes(attributes: Int): Boolean =
+        attributes and ATTR_REPARSE_POINT != 0 ||
+            (attributes and ATTR_UNIX_EXTENSION != 0 && isLinkMode(attributes ushr 16))
+
+    private fun isLink(entry: SevenZArchiveEntry): Boolean =
+        entry.hasWindowsAttributes && isLinkAttributes(entry.windowsAttributes)
 
     /** Alle Volumes eines mehrteiligen 7z (.7z.001, .7z.002 ...) in Reihenfolge. */
     internal fun sevenZVolumes(archive: File): List<File> {
@@ -218,9 +272,23 @@ object Extractor {
             ?: listOf(archive)
     }
 
+    /**
+     * commons-compress reports a wrong 7z password only as corrupt data. A
+     * password is passed only after the archive asked for one, so decoder
+     * failures with a password count as password failures.
+     */
+    private inline fun <T> decoding7z(password: String?, block: () -> T): T = try {
+        block()
+    } catch (e: PasswordRequiredException) {
+        throw PasswordException(Texts.t("engine_password_required"))
+    } catch (e: Exception) {
+        if (password == null) throw e
+        throw PasswordException(Texts.t("engine_wrong_password"))
+    }
+
     private fun extractSevenZip(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
-        flat: Boolean
+        archive: File, target: Destination, password: String?, filter: ExcludeFilter,
+        progress: ProgressListener?, flat: Boolean
     ) {
         val volumes = sevenZVolumes(archive)
         val builder = SevenZFile.builder()
@@ -231,27 +299,33 @@ object Extractor {
             builder.setFile(archive)
         }
         if (password != null) builder.setPassword(password.toCharArray())
-        builder.get().use { sevenZ ->
-            val total = sevenZ.entries
-                .filter { !it.isDirectory && !isExcluded(it.name, excludes) }
-                .sumOf { it.size.coerceAtLeast(0) }
+        decoding7z(password) { builder.get() }.use { sevenZ ->
+            val entries = sevenZ.entries.toList()
+            val skip = BooleanArray(entries.size) { i ->
+                val entry = entries[i]
+                filter.matches(entry.name) || (!entry.isDirectory && isLink(entry))
+            }
+            val total = entries.indices
+                .filter { !skip[it] && !entries[it].isDirectory }
+                .sumOf { entries[it].size.coerceAtLeast(0) }
             var done = 0L
             var lastReport = 0L
-            val used = HashSet<String>()
             progress?.onProgress(0, total)
+            var index = 0
             while (true) {
-                val entry = sevenZ.nextEntry ?: break
-                if (isExcluded(entry.name, excludes)) continue
+                val entry = decoding7z(password) { sevenZ.nextEntry } ?: break
+                val i = index++
+                if (i < skip.size && skip[i]) continue
                 if (entry.isDirectory) {
-                    if (!flat) safeChild(destDir, entry.name).mkdirs()
+                    if (!flat) target.child(entry.name).mkdirs()
                     continue
                 }
-                val out = targetFile(destDir, entry.name, flat, used)
+                val out = target.fileFor(entry.name, flat)
                 out.parentFile?.mkdirs()
                 out.outputStream().use { stream ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
-                        val read = sevenZ.read(buffer)
+                        val read = decoding7z(password) { sevenZ.read(buffer) }
                         if (read < 0) break
                         stream.write(buffer, 0, read)
                         done += read
@@ -267,56 +341,76 @@ object Extractor {
     }
 
     /**
+     * Encrypted RAR headers: RAR4 main header flag MHD_PASSWORD (0x0080),
+     * RAR5 first block of type 4 (archive encryption header). Only such
+     * archives fail to open because of the password.
+     */
+    internal fun rarHeadersEncrypted(archive: File): Boolean {
+        val head = ByteArray(32)
+        val n = runCatching { archive.inputStream().use { it.read(head) } }.getOrDefault(-1)
+        if (n < 12) return false
+        fun at(i: Int) = head[i].toInt() and 0xFF
+        val rar = at(0) == 'R'.code && at(1) == 'a'.code && at(2) == 'r'.code && at(3) == '!'.code &&
+            at(4) == 0x1A && at(5) == 0x07
+        if (!rar) return false
+        return when (at(6)) {
+            0x00 -> at(9) == 0x73 && at(10) and 0x80 != 0
+            0x01 -> {
+                var i = 12
+                while (i < n && at(i) and 0x80 != 0) i++
+                i++
+                i < n && at(i) == 4
+            }
+            else -> false
+        }
+    }
+
+    /**
      * RAR ueber das native 7-Zip-Binding: unterstuetzt RAR4 und RAR5,
      * jeweils inkl. Verschluesselung und Multivolume (.partN.rar).
      */
     private fun extractRar(
-        archive: File, destDir: File, password: String?, excludes: List<String>, progress: ProgressListener?,
-        flat: Boolean
+        archive: File, target: Destination, password: String?, filter: ExcludeFilter,
+        progress: ProgressListener?, flat: Boolean
     ) {
         ensureSevenZip()
         val openCallback = RarOpenCallback(archive, password)
         RandomAccessFile(archive, "r").use { raf ->
-            val inArchive = SevenZip.openInArchive(
-                null, RandomAccessFileInStream(raf), openCallback
-            )
+            val inArchive = try {
+                SevenZip.openInArchive(null, RandomAccessFileInStream(raf), openCallback)
+            } catch (e: SevenZipException) {
+                openCallback.close()
+                if (!rarHeadersEncrypted(archive)) throw e
+                throw PasswordException(
+                    Texts.t(if (password == null) "engine_password_required" else "engine_wrong_password")
+                )
+            }
             try {
-                val items = inArchive.simpleInterface.archiveItems.filter { item ->
-                    val path = item.path
-                    path != null && !item.isFolder && !isExcluded(path, excludes)
-                }
-                val total = items.sumOf { (it.size ?: 0L).coerceAtLeast(0) }
-                var done = 0L
-                var lastReport = 0L
-                val used = HashSet<String>()
-                progress?.onProgress(0, total)
-                for (item in inArchive.simpleInterface.archiveItems) {
-                    val path = item.path ?: continue
-                    if (isExcluded(path, excludes)) continue
-                    if (item.isFolder) {
-                        if (!flat) safeChild(destDir, path).mkdirs()
+                val files = LinkedHashMap<Int, String>()
+                var total = 0L
+                for (i in 0 until inArchive.numberOfItems) {
+                    val path = inArchive.getProperty(i, PropID.PATH) as? String ?: continue
+                    if (filter.matches(path)) continue
+                    if (inArchive.getProperty(i, PropID.IS_FOLDER) == true) {
+                        if (!flat) target.child(path).mkdirs()
                         continue
                     }
-                    val out = targetFile(destDir, path, flat, used)
-                    out.parentFile?.mkdirs()
-                    val result = out.outputStream().use { stream ->
-                        val sink = net.sf.sevenzipjbinding.ISequentialOutStream { data ->
-                            stream.write(data)
-                            done += data.size
-                            if (done - lastReport >= PROGRESS_STEP) {
-                                lastReport = done
-                                progress?.onProgress(done, total)
-                            }
-                            data.size
-                        }
-                        if (password != null) item.extractSlow(sink, password)
-                        else item.extractSlow(sink)
-                    }
-                    if (result != ExtractOperationResult.OK) {
-                        throw IOException(Texts.t("engine_rar_extraction_result", result.toString()))
-                    }
+                    val attributes = inArchive.getProperty(i, PropID.ATTRIBUTES) as? Int ?: 0
+                    if (isLinkAttributes(attributes)) continue
+                    files[i] = path
+                    total += (inArchive.getProperty(i, PropID.SIZE) as? Long ?: 0L).coerceAtLeast(0)
                 }
-                progress?.onProgress(done, total)
+                progress?.onProgress(0, total)
+                val callback = RarExtractCallback(inArchive, files, target, flat, password, progress, total)
+                try {
+                    inArchive.extract(files.keys.toIntArray(), false, callback)
+                } catch (e: SevenZipException) {
+                    throw callback.failure ?: e
+                } finally {
+                    callback.close()
+                }
+                callback.failure?.let { throw it }
+                progress?.onProgress(callback.done, total)
             } finally {
                 runCatching { inArchive.close() }
                 openCallback.close()
@@ -355,6 +449,81 @@ object Extractor {
         }
     }
 
+    /**
+     * Writes all requested items in one native pass (solid archives are
+     * decompressed once). Failures are kept in [failure] because exceptions
+     * thrown inside a callback surface only as a generic [SevenZipException].
+     */
+    private class RarExtractCallback(
+        private val inArchive: IInArchive,
+        private val files: Map<Int, String>,
+        private val target: Destination,
+        private val flat: Boolean,
+        private val password: String?,
+        private val progress: ProgressListener?,
+        private val total: Long
+    ) : IArchiveExtractCallback, ICryptoGetTextPassword {
+
+        var failure: IOException? = null
+            private set
+        var done = 0L
+            private set
+        private var lastReport = 0L
+        private var current: OutputStream? = null
+        private var currentEncrypted = false
+
+        override fun getStream(index: Int, extractAskMode: ExtractAskMode): ISequentialOutStream? {
+            currentEncrypted = inArchive.getProperty(index, PropID.ENCRYPTED) == true
+            if (extractAskMode != ExtractAskMode.EXTRACT) return null
+            val path = files[index] ?: return null
+            val stream = try {
+                val out = target.fileFor(path, flat)
+                out.parentFile?.mkdirs()
+                out.outputStream()
+            } catch (e: IOException) {
+                throw fail(e)
+            }
+            current = stream
+            return ISequentialOutStream { data ->
+                try {
+                    stream.write(data)
+                } catch (e: IOException) {
+                    throw fail(e)
+                }
+                done += data.size
+                if (done - lastReport >= PROGRESS_STEP) {
+                    lastReport = done
+                    progress?.onProgress(done, total)
+                }
+                data.size
+            }
+        }
+
+        override fun prepareOperation(extractAskMode: ExtractAskMode) {}
+
+        override fun setOperationResult(result: ExtractOperationResult) {
+            close()
+            if (result == ExtractOperationResult.OK) return
+            val message = Texts.t("engine_rar_extraction_result", result.toString())
+            throw fail(if (currentEncrypted) PasswordException(message) else IOException(message))
+        }
+
+        override fun setTotal(total: Long) {}
+        override fun setCompleted(complete: Long) {}
+
+        override fun cryptoGetTextPassword(): String = password ?: ""
+
+        private fun fail(e: IOException): SevenZipException {
+            if (failure == null) failure = e
+            return SevenZipException(e.message, e)
+        }
+
+        fun close() {
+            current?.let { runCatching { it.close() } }
+            current = null
+        }
+    }
+
     /** Siehe [ArchiveNames.archiveBase]. */
     fun archiveBase(fileName: String): String? = ArchiveNames.archiveBase(fileName)
 
@@ -368,32 +537,42 @@ object Extractor {
         }
 
     /**
-     * Zieldatei eines Archiveintrags. Flach: die Ordner im Archiv werden
-     * ignoriert, jede Datei landet direkt in [destDir]; gleiche Namen aus
-     * verschiedenen Archivordnern bekommen "(2)", "(3)" ... angehaengt.
-     * [used] merkt sich die in diesem Lauf vergebenen Namen.
+     * Zielverzeichnis eines Entpackversuchs. Zielpfade werden lexikalisch
+     * gegen den einmal aufgeloesten Pfad des Verzeichnisses geprueft.
      */
-    internal fun targetFile(destDir: File, entryPath: String, flat: Boolean, used: MutableSet<String>): File {
-        if (!flat) return safeChild(destDir, entryPath)
-        val name = entryPath.replace('\\', '/').trimEnd('/').substringAfterLast('/').ifBlank { "datei" }
-        val base = name.substringBeforeLast('.', name)
-        val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
-        var candidate = name
-        var n = 2
-        while (candidate.lowercase() in used || File(destDir, candidate).exists()) {
-            candidate = "$base ($n)$ext"
-            n++
-        }
-        used += candidate.lowercase()
-        return safeChild(destDir, candidate)
-    }
+    internal class Destination(dir: File) {
+        val dir: File = dir.canonicalFile
+        private val root: Path = this.dir.toPath()
+        private val used = HashSet<String>()
 
-    /** Schutz gegen Zip-Slip: Zielpfad muss innerhalb von destDir bleiben. */
-    private fun safeChild(destDir: File, name: String): File {
-        val target = File(destDir, name)
-        if (!target.canonicalPath.startsWith(destDir.canonicalPath + File.separator)) {
-            throw IOException(Texts.t("engine_invalid_archive_path", name))
+        /** Schutz gegen Zip-Slip: Zielpfad muss innerhalb des Verzeichnisses bleiben. */
+        fun child(entryPath: String): File {
+            val target = File(dir, entryPath)
+            val normalized = target.toPath().normalize()
+            if (normalized == root || !normalized.startsWith(root)) {
+                throw IOException(Texts.t("engine_invalid_archive_path", entryPath))
+            }
+            return target
         }
-        return target
+
+        /**
+         * Zieldatei eines Archiveintrags. Flach: die Ordner im Archiv werden
+         * ignoriert, jede Datei landet direkt im Verzeichnis; gleiche Namen aus
+         * verschiedenen Archivordnern bekommen "(2)", "(3)" ... angehaengt.
+         */
+        fun fileFor(entryPath: String, flat: Boolean): File {
+            if (!flat) return child(entryPath)
+            val name = entryPath.replace('\\', '/').trimEnd('/').substringAfterLast('/').ifBlank { "datei" }
+            val base = name.substringBeforeLast('.', name)
+            val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+            var candidate = name
+            var n = 2
+            while (candidate.lowercase() in used || File(dir, candidate).exists()) {
+                candidate = "$base ($n)$ext"
+                n++
+            }
+            used += candidate.lowercase()
+            return child(candidate)
+        }
     }
 }
