@@ -18,9 +18,20 @@ object PackageNaming {
      */
     suspend fun refineAutoName(db: AppDatabase, packageId: Long?) {
         val id = packageId ?: return
-        val names = db.downloadDao().byPackage(id).mapNotNull { it.fileName }
-        val name = commonName(names) ?: return
+        val pkg = db.packageDao().byId(id) ?: return
+        if (!pkg.autoNamed) return
+        val name = refinedName(pkg, db.downloadDao().byPackage(id).mapNotNull { it.fileName }) ?: return
         db.packageDao().refineAutoName(id, name)
+    }
+
+    /**
+     * New name for [pkg] derived from [fileNames], or null when nothing should be
+     * written (manually named, no common part, or the name is already current).
+     */
+    fun refinedName(pkg: DownloadPackage, fileNames: List<String>): String? {
+        if (!pkg.autoNamed) return null
+        val name = commonName(fileNames) ?: return null
+        return name.takeIf { it != pkg.name }
     }
 
     /** Gemeinsamer Namensteil mehrerer Dateinamen, oder null wenn zu kurz. */

@@ -29,7 +29,7 @@ object AccountRefresher {
         if (!inFlight.add(accountId)) return
         try {
             val dao = app.db.accountDao()
-            val account = upgradeSecrets(dao, dao.byId(accountId) ?: return)
+            val (account, upgradeError) = upgradeSecrets(dao, dao.byId(accountId) ?: return)
             val hoster = HosterRegistry.byId(account.hosterId) ?: return
             val updated = try {
                 val info = hoster.checkAccount(account)
@@ -39,7 +39,7 @@ object AccountRefresher {
                     trafficLeft = info.trafficLeft,
                     trafficTotal = info.trafficTotal,
                     trafficUnlimited = info.trafficUnlimited,
-                    statusText = info.statusText,
+                    statusText = statusWithUpgradeError(info.statusText, upgradeError),
                     lastChecked = System.currentTimeMillis()
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -67,14 +67,14 @@ object AccountRefresher {
     }
 
     /**
-     * Klartext-Zugangsdaten aus fruehen Installationen (vor der Keystore-
-     * Verschluesselung) einmalig verschluesselt zurueckschreiben. Schlaegt der
-     * Keystore fehl, bleibt der Datensatz unveraendert, damit kein Konto verloren geht.
+     * Re-encrypts plaintext credentials from installations before the Keystore
+     * encryption. If the Keystore fails, the record stays unchanged (no account
+     * is lost) and the error message is returned so it shows in the account status.
      */
-    private suspend fun upgradeSecrets(dao: AccountDao, account: Account): Account {
+    private suspend fun upgradeSecrets(dao: AccountDao, account: Account): Pair<Account, String?> {
         val needs = listOf(account.password, account.apiKey, account.cookies)
             .any { !it.isNullOrEmpty() && !Secrets.isEncrypted(it) }
-        if (!needs) return account
+        if (!needs) return account to null
         return try {
             val upgraded = account.copy(
                 password = account.password?.let { if (Secrets.isEncrypted(it)) it else Secrets.encrypt(it) },
@@ -82,11 +82,29 @@ object AccountRefresher {
                 cookies = account.cookies?.let { if (Secrets.isEncrypted(it)) it else Secrets.encrypt(it) }
             )
             dao.update(upgraded)
-            upgraded
-        } catch (_: Exception) {
-            account
+            upgraded to null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            account to (e.message ?: e.javaClass.simpleName)
         }
     }
+
+    /** Hoster status first so [Account.hasPremium] still sees the "Premium" prefix. */
+    fun statusWithUpgradeError(status: String?, upgradeError: String?): String? =
+        if (upgradeError == null) status
+        else listOfNotNull(status?.takeIf { it.isNotBlank() }, upgradeError).joinToString(" · ")
+
+    /**
+     * Minutentakt: nur gueltige oder noch nie gepruefte Konten; ein dauerhaft
+     * ungueltiges Konto (falsches Passwort, abgelaufene Browser-Sitzung) wird
+     * erst durch die manuelle Pruefung wieder angefragt. Konten ohne Limit
+     * (1fichier) nur alle [STALE_MS] - deren Stand aendert sich nicht, und
+     * 1fichier sperrt bei zu vielen Anfragen voruebergehend.
+     */
+    fun dueForMinuteRefresh(account: Account, now: Long): Boolean =
+        (account.valid || account.lastChecked == 0L) &&
+            (!account.trafficUnlimited || account.lastChecked < now - STALE_MS)
 
     /** Alle Konten, deren letzte Pruefung aelter als [maxAgeMs] ist. */
     fun refreshStale(app: JdApp, maxAgeMs: Long = STALE_MS) {
@@ -98,16 +116,12 @@ object AccountRefresher {
         }
     }
 
-    /**
-     * Minutentakt in der Kontenansicht: Konten mit Kontingent jede Minute,
-     * Konten ohne Limit (1fichier) nur alle [STALE_MS] - deren Stand aendert
-     * sich nicht, und 1fichier sperrt bei zu vielen Anfragen voruebergehend.
-     */
+    /** Accounts view minute timer, see [dueForMinuteRefresh]. */
     fun refreshAll(app: JdApp) {
         app.appScope.launch {
-            val cutoff = System.currentTimeMillis() - STALE_MS
+            val now = System.currentTimeMillis()
             app.db.accountDao().all()
-                .filter { !it.trafficUnlimited || it.lastChecked < cutoff }
+                .filter { dueForMinuteRefresh(it, now) }
                 .forEach { launch { check(app, it.id) } }
         }
     }

@@ -6,6 +6,8 @@ import com.jdandroid.data.DownloadPackage
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.ui.groupDownloads
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -73,5 +75,45 @@ class DownloadGroupingTest {
         val group = groupDownloads(listOf(extracting), listOf(DownloadPackage(id = 1, name = "A")), LOOSE).single()
         assertEquals(-1, group.extractPercent)
         assertEquals(-1, group.extractPercent(extracting))
+    }
+
+    @Test
+    fun gleicherInhaltErgibtGleicheGruppen() {
+        // Gleiche Datenbank- und Live-Werte muessen gleiche Gruppen liefern, sonst
+        // rekomponiert der Paketkopf bei jedem Fortschritts-Tick
+        val packages = listOf(DownloadPackage(id = 1, name = "A", addedAt = 5))
+        val items = listOf(item(10, 1).copy(status = DownloadStatus.EXTRACTING), item(11, 1))
+        val live = mapOf(10L to LiveProgress(extractPercent = 7))
+        val first = groupDownloads(items, packages, LOOSE, live).single()
+        val second = groupDownloads(items.map { it.copy() }, packages, LOOSE, live).single()
+        assertEquals(first, second)
+        assertNotEquals(first, groupDownloads(items, packages, LOOSE, mapOf(10L to LiveProgress(extractPercent = 8))).single())
+    }
+
+    @Test
+    fun kennzahlenDesPaketsWerdenAusDenEintraegenBerechnet() {
+        val packages = listOf(DownloadPackage(id = 1, name = "A"))
+        val items = listOf(
+            item(10, 1).copy(status = DownloadStatus.COMPLETED, fileSize = 100, downloadedBytes = 100),
+            item(11, 1).copy(status = DownloadStatus.RUNNING, fileSize = 200, downloadedBytes = 50, speedBps = 7),
+            // Unbekannte Groesse: weder Gesamt noch Stand zaehlen
+            item(12, 1).copy(status = DownloadStatus.RUNNING, fileSize = -1, downloadedBytes = 999, speedBps = 3),
+            item(13, 1).copy(status = DownloadStatus.FAILED),
+            item(14, 1).copy(status = DownloadStatus.EXTRACTING)
+        )
+        val group = groupDownloads(items, packages, LOOSE, mapOf(14L to LiveProgress(extractPercent = 30))).single()
+        assertEquals(300L, group.total)
+        assertEquals(150L, group.done)
+        assertEquals(10L, group.speed)
+        assertEquals(1, group.finished)
+        assertEquals(1, group.failed)
+        assertTrue(group.active)
+        assertTrue(group.extracting)
+        assertEquals(30, group.extractPercent)
+
+        val idle = groupDownloads(listOf(item(20, 1)), packages, LOOSE).single()
+        assertFalse(idle.active)
+        assertFalse(idle.extracting)
+        assertEquals(-1, idle.extractPercent)
     }
 }

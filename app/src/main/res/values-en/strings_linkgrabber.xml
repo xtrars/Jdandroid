@@ -30,6 +30,7 @@
     <string name="linkgrabber_source">from %1$s</string>
     <string name="linkgrabber_start_package">Start package</string>
     <string name="linkgrabber_discard_package">Discard package</string>
+    <string name="linkgrabber_package_actions">Package actions</string>
     <string name="linkgrabber_discard_package_question">Discard package?</string>
     <plurals name="linkgrabber_discard_package_text">
         <item quantity="one">“%1$s” with %2$d link will be removed from the Link Grabber.</item>

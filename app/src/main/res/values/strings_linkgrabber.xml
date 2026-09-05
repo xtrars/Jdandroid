@@ -30,6 +30,7 @@
     <string name="linkgrabber_source">von %1$s</string>
     <string name="linkgrabber_start_package">Paket starten</string>
     <string name="linkgrabber_discard_package">Paket verwerfen</string>
+    <string name="linkgrabber_package_actions">Paketaktionen</string>
     <string name="linkgrabber_discard_package_question">Paket verwerfen?</string>
     <plurals name="linkgrabber_discard_package_text">
         <item quantity="one">„%1$s“ mit %2$d Link wird aus dem Linksammler entfernt.</item>

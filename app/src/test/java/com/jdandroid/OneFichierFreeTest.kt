@@ -288,6 +288,13 @@ class OneFichierFreeTest {
         assertEquals("https://1fichier.com/?abcde12345", link.headers["Referer"])
         val ohneCookies = hoster.resolveFree("https://1fichier.com/?abcde12345", FreeHints(direktUrlAusBrowser = "https://a-3.1fichier.com/c1"))
         assertFalse(ohneCookies.headers.containsKey("Cookie"))
+        // Fremder Host: Link zaehlt, die Session-Cookies gehen nicht mit
+        val fremd = hoster.resolveFree(
+            "https://1fichier.com/?abcde12345",
+            FreeHints(direktUrlAusBrowser = "https://cdn.example.net/abc/name.rar", cookies = "SID=abc")
+        )
+        assertEquals("https://cdn.example.net/abc/name.rar", fremd.directUrl)
+        assertFalse(fremd.headers.containsKey("Cookie"))
     }
 
     @Test

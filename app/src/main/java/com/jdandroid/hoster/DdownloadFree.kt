@@ -74,7 +74,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             return@withContext ResolvedLink(
                 direct,
                 fileNameFromUrl(direct),
-                headers = freeHeaders(pageUrl, hints.cookies)
+                headers = freeHeaders(pageUrl, direct, hints.cookies)
             )
         }
 
@@ -173,7 +173,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             direct,
             fileName ?: fileNameFromUrl(direct),
             fileSize,
-            headers = freeHeaders(pageUrl, hoster.cookieHeader(0L, direct))
+            headers = freeHeaders(pageUrl, direct, hoster.cookieHeader(0L, direct))
         )
     }
 
@@ -221,13 +221,16 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     /**
      * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung (cf_clearance
      * ist daran gebunden), Referer der Dateiseite und die Cookies, falls der
-     * Fileserver sie verlangt.
+     * Fileserver sie verlangt. Cookies only for the hoster's own hosts, never
+     * for a foreign CDN [directUrl].
      */
-    fun freeHeaders(pageUrl: String, cookies: String?): Map<String, String> {
+    fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
         headers["User-Agent"] = hoster.browserUa
         headers["Referer"] = pageUrl
-        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        if (DirectLinks.isSiteHost(directUrl, hoster.siteHosts)) {
+            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        }
         return headers
     }
 

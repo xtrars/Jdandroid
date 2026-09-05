@@ -2,8 +2,11 @@ package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import java.util.concurrent.TimeUnit
 
 enum class AccountType { USERNAME_PASSWORD, API_KEY }
@@ -119,6 +122,12 @@ object DirectLinks {
         val ext = last.substringAfterLast('.', "").lowercase()
         return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
     }
+
+    /** True when the URL's host is one of [siteHosts] or a subdomain of one (file servers). */
+    fun isSiteHost(url: String, siteHosts: Set<String>): Boolean {
+        val host = url.toHttpUrlOrNull()?.host?.lowercase() ?: return false
+        return siteHosts.any { host == it || host.endsWith(".$it") }
+    }
 }
 
 interface Hoster {
@@ -198,7 +207,25 @@ object Http {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
+        .addNetworkInterceptor(CrossSiteRedirectInterceptor)
         .build()
+
+    /** Same host or same parent domain (s12.ddownload.com and ddownload.com). */
+    fun sameSite(a: HttpUrl, b: HttpUrl): Boolean {
+        val ha = a.host.lowercase()
+        val hb = b.host.lowercase()
+        if (ha == hb) return true
+        val domain = parentDomain(ha) ?: return false
+        return domain == parentDomain(hb)
+    }
+
+    /** Last two labels of a host name; none for IP addresses and single labels. */
+    private fun parentDomain(host: String): String? {
+        if (host.contains(':') || host.all { it.isDigit() || it == '.' }) return null
+        val labels = host.split('.')
+        if (labels.size < 2 || labels.any { it.isEmpty() }) return null
+        return labels.takeLast(2).joinToString(".")
+    }
 
     // Ohne Versionsnummer: sie lief der App-Version davon (versionName in build.gradle.kts)
     const val USER_AGENT = "Mozilla/5.0 (Android) JDAndroid"
@@ -210,6 +237,19 @@ object Http {
      * den gesamten Inhalt in den Speicher laden (OutOfMemoryError).
      */
     const val MAX_TEXT_BYTES = 2L * 1024 * 1024
+}
+
+/**
+ * OkHttp copies Cookie and Referer of the original request onto every
+ * redirect hop (only Authorization is dropped on a host change); a file
+ * server redirecting to a foreign CDN would receive the hoster's session.
+ */
+internal object CrossSiteRedirectInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (Http.sameSite(chain.call().request().url, request.url)) return chain.proceed(request)
+        return chain.proceed(request.newBuilder().removeHeader("Cookie").removeHeader("Referer").build())
+    }
 }
 
 object HosterRegistry {

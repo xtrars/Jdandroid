@@ -25,7 +25,7 @@
     <string name="hoster_not_authenticated">Nicht angemeldet (HTTP %1$d)</string>
     <string name="hoster_access_blocked">Zugriff blockiert (HTTP 403)</string>
     <string name="hoster_status_quota_unreadable">%1$s · Kontingent nicht lesbar</string>
-    <string name="hoster_status_cdn_credit">%1$s · CDN-Guthaben %2$.1f GB</string>
+    <string name="hoster_status_cdn_credit">%1$s · CDN-Guthaben %2$s</string>
     <string name="hoster_duration_hours">%1$d h</string>
     <string name="hoster_duration_minutes">%1$d min</string>
     <string name="hoster_duration_seconds">%1$d s</string>

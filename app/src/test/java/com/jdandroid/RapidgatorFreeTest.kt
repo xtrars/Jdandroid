@@ -267,6 +267,14 @@ class RapidgatorFreeTest {
             val ohneCookies = hoster.resolveFree("https://rg.to/file/0d348b3c239fe48ea3fed28b8810190d", FreeHints(direct))
             assertNull(ohneCookies.headers["Cookie"])
             assertNotNull(ohneCookies.headers["User-Agent"])
+
+            // Fremder Host: Link zaehlt, die Session-Cookies gehen nicht mit
+            val fremd = hoster.resolveFree(
+                "https://rapidgator.net/file/0d348b3c239fe48ea3fed28b8810190d",
+                FreeHints(direktUrlAusBrowser = "https://cdn.example.net/d/abc/name.rar", cookies = "sdata__=abc")
+            )
+            assertEquals("https://cdn.example.net/d/abc/name.rar", fremd.directUrl)
+            assertNull(fremd.headers["Cookie"])
         } finally {
             Http.browserUserAgent = null
         }

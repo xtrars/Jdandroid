@@ -37,7 +37,7 @@ object HosterTexts {
         "hoster_not_authenticated" to "Nicht angemeldet (HTTP %1\$d)",
         "hoster_access_blocked" to "Zugriff blockiert (HTTP 403)",
         "hoster_status_quota_unreadable" to "%1\$s · Kontingent nicht lesbar",
-        "hoster_status_cdn_credit" to "%1\$s · CDN-Guthaben %2\$.1f GB",
+        "hoster_status_cdn_credit" to "%1\$s · CDN-Guthaben %2\$s",
         // Zeitspannen ohne Plural (Einheitenkuerzel)
         "hoster_duration_hours" to "%1\$d h",
         "hoster_duration_minutes" to "%1\$d min",

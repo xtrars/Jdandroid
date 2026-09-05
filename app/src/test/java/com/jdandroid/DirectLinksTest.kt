@@ -70,6 +70,17 @@ class DirectLinksTest {
     }
 
     @Test
+    fun siteHostErkenntHauptdomainUndSubdomains() {
+        val hosts = hoster.siteHosts
+        assertTrue(DirectLinks.isSiteHost("https://example.com/abc", hosts))
+        assertTrue(DirectLinks.isSiteHost("https://S12.Example.com:183/d/abc/name.rar", hosts))
+        assertFalse(DirectLinks.isSiteHost("https://cdn7.other-cdn.net/d/abc/name.mkv", hosts))
+        assertFalse(DirectLinks.isSiteHost("https://example.com.evil.org/name.rar", hosts))
+        assertFalse(DirectLinks.isSiteHost("https://notexample.com/name.rar", hosts))
+        assertFalse(DirectLinks.isSiteHost("", hosts))
+    }
+
+    @Test
     fun resolveFreeOhneUmsetzungIstPermanent() {
         val error = runCatching { runBlocking { hoster.resolveFree("https://example.com/abc", FreeHints()) } }
             .exceptionOrNull() as HosterException

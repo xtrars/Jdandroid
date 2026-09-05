@@ -25,10 +25,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +42,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.mutableStateMapOf
@@ -213,8 +217,18 @@ private fun CollectorPackageHeader(
                 IconButton(onClick = { vm.startCollectedPackage(group.pkg.id) }) {
                     Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.linkgrabber_start_package), tint = MaterialTheme.colorScheme.primary)
                 }
-                IconButton(onClick = { confirmDelete = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.linkgrabber_discard_package))
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.linkgrabber_package_actions))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.linkgrabber_discard_package)) },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            onClick = { menuOpen = false; confirmDelete = true }
+                        )
+                    }
                 }
             }
         }

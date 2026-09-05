@@ -299,8 +299,10 @@ class DdownloadHoster internal constructor(
     /** Kontopruefung ueber die offizielle API (ohne CAPTCHA). */
     private fun checkViaApi(key: String): AccountInfo {
         val json = apiCall("account/info", mapOf("key" to key))
+        // Status 200 without "result" is a changed response format, not an
+        // invalid key; key errors are already permanent in apiCall.
         val result = json.optJSONObject("result")
-            ?: throw HosterException(Texts.t("hoster_ddownload_unexpected_api_response"), true)
+            ?: throw HosterException(Texts.t("hoster_ddownload_unexpected_api_response"), permanent = false)
         val expire = DdownloadAccountPage.parseExpire(result.opt("premium_expire")?.toString())
         // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
         // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
