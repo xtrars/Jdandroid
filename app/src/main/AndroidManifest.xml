@@ -24,6 +24,7 @@
         android:name=".JdApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="tiramisu"
         android:icon="@mipmap/ic_launcher"

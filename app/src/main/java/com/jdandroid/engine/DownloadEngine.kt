@@ -7,9 +7,11 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.JdApp
 import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.Clock
 import com.jdandroid.core.FileNames
 import com.jdandroid.core.FreeMode
 import com.jdandroid.core.LiveProgress
@@ -56,6 +58,8 @@ import java.io.IOException
 class DownloadEngine(
     private val context: Context,
     private val scope: CoroutineScope,
+    /** Monotone Uhr fuer Messungen und Drosselung; Tests koennen sie vorstellen. */
+    private val clock: Clock = Clock.SYSTEM,
     private val onStateChanged: () -> Unit
 ) {
     private val app = context.applicationContext as JdApp
@@ -66,9 +70,9 @@ class DownloadEngine(
     private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
     private val mutex = Mutex()
 
-    /** Letzte Benachrichtigung des Service, um Aktualisierungen zu drosseln. */
+    /** Letzte Benachrichtigung des Service (monotone Uhr), um Aktualisierungen zu drosseln. */
     @Volatile
-    private var lastNotify = 0L
+    private var lastNotify = clock.nowMillis() - NOTIFY_MS
 
     /**
      * Serialisiert den Download-Abschluss: verhindert, dass zwei gleichzeitig
@@ -90,7 +94,7 @@ class DownloadEngine(
      */
     private val startGate = CompletableDeferred<Unit>()
 
-    private val limiter = SpeedLimiter()
+    private val limiter = SpeedLimiter(clock)
 
     init {
         // Geschwindigkeitslimit aus den Einstellungen live uebernehmen
@@ -130,7 +134,7 @@ class DownloadEngine(
 
     /** Service hoechstens einmal pro Sekunde ueber Fortschritt informieren. */
     private fun notifyProgress() {
-        val now = System.currentTimeMillis()
+        val now = clock.nowMillis()
         if (now - lastNotify >= NOTIFY_MS) {
             lastNotify = now
             onStateChanged()
@@ -147,7 +151,7 @@ class DownloadEngine(
      */
     private suspend fun targetTree(): DocumentFile? {
         val uri = app.settings.currentDownloadTreeUri() ?: return null
-        return runCatching { DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri)) }
+        return runCatching { DocumentFile.fromTreeUri(context, uri.toUri()) }
             .getOrNull()?.takeIf { it.canWrite() }
     }
 
@@ -444,7 +448,8 @@ class DownloadEngine(
      * nichts stiesse ihn nach Ablauf an. Deshalb liest pump() den Zeitpunkt
      * aus der Datenbank; es laeuft immer nur ein Timer, ein frueherer
      * Zeitpunkt ersetzt ihn. Captcha-Eintraege (jenseits des Horizonts)
-     * bleiben unberuecksichtigt.
+     * bleiben unberuecksichtigt. retryAt ist ein persistierter Wanduhr-
+     * Zeitstempel, deshalb wird hier bewusst gegen die Wanduhr gerechnet.
      */
     private suspend fun armRetryTimer() {
         val now = System.currentTimeMillis()
@@ -562,7 +567,8 @@ class DownloadEngine(
         // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
         // Minuten mit einem nichtssagenden IO-Fehler ab.
         val needed = if (total > 0) total - offset else 0
-        val free = downloadDir().usableSpace
+        // StatFs statt File.usableSpace: fragt das Dateisystem direkt
+        val free = android.os.StatFs(downloadDir().path).availableBytes
         if (needed > 0 && free in 0 until needed) {
             throw HosterException(
                 "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
@@ -589,7 +595,8 @@ class DownloadEngine(
         }
 
         var written = offset
-        val startedAt = System.currentTimeMillis()
+        // Monotone Uhr: eine Zeitkorrektur des Systems darf die Messung nicht verfaelschen
+        val startedAt = clock.nowMillis()
         var lastSave = startedAt
         var attemptsReset = false
         // Start des Ladens: Bytestand und (jetzt bekannte) Groesse einmal
@@ -618,7 +625,7 @@ class DownloadEngine(
                             attemptsReset = true
                             dao.resetAttempts(item.id)
                         }
-                        val now = System.currentTimeMillis()
+                        val now = clock.nowMillis()
                         if (now - samples.last().first >= SAMPLE_MS) {
                             samples.addLast(now to written)
                             while (samples.size > 2 && now - samples.first().first > SPEED_WINDOW_MS) {
@@ -950,7 +957,7 @@ class DownloadEngine(
                     val listener = Extractor.ProgressListener { done, total ->
                         if (total <= 0) return@ProgressListener
                         val percent = (done * 100 / total).toInt().coerceIn(0, 100)
-                        val now = System.currentTimeMillis()
+                        val now = clock.nowMillis()
                         setIds.forEach { ProgressBus.update(it, LiveProgress(extractPercent = percent), now) }
                     }
                     Extractor.extract(

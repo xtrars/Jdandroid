@@ -62,7 +62,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.Lifecycle
@@ -327,7 +326,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
 
     // Inhaltshoehe an die Bildschirmhoehe koppeln, damit Titel und Buttons
     // auch auf kleinen Displays mit offener Tastatur Platz behalten.
-    val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+    val maxContentHeight = windowHeightDp() * 0.45f
 
     // Standard-AlertDialog: Groesse und Button-Platzierung uebernimmt das
     // Framework. Dadurch bleiben die Buttons immer im sichtbaren Bereich -

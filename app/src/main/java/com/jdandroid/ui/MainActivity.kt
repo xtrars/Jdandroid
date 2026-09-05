@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.drawable.toDrawable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -121,9 +122,7 @@ class MainActivity : ComponentActivity() {
                 // andersfarbiger Streifen unter der Oberflaeche aufblitzt
                 val background = MaterialTheme.colorScheme.background
                 LaunchedEffect(background) {
-                    window.setBackgroundDrawable(
-                        android.graphics.drawable.ColorDrawable(background.toArgb())
-                    )
+                    window.setBackgroundDrawable(background.toArgb().toDrawable())
                 }
                 Surface(color = background) {
                     MainScreen(

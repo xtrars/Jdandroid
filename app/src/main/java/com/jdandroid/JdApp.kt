@@ -39,8 +39,10 @@ class JdApp : Application() {
         }.start()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "jdandroid.db")
             .addMigrations(*AppDatabase.ALL_MIGRATIONS)
-            // Nur bei einer aelteren App-Version als der Datenbank neu aufbauen;
-            // regulaere Updates migrieren verlustfrei.
+            // Fruehe Entwicklungsstaende (Version 1-4) werden neu aufgebaut;
+            // ab Version 5 migrieren Updates verlustfrei.
+            .fallbackToDestructiveMigrationFrom(true, *AppDatabase.DESTRUCTIVE_FROM)
+            // Nur bei einer aelteren App-Version als der Datenbank neu aufbauen
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsRepository(this)

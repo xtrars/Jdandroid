@@ -64,6 +64,11 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        // Versionshinweise absichtlich aus: Abhaengigkeiten werden gezielt
+        // aktualisiert, nicht bei jedem Lint-Lauf.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+    }
     testOptions {
         // Noetig: ClickNLoadServerTest laeuft gegen android.util.Log (ohne
         // Stub wirft die Methode "not mocked").

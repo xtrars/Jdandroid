@@ -38,7 +38,9 @@ import kotlinx.coroutines.launch
 /** Ein Paket mit seinen Downloads. */
 data class DownloadGroup(
     val pkg: DownloadPackage,
-    val items: List<DownloadItem>
+    val items: List<DownloadItem>,
+    /** Entpack-Stand je Eintrag in Prozent (nur live aus dem [ProgressBus]), fehlend = unbekannt. */
+    val extractPercents: Map<Long, Int> = emptyMap()
 ) {
     val total: Long get() = items.sumOf { it.fileSize.coerceAtLeast(0) }
     // Nur Eintraege mit bekannter Groesse zaehlen, sonst steht "1,2 GiB / 700 MiB"
@@ -54,32 +56,44 @@ data class DownloadGroup(
     /** Entpack-Fortschritt in Prozent, -1 = unbekannt. */
     val extractPercent: Int get() = items
         .filter { it.status == DownloadStatus.EXTRACTING }
-        .maxOfOrNull { it.extractProgress } ?: -1
+        .maxOfOrNull { extractPercents[it.id] ?: -1 } ?: -1
+
+    /** Entpack-Stand eines Eintrags in Prozent, -1 = unbekannt. */
+    fun extractPercent(item: DownloadItem): Int = extractPercents[item.id] ?: -1
 }
 
 /**
  * Gruppiert Eintraege nach Paketen. Eintraege ohne Paket (aeltere Versionen)
  * oder mit einem nicht mehr vorhandenen Paket landen unter "Ohne Paket" -
- * sonst waeren sie in keiner Gruppe und damit unsichtbar.
+ * sonst waeren sie in keiner Gruppe und damit unsichtbar. Der Entpack-Stand
+ * steht nicht in der Datenbank und wird aus [live] an die Gruppe gehaengt.
  */
-internal fun groupDownloads(items: List<DownloadItem>, packages: List<DownloadPackage>): List<DownloadGroup> {
+internal fun groupDownloads(
+    items: List<DownloadItem>,
+    packages: List<DownloadPackage>,
+    live: Map<Long, LiveProgress> = emptyMap()
+): List<DownloadGroup> {
     val byPackage = items.groupBy { it.packageId }
+    fun group(pkg: DownloadPackage, members: List<DownloadItem>): DownloadGroup {
+        val percents = HashMap<Long, Int>()
+        members.forEach { m -> live[m.id]?.extractPercent?.takeIf { it >= 0 }?.let { percents[m.id] = it } }
+        return DownloadGroup(pkg, members, percents)
+    }
     val known = packages.mapNotNull { pkg ->
-        byPackage[pkg.id]?.let { DownloadGroup(pkg, it.sortedBy { i -> i.addedAt }) }
+        byPackage[pkg.id]?.let { group(pkg, it.sortedBy { i -> i.addedAt }) }
     }
     val packageIds = packages.map { it.id }.toSet()
     val loose = items.filter { it.packageId !in packageIds }
     return if (loose.isEmpty()) known
-    else known + DownloadGroup(
-        DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false),
-        loose
-    )
+    else known + group(DownloadPackage(id = 0, name = "Ohne Paket", autoNamed = false), loose)
 }
 
 /**
- * Live-Werte aus dem [ProgressBus] ueber die Datenbank-Eintraege legen.
- * Eintraege ohne Live-Werte bleiben dieselbe Instanz; -1 im Live-Wert
- * bedeutet "Datenbankwert behalten" (z.B. Bytestand waehrend des Entpackens).
+ * Live-Werte aus dem [ProgressBus] ueber die Datenbank-Eintraege legen
+ * (Bytestand und Geschwindigkeit; der Entpack-Stand haengt an der Gruppe,
+ * siehe [groupDownloads]). Eintraege ohne Live-Werte bleiben dieselbe
+ * Instanz; -1 im Live-Wert bedeutet "Datenbankwert behalten" (z.B. Bytestand
+ * waehrend des Entpackens).
  */
 internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProgress>): List<DownloadItem> {
     if (live.isEmpty()) return items
@@ -87,8 +101,7 @@ internal fun overlayProgress(items: List<DownloadItem>, live: Map<Long, LiveProg
         val p = live[item.id] ?: return@map item
         item.copy(
             downloadedBytes = if (p.downloadedBytes >= 0) p.downloadedBytes else item.downloadedBytes,
-            speedBps = p.speedBps,
-            extractProgress = if (p.extractPercent >= 0) p.extractPercent else item.extractProgress
+            speedBps = p.speedBps
         )
     }
 }
@@ -138,7 +151,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val groups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll(), ProgressBus.state) { items, packages, live ->
             val visible = items.filter { it.status != DownloadStatus.COLLECTED }
-            groupDownloads(overlayProgress(visible, live), packages)
+            groupDownloads(overlayProgress(visible, live), packages, live)
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

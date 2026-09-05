@@ -14,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.jdandroid.CrashReporter
@@ -27,7 +26,7 @@ import com.jdandroid.CrashReporter
 @Composable
 fun CrashDialog(report: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+    val maxHeight = windowHeightDp() * 0.45f
 
     AlertDialog(
         onDismissRequest = onDismiss,
