@@ -16,13 +16,15 @@ plugins {
  * unsigned.
  */
 fun releaseSigning(): Map<String, String>? {
-    val envStore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
-    if (envStore != null) {
+    // Values pasted into CI secrets often carry a trailing newline.
+    fun env(name: String) = System.getenv(name)?.trim().orEmpty()
+    val envStore = env("KEYSTORE_FILE")
+    if (envStore.isNotEmpty()) {
         return mapOf(
             "storeFile" to envStore,
-            "storePassword" to (System.getenv("KEYSTORE_PASSWORD") ?: ""),
-            "keyAlias" to (System.getenv("KEY_ALIAS") ?: ""),
-            "keyPassword" to (System.getenv("KEY_PASSWORD") ?: ""),
+            "storePassword" to env("KEYSTORE_PASSWORD"),
+            "keyAlias" to env("KEY_ALIAS"),
+            "keyPassword" to env("KEY_PASSWORD"),
         )
     }
     val datei = rootProject.file("keystore.properties")

@@ -102,8 +102,15 @@ jobs:
             fi
           done
           datei="$RUNNER_TEMP/release.jks"
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$datei"
-          echo "KEYSTORE_FILE=$datei" >> "$GITHUB_ENV"
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$datei"
+          # Secrets ohne Zeilenumbrueche und Randleerzeichen weitergeben (ein
+          # per Zwischenablage eingefuegtes Passwort endet oft auf "\n").
+          {
+            echo "KEYSTORE_FILE=$datei"
+            echo "KEYSTORE_PASSWORD=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            echo "KEY_ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            echo "KEY_PASSWORD=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          } >> "$GITHUB_ENV"
           echo "Signierung: Keystore aus Secrets (Alias $KEY_ALIAS)."
       # Beide Gradle-Tasks getrennt, wie in CLAUDE.md beschrieben: parallele
       # KSP-Laeufe koennen sonst ein leeres Room-Schema anlegen.
