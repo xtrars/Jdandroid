@@ -114,11 +114,8 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads")
     suspend fun all(): List<DownloadItem>
 
-    /** Next queued entry not already in [running]; otherwise a download could start twice after requeueRunning(). */
-    @Query(
-        "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
-            "AND id NOT IN (:running) ORDER BY addedAt ASC LIMIT 1"
-    )
+    /** See [DownloadQueries.NEXT_QUEUED]. */
+    @Query(DownloadQueries.NEXT_QUEUED)
     suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('QUEUED', 'RUNNING', 'EXTRACTING')")
@@ -146,9 +143,6 @@ interface DownloadDao {
             "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED') AND fileSize > 0"
     )
     suspend fun openTotalBytes(): Long
-
-    @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'PAUSED'")
-    suspend fun requeuePaused()
 
     /** "Pause all" must include queued entries, otherwise pump() starts the next ones at once. */
     @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")
@@ -238,6 +232,10 @@ interface DownloadDao {
             "WHERE id = :id AND status IN ('RUNNING', 'EXTRACTING')"
     )
     suspend fun completeIfActive(id: Long, path: String?, note: String?): Int
+
+    /** See [DownloadQueries.COMPLETE_EXPORTED]. */
+    @Query(DownloadQueries.COMPLETE_EXPORTED)
+    suspend fun completeExported(id: Long, path: String?, note: String?)
 
     @Query("UPDATE downloads SET localPath = :path, errorMessage = NULL WHERE id IN (:ids) AND status = 'COMPLETED'")
     suspend fun updateCompletedSet(ids: List<Long>, path: String?)

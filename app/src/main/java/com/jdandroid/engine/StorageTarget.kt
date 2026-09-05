@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.core.FileNames
@@ -125,7 +126,14 @@ internal class StorageTarget(
         runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
     }
 
-    /** Copies a file into the SAF directory; returns the display path or null on failure. */
+    /** Name the provider actually stored the document under; providers rename on collision ("x (1).rar"). */
+    private fun displayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
+        }
+    }.getOrNull()
+
+    /** Copies a file into the SAF directory; returns the display path (with the stored name) or null on failure. */
     private fun copyToTree(dir: TreeDir, file: File, name: String): String? {
         val mime = android.webkit.MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
@@ -136,7 +144,7 @@ internal class StorageTarget(
             context.contentResolver.openOutputStream(target)?.use { out ->
                 file.inputStream().use { it.copyTo(out, COPY_BUFFER) }
             } ?: run { deleteDocument(target); return null }
-            "${dir.name ?: Texts.t("engine_target_folder")}/$candidate"
+            "${dir.name ?: Texts.t("engine_target_folder")}/${displayName(target) ?: candidate}"
         } catch (e: Exception) {
             deleteDocument(target)
             null
@@ -173,7 +181,7 @@ internal class StorageTarget(
                     values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                     resolver.update(uri, values, null, null)
                     temp.delete()
-                    return Placed("Downloads/JDAndroid/$fileName")
+                    return Placed("Downloads/JDAndroid/${displayName(uri) ?: fileName}")
                 }
             } catch (_: Exception) {
             }
@@ -279,7 +287,11 @@ internal class StorageTarget(
         }
     }
 
-    /** Copies the exported file [name] from the NFS target, the SAF folder or Downloads/JDAndroid back to [dest]. */
+    /**
+     * Copies the exported file back to [dest] from the NFS target, the SAF
+     * folder or Downloads/JDAndroid. [name] is the stored name (see
+     * [storedName]), which differs from the download name after a collision.
+     */
     suspend fun restoreExported(name: String, dest: File): Boolean {
         val nfsSettings = settings.currentNfs()
         if (nfsSettings.isUsable && nfs.restoreExported(nfsSettings, name, dest)) return true
@@ -289,9 +301,10 @@ internal class StorageTarget(
         if (Build.VERSION.SDK_INT >= 29) {
             val resolver = context.contentResolver
             val projection = arrayOf(MediaStore.MediaColumns._ID)
+            // Exact folder: a LIKE prefix would also match extracted files of the same name in sub folders
             val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
-                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-            val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid%")
+                "${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
+            val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid/")
             runCatching {
                 resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, null)
                     ?.use { cursor ->
@@ -317,8 +330,15 @@ internal class StorageTarget(
         false
     }
 
-    private companion object {
+    companion object {
         /** Streams over ParcelFileDescriptor are unbuffered; 1 MiB keeps syscalls low on multi-GiB files. */
-        const val COPY_BUFFER = 1 shl 20
+        private const val COPY_BUFFER = 1 shl 20
+
+        /**
+         * Name a finished file was stored under, taken from the display path
+         * in `localPath` ("Downloads/JDAndroid/x (1).rar", "Target/x (1).rar",
+         * "nfs://host/share/x (2).rar" or a local path).
+         */
+        fun storedName(displayPath: String): String = displayPath.substringAfterLast('/')
     }
 }

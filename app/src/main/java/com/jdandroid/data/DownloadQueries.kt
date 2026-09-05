@@ -27,7 +27,30 @@ object DownloadQueries {
         "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
             "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
 
-    /** "Resume all": paused and failed entries in one step, nothing else. */
+    /**
+     * Completes an entry whose finished file was exported outside the
+     * completion lock. A pause or requeue that arrived during the export loses
+     * (the transfer was already complete); a deleted entry stays deleted.
+     */
+    const val COMPLETE_EXPORTED =
+        "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
+            "speedBps = 0, attempts = 0, retryAt = 0 " +
+            "WHERE id = :id AND status IN ('RUNNING', 'QUEUED', 'PAUSED')"
+
+    /**
+     * Next entry for pump(): due (retryAt <= :now), oldest first, and not in
+     * :running, which requeueRunning() would otherwise hand out a second time.
+     * Room expands the list; it must never be empty (callers append -1).
+     */
+    const val NEXT_QUEUED =
+        "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
+            "AND id NOT IN (:running) ORDER BY addedAt ASC LIMIT 1"
+
+    /**
+     * "Resume all" (screen and notification): paused and failed entries in one
+     * step, nothing else. retryAt and attempts are cleared, otherwise an entry
+     * paused during a wait would sit in the queue without its countdown.
+     */
     const val REQUEUE_PAUSED_AND_FAILED =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
             "retryAt = 0 WHERE status IN ('PAUSED', 'FAILED')"
