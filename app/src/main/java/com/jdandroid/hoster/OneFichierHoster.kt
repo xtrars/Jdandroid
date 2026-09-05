@@ -355,7 +355,6 @@ class OneFichierHoster : Hoster {
             .post(body.toString().toRequestBody(jsonType))
             .build()
         val (code, text) = Http.client.newCall(request).execute().use { resp ->
-            if (resp.body == null) throw HosterException("Leere Antwort von 1fichier")
             // begrenzt lesen, siehe Http.MAX_TEXT_BYTES
             resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }

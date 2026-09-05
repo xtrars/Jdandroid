@@ -361,7 +361,6 @@ class RapidgatorHoster : Hoster {
             .post(body)
             .build()
         return Http.client.newCall(request).execute().use { resp ->
-            if (resp.body == null) throw HosterException("Leere Antwort vom Server")
             resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
     }

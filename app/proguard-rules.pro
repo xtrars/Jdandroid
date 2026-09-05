@@ -14,9 +14,8 @@
 -keep class * implements net.sf.sevenzipjbinding.** { *; }
 -keep class com.jdandroid.engine.Extractor$RarOpenCallback { *; }
 
-# Room-Entities/DAOs und NanoHTTPD brauchen keine Keep-Regeln: Room generiert
-# Code statt Reflection zu nutzen und bringt eigene Consumer-Regeln mit,
-# NanoHTTPD wird nur aus Kotlin-Code heraus aufgerufen.
+# Room-Entities/DAOs brauchen keine Keep-Regeln: Room generiert Code statt
+# Reflection zu nutzen und bringt eigene Consumer-Regeln mit.
 
 # Optionale Kompressionsformate von commons-compress, die die App nicht nutzt
 -dontwarn org.brotli.dec.**

@@ -17,11 +17,11 @@ import com.jdandroid.R
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlRequest
 import com.jdandroid.container.CnlStatus
+import com.jdandroid.core.AppLog
 import com.jdandroid.core.AppMessages
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.LinkSink
 import com.jdandroid.ui.MainActivity
-import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -225,7 +225,7 @@ class DownloadService : Service() {
         for (host in listOf(ClickNLoadServer.LOOPBACK, "localhost")) {
             try {
                 val server = ClickNLoadServer(host, onRequest = onRequest)
-                server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, true)
+                server.start()
                 cnlServer = server
                 CnlStatus.started(host)
                 return
@@ -238,7 +238,7 @@ class DownloadService : Service() {
             "Port ${ClickNLoadServer.PORT} ist belegt – läuft ein anderer Download-Manager auf dem Gerät?"
         } else raw
         CnlStatus.failed(reason)
-        android.util.Log.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
+        AppLog.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
     }
 
     private suspend fun refresh() {

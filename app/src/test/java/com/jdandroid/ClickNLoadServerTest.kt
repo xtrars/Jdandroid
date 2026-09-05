@@ -36,7 +36,7 @@ class ClickNLoadServerTest {
         // Port 0 = freier Port statt 9666, damit der Test nicht mit einer
         // laufenden App oder einem parallelen Testlauf kollidiert
         server = ClickNLoadServer(port = 0) { request -> received.add(request) }
-        server.start(5000, true)
+        server.start()
         port = server.listeningPort
     }
 
@@ -52,13 +52,21 @@ class ClickNLoadServerTest {
         // Ein zweiter Server (paralleler Testlauf) muss gleichzeitig starten koennen
         val second = ClickNLoadServer(port = 0) { }
         try {
-            second.start(5000, true)
+            second.start()
             assertTrue(second.listeningPort > 0)
             assertTrue(second.listeningPort != port)
             assertEquals("Server antwortet (HTTP 200).", ClickNLoadServer.selfTest(second.listeningPort))
         } finally {
             second.stop()
         }
+    }
+
+    @Test
+    fun stopBeendetDenServer() {
+        assertTrue(server.isAlive)
+        server.stop()
+        assertTrue(!server.isAlive)
+        assertTrue(ClickNLoadServer.selfTest(port).startsWith("Server nicht erreichbar"))
     }
 
     @Test
@@ -97,6 +105,14 @@ class ClickNLoadServerTest {
             .mapKeys { it.key.lowercase() }
         conn.disconnect()
         return Reply(code, "$contentType|$text", responseHeaders)
+    }
+
+    /** Schickt rohe Bytes an den Server und liefert die komplette Antwort. */
+    private fun raw(request: String): String = Socket("127.0.0.1", port).use { socket ->
+        socket.soTimeout = 5000
+        socket.getOutputStream().write(request.toByteArray())
+        socket.getOutputStream().flush()
+        socket.getInputStream().bufferedReader().readText()
     }
 
     private val key = "1234567890123456".toByteArray()
@@ -215,6 +231,90 @@ class ClickNLoadServerTest {
         // daher hier nur pruefen, dass der Server ueberhaupt einen Origin freigibt
         assertNotNull(reply.headers["access-control-allow-origin"])
         assertNotNull(reply.headers["access-control-allow-methods"])
+        assertTrue(received.isEmpty())
+    }
+
+    @Test
+    fun preflightSpiegeltOriginUndAngefragteHeader() {
+        // Rohe Anfrage, weil HttpURLConnection den Origin-Header unterdrueckt
+        val answer = raw(
+            "OPTIONS /flash/addcrypted2 HTTP/1.1\r\n" +
+                "Host: 127.0.0.1:$port\r\n" +
+                "Origin: https://example.org\r\n" +
+                "Access-Control-Request-Method: POST\r\n" +
+                "Access-Control-Request-Headers: content-type, x-custom\r\n" +
+                "Access-Control-Request-Private-Network: true\r\n\r\n"
+        )
+        val lines = answer.split("\r\n")
+        assertEquals("HTTP/1.1 204 No Content", lines[0])
+        val headers = lines.drop(1).takeWhile { it.isNotEmpty() }
+            .associate { it.substringBefore(':').lowercase() to it.substringAfter(':').trim() }
+        assertEquals("https://example.org", headers["access-control-allow-origin"])
+        assertEquals("GET, POST, OPTIONS", headers["access-control-allow-methods"])
+        assertEquals("content-type, x-custom", headers["access-control-allow-headers"])
+        assertEquals("true", headers["access-control-allow-private-network"])
+        assertEquals("true", headers["access-control-allow-local-network"])
+        assertEquals("86400", headers["access-control-max-age"])
+        assertEquals("close", headers["connection"])
+        assertEquals("0", headers["content-length"])
+    }
+
+    @Test
+    fun ohneOriginBleibtAllowOriginStern() {
+        val reply = request("/jdcheck.js")
+        assertEquals(listOf("*"), reply.headers["access-control-allow-origin"])
+        assertEquals(listOf("Content-Type, X-Requested-With"), reply.headers["access-control-allow-headers"])
+    }
+
+    @Test
+    fun crossdomainXmlWirdAusgeliefert() {
+        val reply = request("/crossdomain.xml")
+        assertEquals(200, reply.code)
+        assertTrue(reply.body.startsWith("application/xml|"))
+        assertTrue(reply.body.contains("<cross-domain-policy>"))
+    }
+
+    @Test
+    fun wurzelAntwortetMitLebenszeichen() {
+        val reply = request("/")
+        assertEquals(200, reply.code)
+        assertTrue(reply.body.endsWith("|JDAndroid"))
+    }
+
+    @Test
+    fun unbekannterPfadLiefert404() {
+        val reply = request("/gibt/es/nicht")
+        assertEquals(404, reply.code)
+        assertTrue(reply.body.contains("not found"))
+        assertTrue(received.isEmpty())
+        // Auch der Fehler traegt CORS-Header
+        assertNotNull(reply.headers["access-control-allow-origin"])
+    }
+
+    @Test
+    fun fehlerhafteRequestLineLiefert400() {
+        val answer = raw("KEIN HTTP\r\n\r\n")
+        assertTrue("Antwort: $answer", answer.startsWith("HTTP/1.1 400 Bad Request"))
+        assertTrue(answer.contains("bad request"))
+    }
+
+    @Test
+    fun ueberlangeHeaderWerdenAbgelehnt() {
+        val answer = raw(
+            "GET /jdcheck.js HTTP/1.1\r\n" +
+                "X-Fill: " + "a".repeat(9000) + "\r\n\r\n"
+        )
+        assertTrue("Antwort: $answer", answer.startsWith("HTTP/1.1 431"))
+    }
+
+    @Test
+    fun mehrereAnfragenParallel() {
+        // Thread-Pool: mehrere gleichzeitige Clients bekommen alle eine Antwort
+        val threads = (1..8).map {
+            Thread { assertEquals(200, request("/jdcheck.js").code) }.apply { start() }
+        }
+        threads.forEach { it.join(10000) }
+        assertTrue(threads.none { it.isAlive })
     }
 
     @Test

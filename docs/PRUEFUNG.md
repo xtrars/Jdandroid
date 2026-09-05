@@ -21,6 +21,37 @@ gebaut und gesendet (siehe `CLAUDE.md`).
 - UI: alle Schaltflächen sichtbar, Aktionsmenüs vollständig, Dialoge
   drehfest (rememberSaveable), keine Hauptthread-IO.
 
+## 1a. Hoster live
+
+Die Free- und Login-Abläufe hängen an der HTML-Struktur der Hoster-Seiten,
+und die ändert sich, ohne dass ein Unit-Test es merkt. Der Blickwinkel
+`live` in `.claude/workflows/pruefung.js` ruft deshalb mit `curl` (über den
+konfigurierten Proxy) die öffentlichen Seiten ab und vergleicht sie mit den
+Regexen und Selektoren unter `app/src/main/java/com/jdandroid/hoster`:
+
+| Hoster | Seiten | Verglichene Muster |
+|---|---|---|
+| ddownload | Dateiseite `https://ddownload.com/<code>`, Login `https://ddownload.com/login.html` | Formular `op=download1/download2`, `rand`, `id`; `data-wait-seconds`; `dk-dl-alert`; Countdown `dk-countdown-num`/`countdown_str`; Turnstile (`cf-turnstile`, `data-sitekey`); Login-Formular |
+| Rapidgator | Dateiseite `https://rapidgator.net/file/<id>` | `var fid/secs/captchaUrl`, `AjaxStartTimer`, `AjaxGetDownloadLink`, `/download/captcha`, „Downloading:“ / „File size:“, 404-Seite |
+| 1fichier | Dateiseite `https://1fichier.com/?<id>&lg=en` (Cookie `LG=en`) | Formular `f1` (hidden `adz`, `save`), `var count`, Tabelle Filename/Size, Meldungen (File not found, IP Locked, Accès restreint) |
+
+Regeln:
+
+- Beispiel-Links zuerst in den Tests unter `app/src/test` suchen; gibt es
+  keinen echten Link, Platzhalter-Codes verwenden. Die Seite „Datei nicht
+  gefunden“ zeigt Gerüst, Skripte und Formulare trotzdem und reicht für den
+  Strukturvergleich; Countdown und Download-Formular sind dann natürlich nicht
+  prüfbar und werden nicht als Abweichung gemeldet.
+- Eine Abweichung ist ein Fund, wenn ein Regex des Codes die Live-Seite
+  nicht mehr trifft oder die Seite ein neues Muster benutzt (neuer Feldname,
+  anderes Attribut, umbenannte Klasse). Der Fund nennt Datei und Zeile des
+  Regex und den Ausschnitt der Live-Seite.
+- Ist eine Seite nicht erreichbar (Timeout, Cloudflare-Hürde, Proxy-Fehler,
+  Sperre der Server-IP – 1fichier sperrt Rechenzentrums-IPs pauschal), gibt
+  es dafür keinen Fund, nur einen Hinweis (`hint`) im Protokoll.
+- Der Blickwinkel ändert keine Dateien und legt keine Konten oder Downloads
+  an; er lädt keine Dateien herunter, nur HTML.
+
 ## 2. Architektur und Stand der Technik
 
 - Schichten sauber (ui / data / engine / hoster / container)? Zu große

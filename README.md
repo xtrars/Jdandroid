@@ -297,14 +297,34 @@ Hinweise:
 
 Dasselbe läuft als GitHub-Actions-Workflow
 ([`.github/workflows/android.yml`](.github/workflows/android.yml)) bei jedem
-Push auf `main`/`master` bzw. `claude/**`, bei Pull Requests und wöchentlich
-montags: Unit-Tests, Lint (Artefakt `lint-report`), Kompilieren des
-Migrationstests und Release-APK (Artefakt `JDAndroid-release`).
-Ein zweiter Workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
+Push auf `main`/`master` bzw. `claude/**`, bei Pull Requests und manuellem
+Start: Unit-Tests, Lint (Artefakt `lint-report`), Kompilieren des
+Migrationstests und Release-APK (Artefakt `JDAndroid-release`); ein zweiter
+Job führt die instrumentierten Tests auf einem Android-Emulator (API 34,
+x86_64) aus (Artefakt `androidTest-report`).
+Ein weiterer Workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
 baut bei einem Git-Tag `v<versionName>` (z. B. `v0.0.4`) die APK erneut,
 prüft die Signatur und legt sie samt SHA-256-Prüfsumme als GitHub-Release
-ab; bisher wurden noch keine Tags gesetzt, daher gibt es noch keine
+ab. Sind die Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` und
+`KEY_PASSWORD` gesetzt, signiert er damit, sonst mit dem Keystore im Repo.
+Bisher wurden noch keine Tags gesetzt, daher gibt es noch keine
 GitHub-Releases.
+
+## Veröffentlichung
+
+Die App ist noch nicht in einem Store. Die Unterlagen dafür liegen vor:
+
+- [`docs/RELEASE.md`](docs/RELEASE.md) – Checkliste: Version `1.0.0`,
+  Tag `v*`, CI, Signierung aus Repository-Secrets, Entfernen des Keystores
+  aus Repo und Historie, APK/AAB, Play-Hinweise samt Richtlinienrisiko,
+  F-Droid (Anti-Feature `NonFreeDep`).
+- [`docs/DATENSCHUTZ.md`](docs/DATENSCHUTZ.md) – Datenschutzerklärung
+  (deutsch, mit englischer Fassung): keine Telemetrie, Zugangsdaten nur
+  lokal und verschlüsselt, Verbindungen nur zu den eingerichteten Hostern
+  und beim DLC-Import zum JDownloader-Dienst.
+- [`docs/PLAY_DATA_SAFETY.md`](docs/PLAY_DATA_SAFETY.md) – Antworten für
+  das Play-Formular „Datensicherheit“, Begründung der Vordergrunddienst-Typen
+  und Berechtigungen.
 
 ## Projektstruktur
 
@@ -317,7 +337,7 @@ app/src/main/java/com/jdandroid/
 │                       LinkChecker (Online-Prüfung), AccountRefresher, PackageNaming
 ├── hoster/             Hoster-Interface, Registry, LinkParser, OkHttp-Client;
 │                       DdownloadHoster, RapidgatorHoster, OneFichierHoster
-├── container/          Click'n'Load-Server (NanoHTTPD), DLC-Entschlüsselung, CnL-Status
+├── container/          Click'n'Load-Server (eigener Mini-HTTP-Server), DLC-Entschlüsselung, CnL-Status
 ├── engine/             DownloadService (Vordergrund), DownloadEngine (Warteschlange,
 │                       Range-Resume, Prüfsummen), Extractor, SpeedLimiter, BootReceiver
 └── ui/                 Compose: Downloads, Linksammler, Konten, Einstellungen,
@@ -377,7 +397,6 @@ Eingebundene Bibliotheken und ihre Lizenzen:
 | 7-Zip-JBinding-4Android (Release-16.02-2.03) | LGPL-2.1, enthält 7-Zip/unRAR-Code mit unRAR-Einschränkung; nur dynamisch als Bibliothek eingebunden | RAR4/RAR5 |
 | zip4j 2.11.6 | Apache-2.0 | ZIP inkl. AES |
 | Apache Commons Compress 1.28.0, XZ for Java 1.12 | Apache-2.0, 0BSD | 7z |
-| NanoHTTPD 2.3.1 | BSD-3-Clause | Click'n'Load-Server |
 | OkHttp 4.12.0 (mit Okio) | Apache-2.0 | HTTP |
 | Kotlin, kotlinx-coroutines, AndroidX, Jetpack Compose, Room | Apache-2.0 | Sprache, Plattform, UI, Datenbank |
 | JUnit 4, androidx.test | EPL-1.0, Apache-2.0 | nur Tests |
