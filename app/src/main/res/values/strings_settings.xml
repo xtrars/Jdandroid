@@ -169,7 +169,7 @@
     </plurals>
     <string name="settings_backup_failed">Fehlgeschlagen: %1$s</string>
     <string name="settings_backup_error_invalid">Keine gültige Sicherungsdatei.</string>
-    <string name="settings_backup_error_version">Sicherungsversion %1$d wird nicht unterstützt.</string>
+    <string tools:ignore="PluralsCandidate" name="settings_backup_error_version">Sicherungsversion %1$d wird nicht unterstützt.</string>
     <string name="settings_backup_confirm_title">Einstellungen ersetzen?</string>
     <string name="settings_backup_confirm_text">Die Werte aus der Datei ersetzen die aktuellen Einstellungen. Enthaltene Konten werden angelegt oder aktualisiert.</string>
     <string name="settings_backup_confirm_ok">Ersetzen</string>

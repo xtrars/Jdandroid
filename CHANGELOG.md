@@ -27,6 +27,20 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.0] – 2026-09-05
+
+### Hinzugefügt
+
+- NFS: „Server suchen“ findet NAS-Systeme im WLAN (mDNS `_nfs._tcp` und
+  Scan des Subnetzes auf Port 2049) und listet die Freigaben des gewählten
+  Servers per MOUNT-Protokoll; Server und Export-Pfad müssen nicht mehr
+  getippt werden. „Freigaben“ neben dem Export-Feld listet sie auch für
+  einen eingetragenen Server.
+- Sicherung und Wiederherstellung der Einstellungen als JSON-Datei
+  (Passwortliste, Ausschlussmuster, Zielordner, NFS, alle Schalter);
+  Konten nur auf Wunsch und dann im Klartext. Gedacht für Neuinstallationen,
+  etwa beim Signaturwechsel oder dem versionCode-Reset mit 1.0.0.
+
 ## [0.3.0] – 2026-09-05
 
 ### Hinzugefügt
@@ -795,6 +809,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.0]: https://github.com/xtrars/Jdandroid/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/xtrars/Jdandroid/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/xtrars/Jdandroid/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/xtrars/Jdandroid/compare/v0.1.1...v0.2.0
