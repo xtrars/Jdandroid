@@ -1,6 +1,6 @@
 # Wiederkehrende Gesamtprüfung
 
-Diese Checkliste wird regelmäßig (Routine) und bei größeren Änderungen
+Diese Checkliste wird auf Wunsch des Nutzers und bei größeren Änderungen
 abgearbeitet. Funde werden direkt behoben, nicht nur protokolliert.
 Ergebnis jeder Prüfung: Kurzbericht an den Nutzer, Version erhöht, APK
 gebaut und gesendet (siehe `CLAUDE.md`).

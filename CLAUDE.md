@@ -102,15 +102,17 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 - Allgemein: HTML statt Datei nie als Dateiinhalt speichern; vorübergehende
   Fehler (5xx, Sperren) dürfen ein Konto nie dauerhaft abschalten.
 
-## Wiederkehrende Prüfung
+## Gesamtprüfung auf Wunsch
 
-Der Nutzer wünscht eine regelmäßige Gesamtprüfung (Architektur, Fehler,
-Stand der Technik, Sinn und Erweiterbarkeit der Tests). Ablauf und
-Checkliste stehen in `docs/PRUEFUNG.md`. Die Prüfung ist als Workflow
-`.claude/workflows/pruefung.js` hinterlegt (Workflow-Tool mit `scriptPath`
-auf diese Datei; `name: "pruefung"` nur, wenn das Tool den Namen kennt).
-Optional `args: {reports: [...]}` mit vorab erstellten Berichten, dann
-entfällt die eigene Suche. Ablauf: sechs Blickwinkel finden, zwei Skeptiker je Fund
-verifizieren, bestätigte Funde werden datei­weise behoben, Tests ergänzt,
-zum Schluss Build und Tests. Eine Routine startet ihn jeden Montag 06:00
-UTC in einer frischen Sitzung. Nach dem Workflow: Version/APK wie oben.
+Die Gesamtprüfung (Architektur, Fehler, Stand der Technik, Tests) läuft nur
+auf Wunsch des Nutzers, nicht mehr regelmäßig (Routine und CI-Zeitplan wurden
+entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
+`.claude/workflows/pruefung.js` (Workflow-Tool mit `scriptPath`; optional
+`args: {reports: [...]}`). Nach dem Workflow: Version/APK wie oben.
+
+## Parallele Workflows
+
+Mehrere Workflows gleichzeitig nur in getrennten Git-Worktrees
+(`git worktree add ../wt-<name> -b wt/<name>`), sonst kollidieren die
+Gradle-Builds im selben Arbeitsbaum. Die Zweige danach in den Hauptbranch
+mergen, einmal gemeinsam bauen und testen, dann freigeben.
