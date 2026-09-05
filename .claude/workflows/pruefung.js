@@ -16,6 +16,8 @@ const BASIS =
   'docs/PRUEFUNG.md und halte dich an die dort festgelegten Regeln. Verifiziere jede Aussage im Code, ' +
   'keine Spekulation. Antworte knapp und auf Deutsch. '
 
+const BASIS_MIT_HINWEIS = () => BASIS + HINWEIS
+
 const FUNDE_SCHEMA = {
   type: 'object',
   properties: {
@@ -140,16 +142,30 @@ const BLICKWINKEL = [
   },
 ]
 
+// Optionaler Zusatzhinweis fuer alle Agenten (z.B. Umbauten seit der Suche).
+const HINWEIS = args && typeof args.hinweis === 'string' ? args.hinweis + ' ' : ''
+
 // Vorab-Berichte (z.B. aus einer frueheren Sitzung) koennen die Suche ersetzen.
 const vorab = args && Array.isArray(args.reports) ? args.reports : null
 // Bereits strukturierte Funde (z.B. aus einer vorgezogenen Suchphase) ersetzen die Suche ganz.
 const vorabFunde = args && Array.isArray(args.findings) ? args.findings : null
+// Alternativ eine JSON-Datei mit einem Array solcher Funde (wird von einem Agenten eingelesen).
+const vorabDatei = args && typeof args.fundeDatei === 'string' ? args.fundeDatei : null
 
 phase('Finden')
 let funde
 if (vorabFunde) {
   log(`Nutze ${vorabFunde.length} vorab strukturierte Funde statt eigener Suche`)
   funde = vorabFunde
+} else if (vorabDatei) {
+  log(`Lese vorab strukturierte Funde aus ${vorabDatei}`)
+  const gelesen = await agent(
+    `Lies die Datei ${vorabDatei} (JSON-Array von Funden mit title, file, line, severity, scenario, fix) ` +
+      'vollstaendig und gib alle Eintraege unveraendert und ungekuerzt als findings zurueck. Nichts bewerten, ' +
+      'nichts weglassen, keine Dateien aendern.',
+    { label: 'funde lesen', phase: 'Finden', schema: FUNDE_SCHEMA, effort: 'low' }
+  )
+  funde = gelesen ? gelesen.findings : []
 } else if (vorab) {
   log(`Nutze ${vorab.length} vorab erstellte Berichte statt eigener Suche`)
   const extrahiert = await parallel(
@@ -199,7 +215,7 @@ const geprueft = await parallel(
     parallel(
       ['Korrektheit', 'Relevanz im echten Ablauf'].map(linse => () =>
         agent(
-          BASIS +
+          BASIS_MIT_HINWEIS() +
             `Versuche, diesen Fund zu WIDERLEGEN (Blickwinkel: ${linse}). Lies die genannte Stelle ` +
             `und ihr Umfeld. Bei Unsicherheit gilt refuted=true. Fund: ${f.title} in ${f.file}` +
             `${f.line ? ':' + f.line : ''}. Szenario: ${f.scenario}. Vorschlag: ${f.fix}`,
@@ -236,7 +252,7 @@ for (const [datei, liste] of gruppen) {
     .map(f => `- ${f.title} (${f.severity})${f.line ? ', Zeile ' + f.line : ''}: ${f.scenario} Vorschlag: ${f.fix}`)
     .join('\n')
   const ergebnis = await agent(
-    BASIS +
+    BASIS_MIT_HINWEIS() +
       `Behebe die folgenden bestaetigten Funde in ${datei} (und, falls noetig, in direkt betroffenen ` +
       'Dateien) minimal und sauber. Ergaenze fuer jedes behobene Verhalten einen Unit-Test unter ' +
       'app/src/test, wenn es auf der JVM sinnvoll testbar ist; Funde mit dem Titel "Test fehlt" bedeuten ' +
