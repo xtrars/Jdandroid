@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -21,7 +22,6 @@ import com.jdandroid.core.AppLog
 import com.jdandroid.core.AppMessages
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.LinkSink
-import com.jdandroid.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,15 +72,23 @@ class DownloadService : Service() {
 
     private fun registerNetworkCallback() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val filter = NetworkChangeFilter()
         val callback = object : ConnectivityManager.NetworkCallback() {
+            // onAvailable is always followed by onCapabilitiesChanged (API 26+),
+            // which then reports the change once with the metered state known
             override fun onAvailable(network: android.net.Network) {
-                scope.launch { engine.onNetworkChanged() }
+                filter.onAvailable()
             }
             override fun onCapabilitiesChanged(
                 network: android.net.Network,
                 caps: android.net.NetworkCapabilities
             ) {
-                scope.launch { engine.onNetworkChanged() }
+                val changed = filter.onCapabilities(
+                    network,
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                )
+                if (changed) scope.launch { engine.onNetworkChanged() }
             }
         }
         runCatching { cm.registerDefaultNetworkCallback(callback) }
@@ -132,7 +140,7 @@ class DownloadService : Service() {
             }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
             ACTION_RESUME_ALL -> scope.launch {
-                (application as JdApp).db.downloadDao().requeuePaused()
+                (application as JdApp).db.downloadDao().requeuePausedAndFailed()
                 engine.pump()
             }
             ACTION_START_CNL -> {
@@ -318,7 +326,7 @@ class DownloadService : Service() {
     ): Notification {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java),
+            appLaunchIntent(),
             PendingIntent.FLAG_IMMUTABLE
         )
         val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_DOWNLOADS)
@@ -348,7 +356,7 @@ class DownloadService : Service() {
         // Android 15 allows a restart only from the foreground.
         val open = PendingIntent.getActivity(
             this, if (resumeAction) 3 else 0,
-            Intent(this, MainActivity::class.java).apply {
+            appLaunchIntent().apply {
                 if (resumeAction) putExtra(EXTRA_RESUME_ALL, true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             },

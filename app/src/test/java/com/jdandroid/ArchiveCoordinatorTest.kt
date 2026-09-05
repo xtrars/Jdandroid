@@ -23,7 +23,10 @@ class ArchiveCoordinatorTest {
 
     // Process-wide registry: release every key and id a test may have left behind
     @After
-    fun freeRegistry() = keys.forEach { ExtractionRegistry.finish(it, (1L..9L).toList()) }
+    fun freeRegistry() {
+        keys.forEach { ExtractionRegistry.finish(it, (1L..9L).toList()) }
+        (1L..9L).forEach { ExtractionRegistry.finishExport(it) }
+    }
 
     @Test
     fun archivordnerJePaketUnterDemDownloadordner() {
@@ -93,5 +96,19 @@ class ArchiveCoordinatorTest {
         ExtractionRegistry.finish("2/film", listOf(8))
         assertTrue(ExtractionRegistry.isActive("1/other"))
         assertEquals(listOf(3L), ExtractionRegistry.activeIds())
+    }
+
+    @Test
+    fun exportierteEintraegeZaehlenAlsAktivBisDerExportEndet() {
+        ExtractionRegistry.start("1/film", listOf(1, 2))
+        ExtractionRegistry.startExport(5)
+        assertEquals(listOf(5L), ExtractionRegistry.exportingIds())
+        // A starting service must not requeue the exported entry either
+        assertEquals(setOf(1L, 2L, 5L), ExtractionRegistry.activeIds().toSet())
+        ExtractionRegistry.finishExport(5)
+        assertTrue(ExtractionRegistry.exportingIds().isEmpty())
+        assertEquals(setOf(1L, 2L), ExtractionRegistry.activeIds().toSet())
+        // Finishing an export does not touch the extraction
+        assertTrue(ExtractionRegistry.isActive("1/film"))
     }
 }

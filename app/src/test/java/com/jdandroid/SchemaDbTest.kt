@@ -41,15 +41,15 @@ abstract class SchemaDbTest {
 
     protected fun item(
         id: Long, name: String?, status: DownloadStatus, packageId: Long? = 1, note: String? = null,
-        downloadedBytes: Long = 0
+        downloadedBytes: Long = 0, addedAt: Long = id
     ) {
         bind(
             "INSERT INTO downloads (id, url, hosterId, packageId, fileName, archiveKey, fileSize, downloadedBytes, " +
                 "speedBps, status, errorMessage, attempts, retryAt, online, addedAt) VALUES " +
-                "(:id, :url, 'h', :packageId, :fileName, :archiveKey, -1, :downloadedBytes, 0, :status, :note, 0, 0, 0, :id)",
+                "(:id, :url, 'h', :packageId, :fileName, :archiveKey, -1, :downloadedBytes, 0, :status, :note, 0, 0, 0, :addedAt)",
             "id" to id, "url" to "https://h/$id", "packageId" to packageId, "fileName" to name,
             "archiveKey" to ArchiveNames.archiveKey(name), "status" to status.name, "note" to note,
-            "downloadedBytes" to downloadedBytes
+            "downloadedBytes" to downloadedBytes, "addedAt" to addedAt
         ).use { it.executeUpdate() }
     }
 

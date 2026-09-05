@@ -57,6 +57,9 @@ internal class ArchiveCoordinator(
     /** Running extractions across all service instances. */
     val activeCount: Int get() = extracting.get()
 
+    /** Entries whose finished file is being exported, see [ExtractionRegistry.exportingIds]. */
+    val exportingIds: List<Long> get() = ExtractionRegistry.exportingIds()
+
     /** Triggering entry, its package and the archive key. */
     private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String) {
         /** Registry key: same base in different packages are different sets. */
@@ -94,19 +97,7 @@ internal class ArchiveCoordinator(
         val autoExtract = settings.currentAutoExtract()
 
         if (!autoExtract || base == null) {
-            // Move and status change under the completion lock: pause() and a
-            // network change wait instead of setting PAUSED/QUEUED on an entry
-            // whose part file is already gone.
-            val packageId = completionMutex.withLock {
-                // Paused or requeued while finishing: keep the .part file for resuming
-                val row = dao.byId(id) ?: return@withLock null
-                if (row.status != DownloadStatus.RUNNING) return@withLock null
-                val placed = storage.finish(temp, fileName)
-                markCompleted(id, placed.path, placed.note)
-                row.packageId
-            }
-            // A waiting archive set of the same package may be complete now
-            retryWaitingSets(packageId)
+            exportAndComplete(id, temp, fileName)
             return@withContext
         }
 
@@ -134,6 +125,32 @@ internal class ArchiveCoordinator(
         if (shouldExtract == null) return@withContext
 
         startExtraction(shouldExtract, archiveFile)
+    }
+
+    /**
+     * Moves a finished non-archive file to its target. The copy or upload runs
+     * outside the completion lock so a slow target (SAF, MediaStore, NFS) does
+     * not hold up pausing and pumping; [ExtractionRegistry] keeps the entry
+     * from being restarted meanwhile, and a pause or requeue that arrives
+     * during the export loses because the transfer was already complete.
+     */
+    private suspend fun exportAndComplete(id: Long, temp: File, fileName: String) {
+        val packageId = completionMutex.withLock {
+            // Paused or requeued while finishing: keep the .part file for resuming
+            val row = dao.byId(id) ?: return
+            if (row.status != DownloadStatus.RUNNING) return
+            ExtractionRegistry.startExport(id)
+            row.packageId
+        }
+        try {
+            val placed = storage.finish(temp, fileName)
+            dao.byId(id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
+            dao.completeExported(id, placed.path, placed.note)
+        } finally {
+            ExtractionRegistry.finishExport(id)
+        }
+        // A waiting archive set of the same package may be complete now
+        retryWaitingSets(packageId)
     }
 
     /**
@@ -279,15 +296,22 @@ internal class ArchiveCoordinator(
         return null
     }
 
-    /** Fetches a completed archive file back into the package folder from its stored path or the export target. */
+    /**
+     * Fetches a completed archive file back into the package folder from its
+     * stored path or the export target. The export is looked up by the name
+     * it was stored under, not the download name: another package's file of
+     * the same name may occupy that one ("x.rar" vs "x (1).rar").
+     */
     private suspend fun restoreArchive(item: DownloadItem, dest: File): Boolean {
-        val name = item.fileName ?: return false
-        item.localPath?.let { path ->
+        val path = item.localPath
+        if (path != null) {
             val f = File(path)
             if (f.isFile && f.path != dest.path) {
                 return runCatching { f.copyTo(dest, overwrite = true); true }.getOrDefault(false)
             }
         }
+        val name = path?.let { StorageTarget.storedName(it) }?.takeIf { it.isNotBlank() }
+            ?: item.fileName ?: return false
         return storage.restoreExported(name, dest)
     }
 

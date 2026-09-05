@@ -8,7 +8,6 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
-import com.jdandroid.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,7 +43,7 @@ class BootReceiver : BroadcastReceiver() {
     private fun notifyPending(context: Context, count: Int) {
         val open = PendingIntent.getActivity(
             context, 0,
-            Intent(context, MainActivity::class.java),
+            context.appLaunchIntent(),
             PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, JdApp.CHANNEL_EVENTS)

@@ -29,6 +29,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -37,6 +38,7 @@ import kotlin.coroutines.coroutineContext
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 /**
  * Runs the downloads: resolves links, transfers files with range resume and
@@ -92,8 +94,11 @@ class DownloadEngine(
         }
     }
 
-    /** Running downloads plus running extractions and export retries. */
-    val activeCount: Int get() = jobs.size + archives.activeCount + exportRetry.activeCount
+    /** Running downloads plus running extractions, export retries and exports of paused entries. */
+    val activeCount: Int get() = jobs.size + archives.activeCount + exportRetry.activeCount + detachedExports()
+
+    /** Exports whose download job is already gone (paused meanwhile); they keep the service alive on their own. */
+    private fun detachedExports(): Int = archives.exportingIds.count { !jobs.containsKey(it) }
 
     fun markReady() { startGate.complete(Unit) }
 
@@ -101,6 +106,7 @@ class DownloadEngine(
     suspend fun isIdle(): Boolean = mutex.withLock {
         // Entries held for a captcha need no running service: solving it restarts the service
         jobs.isEmpty() && archives.activeCount == 0 && exportRetry.activeCount == 0 &&
+            archives.exportingIds.isEmpty() &&
             dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
     }
 
@@ -139,8 +145,8 @@ class DownloadEngine(
         val max = app.settings.currentMaxConcurrent()
         mutex.withLock {
             while (jobs.size < max) {
-                // Exclude running ids: never the same download twice
-                val running = jobs.keys.toList() + listOf(-1L)
+                // Exclude running ids and entries still being exported: never the same download twice
+                val running = jobs.keys.toList() + archives.exportingIds + listOf(-1L)
                 val next = dao.nextQueued(System.currentTimeMillis(), running) ?: break
                 dao.setStatus(next.id, DownloadStatus.RUNNING)
                 jobs[next.id] = scope.launch { run(next.id) }
@@ -157,8 +163,10 @@ class DownloadEngine(
     }
 
     /**
-     * On a metered network with "Wi-Fi only" set, running downloads go back to
-     * the queue and restart automatically when Wi-Fi returns; otherwise pumps.
+     * Called only for a real network change (new network, metered or validated
+     * state). On a metered network with "Wi-Fi only" set, running downloads go
+     * back to the queue and restart automatically when Wi-Fi returns; otherwise
+     * pumps and retries pending exports at once.
      */
     suspend fun onNetworkChanged() {
         if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
@@ -271,6 +279,9 @@ class DownloadEngine(
     }
 
     private suspend fun run(id: Long) {
+        // pump() may have started a successor for this id before the finally
+        // runs (pause, then resume at once): release only the own slot
+        val self = coroutineContext.job
         try {
             val item = dao.byId(id) ?: return
             // Archive already complete in the package folder (e.g. paused during extraction): do not reload
@@ -291,7 +302,7 @@ class DownloadEngine(
                 current = adoptFileName(current, resolvedName)
                 PackageNaming.refineAutoName(app.db, current.packageId)
             }
-            download(current, resolved.directUrl, resolved.hash, resolved.headers)
+            download(self, current, resolved.directUrl, resolved.hash, resolved.headers)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: WaitException) {
@@ -319,7 +330,7 @@ class DownloadEngine(
             // NonCancellable: withLock throws immediately in a cancelled coroutine
             // under contention. transfer() clears its own bus entry, which may
             // belong to the extraction after completion.
-            withContext(NonCancellable) { mutex.withLock { jobs.remove(id) } }
+            withContext(NonCancellable) { mutex.withLock { jobs.remove(id, self) } }
             scope.launch { pump() }
         }
     }
@@ -389,6 +400,7 @@ class DownloadEngine(
     }
 
     private suspend fun download(
+        owner: Job,
         item: DownloadItem,
         directUrl: String,
         expectedHash: String? = null,
@@ -396,6 +408,9 @@ class DownloadEngine(
     ) {
         var target = tempFile(item)
         var offset = if (target.exists()) target.length() else 0L
+        // Hashed while the bytes stream through the buffer; a second full read
+        // of a multi-GiB file after the download would cost tens of seconds
+        val digest = expectedHash?.let(::hashAlgorithmFor)?.let { MessageDigest.getInstance(it) }
 
         val builder = Request.Builder()
             .url(directUrl)
@@ -414,14 +429,14 @@ class DownloadEngine(
         val vanished = !coroutineScope {
             val watcher = launch { try { awaitCancellation() } finally { call.cancel() } }
             try {
-                call.execute().use { resp -> transfer(resp, item, target, offset) { target = it } }
+                call.execute().use { resp -> transfer(owner, resp, item, target, offset, digest) { target = it } }
             } finally {
                 watcher.cancel()
             }
         }
         if (vanished) return
 
-        if (expectedHash != null) verifyHash(target, expectedHash)
+        if (digest != null && expectedHash != null) verifyHash(target, digest, expectedHash)
 
         val finalName = dao.byId(item.id)?.fileName ?: target.name.removeSuffix(".part")
         archives.completeDownload(item.id, target, finalName)
@@ -431,13 +446,18 @@ class DownloadEngine(
     /**
      * Classifies the response and writes the body to [initialTarget]. Returns
      * false if the entry was deleted meanwhile. [onTarget] reports a renamed
-     * part file (the name arrived with the response).
+     * part file (the name arrived with the response). [digest], if given,
+     * ends up covering the whole file: the resumed prefix is read once, the
+     * rest is fed from the transfer buffer. [owner] is the job registered in
+     * [jobs] for this entry; a successor's bus entry is left alone.
      */
     private suspend fun transfer(
+        owner: Job,
         resp: okhttp3.Response,
         item: DownloadItem,
         initialTarget: File,
         initialOffset: Long,
+        digest: MessageDigest?,
         onTarget: (File) -> Unit
     ): Boolean {
         var target = initialTarget
@@ -449,6 +469,7 @@ class DownloadEngine(
             )
         ) {
             ResponseKind.AlreadyComplete -> {
+                digest?.feed(target)
                 dao.saveProgress(item.id, offset, offset)
                 return true
             }
@@ -496,6 +517,7 @@ class DownloadEngine(
             target = tempFile(current)
             onTarget(target)
         }
+        if (offset > 0) digest?.feed(target)
 
         var written = offset
         val startedAt = clock.nowMillis()
@@ -515,6 +537,7 @@ class DownloadEngine(
                         val read = input.read(buffer)
                         if (read < 0) break
                         out.write(buffer, 0, read)
+                        digest?.update(buffer, 0, read)
                         written += read
                         limiter.throttle(read)
                         if (!attemptsReset && written - offset >= PROGRESS_RESET_BYTES) {
@@ -548,7 +571,7 @@ class DownloadEngine(
             // the live values: the database is authoritative again
             withContext(NonCancellable) {
                 dao.saveProgress(item.id, written, total)
-                ProgressBus.remove(item.id)
+                if (jobs[item.id] === owner) ProgressBus.remove(item.id)
             }
         }
         if (total > 0 && written < total) {
@@ -564,17 +587,10 @@ class DownloadEngine(
     }
 
     /** On a hash mismatch the file is discarded and the download retried as a transient failure. */
-    private suspend fun verifyHash(file: File, expected: String) {
-        val algorithm = when (expected.length) {
-            32 -> "MD5"
-            40 -> "SHA-1"
-            64 -> "SHA-256"
-            else -> return
-        }
-        val actual = hashFile(file, algorithm)
-        if (!actual.equals(expected, ignoreCase = true)) {
+    private fun verifyHash(file: File, digest: MessageDigest, expected: String) {
+        if (!digest.hex().equals(expected, ignoreCase = true)) {
             file.delete()
-            throw HosterException(Texts.t("engine_hash_mismatch", algorithm))
+            throw HosterException(Texts.t("engine_hash_mismatch", digest.algorithm))
         }
     }
 
@@ -617,20 +633,29 @@ class DownloadEngine(
     }
 }
 
+/** Digest algorithm for a hex [hash] of known length, null if unrecognised. */
+internal fun hashAlgorithmFor(hash: String): String? = when (hash.length) {
+    32 -> "MD5"
+    40 -> "SHA-1"
+    64 -> "SHA-256"
+    else -> null
+}
+
 /**
- * Hex digest of [file]. Yields between chunks so a pause cancels the check
- * instead of letting it run to the end over a multi-GiB file.
+ * Feeds the whole [file] into the digest. Yields between chunks so a pause
+ * cancels the read instead of letting it run to the end over a multi-GiB file.
  */
-internal suspend fun hashFile(file: File, algorithm: String): String {
-    val digest = java.security.MessageDigest.getInstance(algorithm)
+internal suspend fun MessageDigest.feed(file: File) {
     file.inputStream().use { input ->
         val buffer = ByteArray(64 * 1024)
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break
-            digest.update(buffer, 0, read)
+            update(buffer, 0, read)
             kotlinx.coroutines.yield()
         }
     }
-    return digest.digest().joinToString("") { "%02x".format(it) }
 }
+
+/** Completes the digest as lower-case hex. */
+internal fun MessageDigest.hex(): String = digest().joinToString("") { "%02x".format(it) }

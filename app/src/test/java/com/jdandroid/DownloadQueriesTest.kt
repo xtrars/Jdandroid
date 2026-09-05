@@ -30,6 +30,25 @@ class DownloadQueriesTest : SchemaDbTest() {
 
     private fun retryAt(id: Long, at: Long) = execute("UPDATE downloads SET retryAt = :at WHERE id = :id", "at" to at, "id" to id)
 
+    /** Room expands (:running) to a placeholder list; here the values are inlined. */
+    private fun nextQueued(now: Long, running: List<Long>): Long? =
+        ids(DownloadQueries.NEXT_QUEUED.replace(":running", running.joinToString(","))
+            .replace(":now", now.toString())).firstOrNull()
+
+    @Test
+    fun `nextQueued nimmt den aeltesten faelligen Eintrag ohne laufende`() {
+        val now = 1_000_000L
+        item(1, "a.bin", DownloadStatus.QUEUED, addedAt = 300)
+        item(2, "b.bin", DownloadStatus.QUEUED, addedAt = 100); retryAt(2, now + 1)   // Wartezeit
+        item(3, "c.bin", DownloadStatus.QUEUED, addedAt = 200)
+        item(4, "d.bin", DownloadStatus.RUNNING, addedAt = 50)
+        item(5, "e.bin", DownloadStatus.PAUSED, addedAt = 10)
+        assertEquals(1L, nextQueued(now, listOf(3, -1)))       // 2 wartet, 3 laeuft schon
+        assertEquals(3L, nextQueued(now, listOf(-1)))          // aeltestes addedAt, nicht kleinste id
+        assertEquals(2L, nextQueued(now + 1, listOf(-1)))      // retryAt erreicht
+        assertNull(nextQueued(now, listOf(1, 3, -1)))
+    }
+
     @Test
     fun `nextRetryAt liefert das kleinste kuenftige retryAt bis zum Horizont`() {
         val now = 1_000_000L
@@ -91,9 +110,13 @@ class DownloadQueriesTest : SchemaDbTest() {
         item(5, "e.bin", DownloadStatus.COLLECTED)
         item(6, "f.bin", DownloadStatus.RUNNING)
         execute("UPDATE downloads SET attempts = 3, retryAt = 99 WHERE id = 2")
+        // Paused during a hoster wait: the wait must not survive the resume
+        execute("UPDATE downloads SET attempts = 1, retryAt = 9999999999999 WHERE id = 1")
         assertEquals(2, execute(DownloadQueries.REQUEUE_PAUSED_AND_FAILED))
         assertEquals(listOf(1L, 2L), ids("SELECT id FROM downloads WHERE status = 'QUEUED' ORDER BY id"))
         assertNull(column(1, "errorMessage"))
+        assertEquals("0", column(1, "attempts"))
+        assertEquals("0", column(1, "retryAt"))
         assertEquals("0", column(2, "attempts"))
         assertEquals("0", column(2, "retryAt"))
         assertEquals("OFFLINE", column(3, "status"))
@@ -120,5 +143,34 @@ class DownloadQueriesTest : SchemaDbTest() {
     fun `openDownloadedBytesExcept ohne offene Eintraege liefert 0`() {
         item(4, "d.bin", DownloadStatus.COMPLETED, downloadedBytes = 1000)
         assertEquals(0L, openDownloadedBytesExcept(listOf(-1)))
+    }
+
+    private fun completeExported(id: Long, path: String, note: String? = null): Int =
+        execute(DownloadQueries.COMPLETE_EXPORTED, "path" to path, "note" to note, "id" to id)
+
+    @Test
+    fun `completeExported schliesst auch waehrend des Exports pausierte oder neu eingereihte Eintraege ab`() {
+        item(1, "a.bin", DownloadStatus.RUNNING)
+        item(2, "b.bin", DownloadStatus.PAUSED)
+        item(3, "c.bin", DownloadStatus.QUEUED, note = "waiting_wifi")
+        for (id in 1L..3L) {
+            assertEquals(1, completeExported(id, "Downloads/JDAndroid/$id.bin"))
+            assertEquals("COMPLETED", column(id, "status"))
+            assertEquals("Downloads/JDAndroid/$id.bin", column(id, "localPath"))
+            assertNull(column(id, "errorMessage"))
+        }
+    }
+
+    @Test
+    fun `completeExported laesst geloeschte und andere Zustaende in Ruhe`() {
+        item(1, "a.bin", DownloadStatus.COMPLETED)
+        item(2, "b.rar", DownloadStatus.EXTRACTING)
+        item(3, "c.bin", DownloadStatus.FAILED, note = "Fehler")
+        assertEquals(0, completeExported(1, "x"))
+        assertEquals(0, completeExported(2, "x"))
+        assertEquals(0, completeExported(3, "x"))
+        assertEquals(0, completeExported(4, "x"))
+        assertEquals("EXTRACTING", column(2, "status"))
+        assertEquals("Fehler", column(3, "errorMessage"))
     }
 }
