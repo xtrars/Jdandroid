@@ -7,19 +7,19 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Entschluesselt Link-Container: DLC (DownLoad Container) und die
- * Click'n'Load-2-Nutzlast. Beide liefern am Ende eine Liste roher URLs,
- * die dann durch den normalen LinkParser laufen.
+ * Decrypts link containers: DLC (DownLoad Container) and the Click'n'Load 2
+ * payload. Both end up as a list of raw URLs that then go through the normal
+ * LinkParser.
  */
 object ContainerDecrypter {
 
-    // Statischer Schluessel/IV, mit dem der vom JDownloader-Dienst gelieferte
-    // Container-Schluessel (rc) entschluesselt wird. Öffentlich bekannt aus
-    // diversen Open-Source-DLC-Implementierungen (pyLoad u.a.).
+    // Static key/IV used to decrypt the container key (rc) returned by the
+    // JDownloader service; publicly known from open-source DLC
+    // implementations (pyLoad and others).
     private val DLC_KEY = "cb99b5cbc24db398".toByteArray(Charsets.US_ASCII)
-    // ACHTUNG: IV ist NICHT die umgestellte KEY-Zeichenfolge. Ein falscher IV
-    // liefert bei einem einzelnen CBC-Block trotzdem ASCII-aehnliche Bytes
-    // (er geht nur per XOR ein) und taeuscht damit einen korrekten Schluessel vor.
+    // The IV is NOT the rearranged KEY string. A wrong IV still yields
+    // ASCII-like bytes for a single CBC block (it only enters via XOR) and
+    // thus fakes a correct key.
     private val DLC_IV = "9bc24cb995cb8db3".toByteArray(Charsets.US_ASCII)
 
     private const val DLC_SERVICE =
@@ -27,10 +27,10 @@ object ContainerDecrypter {
 
     class ContainerException(message: String) : Exception(message)
 
-    /** Ein Paket aus dem DLC mit (dekodiertem) Namen und seinen Links. */
+    /** A package from the DLC with its (decoded) name and links. */
     data class DlcPackage(val name: String?, val urls: List<String>)
 
-    /** Holt den Container-Schluessel (rc) vom JDownloader-Dienst. */
+    /** Fetches the container key (rc) from the JDownloader service. */
     private fun fetchRc(dlcKey: String): String {
         val response = try {
             Http.client.newCall(
@@ -48,23 +48,23 @@ object ContainerDecrypter {
     }
 
     /**
-     * Leitet aus der Dienst-Antwort (rc, base64) den realen Container-Schluessel
-     * ab. Er dient anschliessend zugleich als Schluessel und IV fuer die Daten.
+     * Derives the real container key from the service reply (rc, base64). It
+     * then serves as both key and IV for the data.
      */
     internal fun deriveKey(rcBase64: String): ByteArray {
         val rc = base64(rcBase64)
         if (rc.size < 16) throw ContainerException(ContainerTexts.t("service_dlc_service_invalid_reply"))
-        // exakt ein Block: eine laengere Antwort wuerde bei NoPadding werfen
+        // exactly one block: a longer reply would throw with NoPadding
         return aesCbcDecrypt(rc.copyOf(16), DLC_KEY, DLC_IV).copyOf(16)
     }
 
     /**
-     * Entschluesselt den Inhalt einer .dlc-Datei zu Paketen mit URLs.
-     * Benoetigt den JDownloader-DLC-Dienst.
+     * Decrypts the content of a .dlc file into packages with URLs. Requires
+     * the JDownloader DLC service.
      */
     fun decryptDlcPackages(dlcContent: String): List<DlcPackage> {
-        // Kommt der Container per Formular (Click'n'Load /flash/addcrypted),
-        // hat der Browser "+" bereits zu Leerzeichen dekodiert - zurueckwandeln.
+        // When the container arrives via form (Click'n'Load /flash/addcrypted)
+        // the browser has already decoded "+" to spaces; convert back.
         val data = dlcContent.replace(' ', '+').filterNot { it.isWhitespace() }
         if (data.length < 88) throw ContainerException(ContainerTexts.t("service_dlc_too_short"))
 
@@ -81,17 +81,17 @@ object ContainerDecrypter {
         return packages.filter { it.urls.isNotEmpty() }
     }
 
-    /** Alle URLs eines DLC ohne Paketstruktur. */
+    /** All URLs of a DLC without package structure. */
     fun decryptDlc(dlcContent: String): List<String> =
         decryptDlcPackages(dlcContent).flatMap { it.urls }
 
-    /** AES/NoPadding hinterlaesst Auffuellbytes; nur gueltige base64-Zeichen behalten. */
+    /** AES/NoPadding leaves padding bytes; keep only valid base64 characters. */
     internal fun decodeXml(plain: ByteArray): String =
         String(base64(onlyBase64(String(plain, Charsets.US_ASCII))), Charsets.UTF_8)
 
     /**
-     * DLC-XML: <content><package name="BASE64"><file><url>BASE64</url>...</file></package>
-     * Paketname und jede URL sind jeweils nochmals base64-kodiert.
+     * DLC XML: <content><package name="BASE64"><file><url>BASE64</url>...</file></package>
+     * The package name and every URL are base64-encoded once more.
      */
     internal fun parsePackages(xml: String): List<DlcPackage> {
         val packageRegex = Regex(
@@ -113,37 +113,37 @@ object ContainerDecrypter {
             DlcPackage(name, urlsIn(m.groupValues[2]))
         }.toList()
 
-        // DLC ohne <package>-Struktur: alle URLs als ein Paket
+        // DLC without <package> structure: all URLs as one package
         return packages.ifEmpty { listOf(DlcPackage(null, urlsIn(xml))) }
     }
 
     /**
-     * Click'n'Load 2: entschluesselt die vom Browser gesendete Nutzlast.
-     * [jk] ist eine JS-Funktion mit dem Hex-Schluessel, [crypted] die
-     * Base64-AES-CBC-verschluesselten Links.
+     * Click'n'Load 2: decrypts the payload sent by the browser. [jk] is a JS
+     * function containing the hex key, [crypted] the base64 AES-CBC encrypted
+     * links.
      */
     fun decryptClickNLoad(crypted: String, jk: String): List<String> {
-        // Schluessel als Hex-Literal; manche Seiten setzen ihn aus mehreren
-        // Teilen zusammen ('abcd' + 'ef01' ...) - dann alle Literale verketten.
+        // Key as a hex literal; some pages assemble it from several parts
+        // ('abcd' + 'ef01' ...), then all literals are concatenated.
         val literals = Regex("[\"']([0-9a-fA-F]{2,})[\"']").findAll(jk).map { it.groupValues[1] }.toList()
         val hexKey = literals.firstOrNull { it.length == 32 }
             ?: literals.joinToString("").takeIf { it.length == 32 }
             ?: literals.firstOrNull { it.length >= 16 }
             ?: throw ContainerException(ContainerTexts.t("service_cnl_key_missing"))
-        // Das Protokoll ist AES-128: genau 16 Byte, die zugleich als IV dienen.
-        // Ein laengerer Wert ergaebe einen unbrauchbaren IV und eine kryptische
-        // Exception statt einer klaren Meldung.
+        // The protocol is AES-128: exactly 16 bytes, also used as the IV. A
+        // longer value would give an unusable IV and a cryptic exception
+        // instead of a clear message.
         if (hexKey.length != 32) {
             throw ContainerException(ContainerTexts.t("service_cnl_key_invalid_length", hexKey.length / 2))
         }
         val key = hexKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        // Rohes "+" im Formular wird vom Browser als Leerzeichen dekodiert
+        // A raw "+" in the form is decoded as a space by the browser
         val decoded = base64(crypted.replace(' ', '+').trim())
         if (decoded.isEmpty() || decoded.size % 16 != 0) {
             throw ContainerException(ContainerTexts.t("service_cnl_data_corrupt", decoded.size))
         }
         val plain = aesCbcDecrypt(decoded, key, key)
-        // Nullbytes (Blockpadding) entfernen, sonst haengen sie am letzten Link
+        // Strip null bytes (block padding), otherwise they stick to the last link
         return String(plain, Charsets.UTF_8).replace("\u0000", "")
             .split('\n', '\r')
             .map { it.trim().trimEnd('\u0000') }
@@ -160,7 +160,7 @@ object ContainerDecrypter {
         return cipher.doFinal(data)
     }
 
-    /** Behaelt nur gueltige base64-Zeichen (entfernt Nullbytes, Zeilenumbrueche, Muell). */
+    /** Keeps only valid base64 characters (drops null bytes, line breaks, junk). */
     private fun onlyBase64(s: String): String = s.filter {
         it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '+' || it == '/' || it == '='
     }
@@ -168,8 +168,8 @@ object ContainerDecrypter {
     private fun base64(s: String): ByteArray {
         val cleaned = onlyBase64(s).substringBefore('=')
         val padded = cleaned + "=".repeat((4 - cleaned.length % 4) % 4)
-        // java.util.Base64 (API 26+) statt android.util.Base64: identisches
-        // Verhalten, aber ohne Android-Framework testbar.
+        // java.util.Base64 (API 26+) instead of android.util.Base64: same
+        // behaviour, but testable without the Android framework.
         return java.util.Base64.getDecoder().decode(padded)
     }
 }

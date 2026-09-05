@@ -8,7 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Auswertung der Hoster-Antworten fuer die Online-Pruefung im Linksammler. */
+/** Parsing of hoster answers for the online check in the link grabber. */
 class LinkCheckTest {
 
     private val fichier = OneFichierHoster()
@@ -23,12 +23,12 @@ class LinkCheckTest {
 
     @Test
     fun fichierTrefferLiefertNameUndGroesse() {
-        // Tatsaechliches Format von check_links.pl: drei Felder, kein Status
+        // Actual check_links.pl format: three fields, no status
         val info = fichier.parseCheckLine("https://1fichier.com/?abcdefghij;Film.mkv;734003200")
         assertEquals(true, info.online)
         assertEquals("Film.mkv", info.fileName)
         assertEquals(734003200L, info.fileSize)
-        // Vier Felder mit OK bleiben ebenfalls lesbar
+        // Four fields with OK are readable too
         assertEquals(true, fichier.parseCheckLine("https://1fichier.com/?abcdefghij;Film.mkv;734003200;OK").online)
     }
 
@@ -56,9 +56,8 @@ class LinkCheckTest {
     }
 
     /**
-     * Tatsaechlicher Seitenaufbau von ddownload.com: der Titel ersetzt Punkte
-     * durch Leerzeichen, vor dem Dateinamen steht eine Werbe-Ueberschrift,
-     * der echte Name steht in h2.dk-dl-name.
+     * Actual ddownload.com layout: the title replaces dots with spaces and is
+     * preceded by an ad heading; the real name is in h2.dk-dl-name.
      */
     private val echteDateiseite = """<html><head><title>Download scn smps8 S37E02 rar</title></head>
         <body>
@@ -90,9 +89,8 @@ class LinkCheckTest {
     }
 
     /**
-     * Titel nur als letzter Ausweg, "Download " abgeschnitten. Ersetzt der
-     * Titel Punkte durch Leerzeichen, wird die Endung wiederhergestellt -
-     * sonst gilt ein Archiv nie als Archiv. Ohne bekannte Endung: kein Name.
+     * Title only as a last resort, "Download " stripped; dots replaced by
+     * spaces are restored so archives are recognised. Unknown extension: no name.
      */
     @Test
     fun ddownloadTitelNurMitEndung() {

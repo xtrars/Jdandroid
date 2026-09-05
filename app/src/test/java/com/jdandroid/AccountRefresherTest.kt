@@ -10,9 +10,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Minutentakt der Kontenansicht: ungueltige Konten (falsches Passwort,
- * abgelaufene Browser-Sitzung) nicht jede Minute erneut beim Hoster anmelden;
- * ein fehlgeschlagenes Nachverschluesseln bleibt im Kontostatus sichtbar.
+ * Minute refresh: invalid accounts are not re-queried every minute; a failed
+ * credential re-encryption stays visible in the account status.
  */
 class AccountRefresherTest {
     private val now = 1_700_000_000_000L

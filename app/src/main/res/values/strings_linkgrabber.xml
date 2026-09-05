@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Linksammler (LinkGrabberScreen, AddLinksDialog, Captcha- und Login-Browser). Schluessel: linkgrabber_<bedeutung>. -->
+    <!-- Link grabber (LinkGrabberScreen, AddLinksDialog, captcha and login browser). Keys: linkgrabber_<meaning>. -->
 
     <!-- LinkGrabberScreen -->
     <string name="linkgrabber_title">Linksammler</string>

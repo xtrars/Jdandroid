@@ -3,43 +3,32 @@ package com.jdandroid.core
 import java.util.Locale
 
 /**
- * Reine Logik des Free-Modus (Downloads ohne Konto): Wartezeiten und
- * Captcha-Halt als gespeicherte Codes plus retryAt, sowie die uebersetzte
- * Anzeige daraus. Kennt kein Android, wird von Engine und Oberflaeche
- * gemeinsam genutzt.
- *
- * In `DownloadItem.errorMessage` steht nie ein uebersetzter Text, sondern
- * ein Code ([WAIT_CODE], [CAPTCHA_CODE]), optional gefolgt von
- * [REASON_SEPARATOR] und dem Grund des Hosters. Der Anzeigetext entsteht
- * erst beim Lesen aus Code, retryAt und Grund ([displayText]).
+ * Free mode (downloads without an account): wait times and captcha holds as
+ * stored codes plus retryAt, and the translated display derived from them.
+ * `DownloadItem.errorMessage` never holds translated text, only a code
+ * ([WAIT_CODE], [CAPTCHA_CODE]) optionally followed by [REASON_SEPARATOR]
+ * and the hoster's reason; [displayText] renders it on read.
  */
 object FreeMode {
-    /** Code eines Eintrags, der eine Wartezeit des Hosters absitzt (retryAt = Ende). */
+    /** Entry sitting out a hoster wait time (retryAt = end). */
     const val WAIT_CODE = "FREE_WAIT"
 
-    /** Code eines Eintrags, der auf ein Captcha im Browser wartet (retryAt jenseits des Horizonts). */
+    /** Entry waiting for a captcha in the browser (retryAt beyond the horizon). */
     const val CAPTCHA_CODE = "FREE_CAPTCHA"
 
-    /** Trennzeichen zwischen Code und Grund des Hosters. */
     private const val REASON_SEPARATOR = "|"
 
-    /** retryAt eines Captcha-Eintrags: so weit weg, dass pump() ihn nie von selbst startet. */
+    /** retryAt offset of a captcha entry: far enough that pump() never starts it by itself. */
     const val CAPTCHA_HOLD_MS = 365L * 24 * 60 * 60 * 1000
 
-    /**
-     * Ab diesem Abstand gilt ein retryAt als "wartet auf Nutzeraktion":
-     * solche Eintraege halten den Dienst nicht am Leben (echte Wartezeiten
-     * liegen weit darunter).
-     */
+    /** A retryAt this far ahead means "waiting for user action"; such entries do not keep the service alive. */
     const val USER_ACTION_HORIZON_MS = 30L * 24 * 60 * 60 * 1000
 
-    /** Fehlendes Konto bei ausgeschaltetem Free-Modus (uebersetzt). */
     fun disabledMessage(): String = Texts.t("engine_free_disabled")
 
-    /** Konto ohne Premium bei ausgeschaltetem Free-Modus (uebersetzt). */
     fun noPremiumMessage(): String = Texts.t("engine_free_no_premium")
 
-    /** "mm:ss", ab einer Stunde "h:mm:ss". Negative Werte gelten als 0. */
+    /** "mm:ss", from one hour "h:mm:ss"; negative values count as 0. */
     fun formatWait(seconds: Int): String {
         val s = seconds.coerceAtLeast(0)
         val h = s / 3600
@@ -49,14 +38,10 @@ object FreeMode {
         else String.format(Locale.ROOT, "%02d:%02d", m, sec)
     }
 
-    /**
-     * Gespeicherter Vermerk einer Wartezeit: [WAIT_CODE], mit Grund des
-     * Hosters ("Tageslimit erreicht") als `FREE_WAIT|Grund`. Die Restzeit
-     * steht nicht im Vermerk, sondern in retryAt.
-     */
+    /** Stored wait note: [WAIT_CODE], with a hoster reason as `FREE_WAIT|reason`; the remaining time lives in retryAt. */
     fun waitNote(reason: String? = null): String = note(WAIT_CODE, reason)
 
-    /** Gespeicherter Vermerk eines Captcha-Eintrags: [CAPTCHA_CODE], mit Grund `FREE_CAPTCHA|Grund`. */
+    /** Stored captcha note: [CAPTCHA_CODE], with a reason as `FREE_CAPTCHA|reason`. */
     fun captchaNote(reason: String? = null): String = note(CAPTCHA_CODE, reason)
 
     private fun note(code: String, reason: String?): String {
@@ -64,10 +49,10 @@ object FreeMode {
         return if (r.isEmpty()) code else code + REASON_SEPARATOR + r
     }
 
-    /** Grund aus einem Wartezeit-Vermerk, null ohne Grund oder bei fremdem Vermerk. */
+    /** Reason of a wait note, null without one or for a foreign note. */
     fun waitReason(message: String?): String? = reason(message, WAIT_CODE)
 
-    /** Grund aus einem Captcha-Vermerk, null ohne Grund oder bei fremdem Vermerk. */
+    /** Reason of a captcha note, null without one or for a foreign note. */
     fun captchaReason(message: String?): String? = reason(message, CAPTCHA_CODE)
 
     private fun reason(message: String?, code: String): String? {
@@ -78,10 +63,9 @@ object FreeMode {
     }
 
     /**
-     * Uebersetzter Anzeigetext zu einem gespeicherten Vermerk: Wartezeit mit
-     * Restzeit bis [retryAt] (und Grund), Captcha-Hinweis (und Grund). Null,
-     * wenn [message] kein Vermerk dieses Modus ist - der Aufrufer zeigt dann
-     * den Text unveraendert.
+     * Translated display text for a stored note (remaining time until
+     * [retryAt], captcha hint, reason). Null when [message] is not a free-mode
+     * note; the caller then shows the text unchanged.
      */
     fun displayText(message: String?, retryAt: Long, now: Long): String? = when {
         isWaitMessage(message) -> {
@@ -97,20 +81,18 @@ object FreeMode {
         else -> null
     }
 
-    /** Zeitpunkt des naechsten Versuchs; eine Wartezeit unter 1 s zaehlt als 1 s. */
+    /** Next attempt time; a wait below 1 s counts as 1 s. */
     fun retryAt(now: Long, seconds: Int): Long = now + seconds.coerceAtLeast(1) * 1000L
 
-    /** Verbleibende Sekunden bis [retryAt], aufgerundet, nie negativ. */
+    /** Seconds until [retryAt], rounded up, never negative. */
     fun remainingSeconds(retryAt: Long, now: Long): Int =
         if (retryAt <= now) 0 else ((retryAt - now + 999) / 1000).toInt()
 
-    /** Ist [message] ein Wartezeit-Vermerk dieses Modus? */
     fun isWaitMessage(message: String?): Boolean = message?.startsWith(WAIT_CODE) == true
 
-    /** Ist [message] ein Captcha-Vermerk dieses Modus? */
     fun isCaptchaMessage(message: String?): Boolean = message?.startsWith(CAPTCHA_CODE) == true
 
-    /** Eintrag wartet auf ein Captcha (Captcha-Vermerk, oder retryAt jenseits des Horizonts). */
+    /** Captcha note, or retryAt beyond the user-action horizon. */
     fun isCaptchaHold(message: String?, retryAt: Long, now: Long): Boolean =
         isCaptchaMessage(message) || retryAt - now > USER_ACTION_HORIZON_MS
 }

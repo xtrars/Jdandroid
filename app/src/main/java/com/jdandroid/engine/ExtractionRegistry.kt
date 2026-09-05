@@ -3,19 +3,18 @@ package com.jdandroid.engine
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Prozessweiter Stand laufender Entpackvorgaenge. Das Entpacken laeuft
- * NonCancellable weiter, auch wenn der Dienst sich beendet und neu startet;
- * eine neue Dienst-Instanz darf dasselbe Archiv dann weder erneut einreihen
- * noch ein zweites Mal entpacken (das passierte: Archiv doppelt entpackt).
+ * Process-wide registry of running extractions. Extraction continues
+ * NonCancellable across a service restart, so a new service instance must
+ * neither requeue nor extract the same archive a second time.
  */
 internal object ExtractionRegistry {
-    /** Anzahl laufender Vorgaenge (fuer activeCount/isIdle aller Instanzen). */
+    /** Running extractions across all service instances. */
     val count = AtomicInteger()
 
     private val bases = HashSet<String>()
     private val ids = HashSet<Long>()
 
-    /** Vorgang fuer [base] anmelden; false, wenn er bereits laeuft. */
+    /** Registers an extraction for [base]; false if one is already running. */
     @Synchronized
     fun start(base: String, setIds: Collection<Long>): Boolean {
         if (!bases.add(base)) return false
@@ -32,7 +31,7 @@ internal object ExtractionRegistry {
     @Synchronized
     fun isActive(base: String): Boolean = base in bases
 
-    /** Eintraege, die gerade entpackt werden - beim Dienststart nicht neu einreihen. */
+    /** Entries currently being extracted; a starting service must not requeue them. */
     @Synchronized
     fun activeIds(): List<Long> = ids.toList()
 }

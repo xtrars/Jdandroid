@@ -1,21 +1,17 @@
 package com.jdandroid.core
 
 /**
- * Monotone Uhr fuer Zeitdifferenzen (Geschwindigkeitsmessung, Drosselung,
- * Wartefenster). Die Wanduhr (System.currentTimeMillis) springt bei
- * Zeitkorrekturen des Systems und bleibt deshalb den persistierten
- * Zeitstempeln (retryAt, Anzeige) vorbehalten. Injizierbar, damit Tests die
- * Zeit selbst vorstellen koennen statt zu schlafen.
+ * Monotonic clock for time differences (speed, throttling, wait windows).
+ * The wall clock jumps on system time corrections and is reserved for
+ * persisted timestamps. Injectable so tests advance time instead of sleeping.
  */
 fun interface Clock {
-    /** Monotone Zeit in Nanosekunden; nur Differenzen sind aussagekraeftig. */
+    /** Monotonic nanoseconds; only differences are meaningful. */
     fun nowNanos(): Long
 
-    /** Monotone Zeit in Millisekunden, fuer Vergleiche mit Millisekunden-Konstanten. */
     fun nowMillis(): Long = nowNanos() / 1_000_000L
 
     companion object {
-        /** Standard: System.nanoTime, unabhaengig von der Wanduhr. */
         val SYSTEM: Clock = Clock(System::nanoTime)
     }
 }

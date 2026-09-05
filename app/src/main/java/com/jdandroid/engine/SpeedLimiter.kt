@@ -6,16 +6,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Globale Geschwindigkeitsbegrenzung über alle laufenden Downloads.
- * Zählt Bytes in 1-Sekunden-Fenstern; ist das Kontingent aufgebraucht,
- * wartet der aufrufende Download bis zum nächsten Fenster.
- *
- * Wichtig: gewartet wird ausserhalb des Locks. Andernfalls blockiert ein
- * wartender Download alle anderen, wodurch das Limit faktisch zur
- * Serialisierung aller Downloads führen würde.
- *
- * Die Fenster laufen auf der monotonen [clock]; die Wartezeit selbst geht an
- * [wait] (Standard: delay), damit Tests ohne echtes Schlafen auskommen.
+ * Global speed limit across all running downloads: bytes are counted in
+ * one-second windows and a caller that exhausts the quota waits for the next
+ * window. Waiting happens outside the lock, otherwise one waiting download
+ * would block all others. Windows run on the monotonic [clock]; [wait]
+ * (default: delay) lets tests avoid real sleeping.
  */
 class SpeedLimiter(
     private val clock: Clock = Clock.SYSTEM,
@@ -42,9 +37,9 @@ class SpeedLimiter(
             }
             windowBytes += bytes
             if (windowBytes >= limit) {
-                // Ueberschuss ins naechste Fenster uebertragen statt verwerfen:
-                // ein 64-KiB-Block bei 30 KiB/s Limit belegt gut zwei Fenster.
-                // Vorher lag der reale Durchsatz nie unter einem Block pro Fenster.
+                // Carry the excess into following windows: a 64 KiB block at a
+                // 30 KiB/s limit spans more than two windows, otherwise the real
+                // throughput never drops below one block per window.
                 val over = windowBytes - limit
                 val windows = 1 + over / limit
                 val waitNs = (windowStart + WINDOW_NS - now).coerceAtLeast(0) + (windows - 1) * WINDOW_NS

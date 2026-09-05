@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 
-/** Reine Funktion: Live-Werte des ProgressBus ueber Datenbank-Eintraege legen. */
+/** Overlaying ProgressBus live values on database entries. */
 class ProgressOverlayTest {
 
     private fun item(id: Long, status: DownloadStatus = DownloadStatus.RUNNING) = DownloadItem(
@@ -21,7 +21,7 @@ class ProgressOverlayTest {
         val result = overlayProgress(listOf(item(1)), mapOf(1L to LiveProgress(750, 5_000)))
         assertEquals(750L, result[0].downloadedBytes)
         assertEquals(5_000L, result[0].speedBps)
-        // Nicht gelieferte Werte bleiben aus der Datenbank
+        // Missing live values keep the database value
         assertEquals(1_000L, result[0].fileSize)
         assertEquals(DownloadStatus.RUNNING, result[0].status)
     }
@@ -43,7 +43,7 @@ class ProgressOverlayTest {
     fun entpackProzentAendertBytestandUndGeschwindigkeitNicht() {
         val extracting = item(3, DownloadStatus.EXTRACTING).copy(downloadedBytes = 1_000)
         val result = overlayProgress(listOf(extracting), mapOf(3L to LiveProgress(extractPercent = 42)))
-        // Bytestand (-1 = kein Live-Wert) bleibt der Datenbankwert
+        // -1 = no live value: database value stays
         assertEquals(1_000L, result[0].downloadedBytes)
         assertEquals(0L, result[0].speedBps)
     }

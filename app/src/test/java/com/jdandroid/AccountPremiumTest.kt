@@ -7,9 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Premium-Erkennung eines Kontos: nur ein Premium-Konto nimmt in der Engine
- * den Premium-Weg (hoster.resolve), ein gueltiges Free-Konto laedt im
- * Free-Modus - der Premium-Weg scheiterte dort dauerhaft.
+ * Only a premium account takes the premium path (hoster.resolve); a valid
+ * free account downloads in free mode, where the premium path always failed.
  */
 class AccountPremiumTest {
     private val now = 1_700_000_000_000L
@@ -19,7 +18,7 @@ class AccountPremiumTest {
         assertFalse(Account(hosterId = "rapidgator", valid = true, premiumUntil = 0, statusText = "Free").hasPremium(now))
         assertFalse(Account(hosterId = "ddownload", valid = true, premiumUntil = 0, statusText = "Free (Downloads nicht möglich)").hasPremium(now))
         assertFalse(Account(hosterId = "ddownload", valid = true, premiumUntil = 0, statusText = null).hasPremium(now))
-        // Abgelaufenes Premium
+        // Expired premium
         assertFalse(Account(hosterId = "rapidgator", valid = true, premiumUntil = now - 1, statusText = "Premium").hasPremium(now))
     }
 

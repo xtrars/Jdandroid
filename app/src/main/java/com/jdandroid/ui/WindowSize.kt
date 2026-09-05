@@ -6,10 +6,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 
 /**
- * Hoehe des Fensters in dp aus [LocalWindowInfo] (statt der veralteten
- * Konfigurationsbreite/-hoehe): gilt auch im Mehrfenster-Modus und bei
- * Groessenaenderungen, weil sie sich auf das Fenster bezieht, nicht auf
- * den Bildschirm.
+ * Window height in dp from [LocalWindowInfo]; unlike the configuration
+ * values it refers to the window, so multi-window mode is handled.
  */
 @Composable
 fun windowHeightDp(): Dp {

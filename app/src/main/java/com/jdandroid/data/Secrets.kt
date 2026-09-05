@@ -11,12 +11,10 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Verschluesselt Zugangsdaten mit einem Schluessel aus dem Android-Keystore.
- * Der Schluessel verlaesst die Hardware nie; in der Datenbank steht nur noch
- * Chiffrat statt Klartext-Passwoertern.
- *
- * Werte ohne Praefix stammen aus aelteren Installationen und werden weiterhin
- * im Klartext gelesen, damit ein Update keine Konten unbrauchbar macht.
+ * Encrypts credentials with an AES-GCM key from the Android Keystore; the
+ * key never leaves the hardware. Values without the prefix come from older
+ * installations and are still read as plain text so an update does not
+ * break accounts.
  */
 object Secrets {
 
@@ -25,7 +23,7 @@ object Secrets {
     private const val IV_LENGTH = 12
     private const val TAG_BITS = 128
 
-    /** Nur lesen: beim Entschluesseln darf nie ein neuer Schluessel entstehen. */
+    /** Read-only lookup: decryption must never create a new key. */
     @Synchronized
     private fun existingKey(): SecretKey? {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -50,14 +48,10 @@ object Secrets {
         return generator.generateKey()
     }
 
-    /** Keystore nicht nutzbar: Zugangsdaten werden dann NICHT gespeichert. */
+    /** Keystore unusable: credentials are not stored at all. */
     class SecretsException(message: String, cause: Throwable?) : Exception(message, cause)
 
-    /**
-     * Verschluesselt [plain]. Schlaegt der Keystore fehl, wird bewusst eine
-     * Exception geworfen statt still im Klartext zu speichern - der Aufrufer
-     * zeigt dem Nutzer eine Meldung.
-     */
+    /** Encrypts [plain]; a Keystore failure throws instead of storing plain text. */
     fun encrypt(plain: String?): String? {
         if (plain.isNullOrEmpty()) return plain
         return try {
@@ -70,14 +64,12 @@ object Secrets {
         }
     }
 
-    /** Ist der Wert bereits verschluesselt gespeichert? */
     fun isEncrypted(value: String?): Boolean = value?.startsWith(PREFIX) == true
 
     /**
-     * Entschluesselt [value]. Schlaegt das bei einem verschluesselten Wert fehl
-     * (Keystore-Eintrag nach Systemupdate nicht mehr lesbar), wird eine
-     * [SecretsException] geworfen - statt still null, was frueher als
-     * "kein Passwort hinterlegt" erschien.
+     * Decrypts [value]. A failure on an encrypted value (Keystore entry
+     * unreadable after a system update) throws [SecretsException] rather than
+     * returning null, which would look like "no password stored".
      */
     fun decrypt(value: String?): String? {
         if (value.isNullOrEmpty()) return value
@@ -94,7 +86,7 @@ object Secrets {
     }
 }
 
-/** Entschluesselte Sicht auf die gespeicherten Zugangsdaten. */
+/** Decrypted view of the stored credentials. */
 val Account.plainPassword: String? get() = Secrets.decrypt(password)
 val Account.plainApiKey: String? get() = Secrets.decrypt(apiKey)
 val Account.plainCookies: String? get() = Secrets.decrypt(cookies)

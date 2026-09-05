@@ -12,12 +12,10 @@ import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * Die Kotlin-Maps (deutsche Standardtexte fuer Schichten ohne Context) und
- * die String-Ressourcen muessen deckungsgleich sein: jeder Schluessel der
- * Map steht wortgleich in `values/strings_<bereich>.xml` und uebersetzt in
- * `values-en/strings_<bereich>.xml` - und umgekehrt kennt die Map jeden
- * Schluessel der Datei, damit Unit-Tests dieselben Texte sehen wie das
- * Geraet. Gradle startet Unit-Tests im Modulverzeichnis `app/`.
+ * The Kotlin fallback maps and the string resources must match both ways:
+ * every map key exists verbatim in `values/strings_<area>.xml` and translated
+ * in `values-en/`, and the map knows every key of the file, so unit tests
+ * see the same texts as the device.
  */
 class TextsTest {
 
@@ -40,7 +38,7 @@ class TextsTest {
     @Test
     fun ohneProviderKommtDerDeutscheText() {
         Texts.install(null)
-        // Unbekannter Schluessel: der Schluessel selbst, kein Absturz
+        // Unknown key: the key itself, no crash
         assertEquals("engine_unbekannt", Texts.t("engine_unbekannt"))
         Texts.fallbackKeys().forEach { key ->
             assertEquals(Texts.fallback(key), Texts.t(key))
@@ -51,7 +49,7 @@ class TextsTest {
     fun providerHatVorrang() {
         Texts.install { key, args -> if (key == "engine_test") "Test ${args[0]} von ${args[1]}" else null }
         assertEquals("Test 1 von x", Texts.t("engine_test", 1, "x"))
-        // Kennt der Provider den Schluessel nicht, greift die Map; ohne Eintrag bleibt der Schluessel
+        // Provider miss falls back to the map, then to the key
         assertEquals("engine_fremd", Texts.t("engine_fremd"))
     }
 
@@ -71,13 +69,13 @@ class TextsTest {
     }
 
     private fun resDir(): File {
-        // Arbeitsverzeichnis ist app/; zur Sicherheit auch vom Projektstamm aus finden
+        // Gradle runs unit tests in app/; also resolve from the project root
         val candidates = listOf(File("src/main/res"), File("app/src/main/res"))
         return candidates.firstOrNull { it.isDirectory }
             ?: error("Ressourcenordner nicht gefunden (Arbeitsverzeichnis ${File(".").absolutePath})")
     }
 
-    /** name → Text aller <string>-Elemente der Datei, Android-Escapes aufgeloest. */
+    /** name -> text of all <string> elements, Android escapes resolved. */
     private fun strings(file: File): Map<String, String> {
         assertTrue("Ressourcendatei fehlt: $file", file.isFile)
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)

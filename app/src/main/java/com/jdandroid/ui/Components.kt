@@ -31,12 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
-/**
- * Gemeinsame Bausteine, damit alle Bildschirme gleich aussehen: Zustandsplakette,
- * Paket-/Zeilenkarten, Titelleistenfarben, duenner Fortschrittsbalken.
- */
-
-/** Farbliche Bedeutung einer Plakette; getrennt von der Akzentfarbe. */
+/** Semantic color of a status chip, independent of the accent color. */
 enum class Tone { NEUTRAL, ACTIVE, SUCCESS, WARNING, ERROR }
 
 @Composable
@@ -61,7 +56,7 @@ fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
     )
 }
 
-/** Kopfkarte eines Pakets: deutlich abgesetzt von den Zeilen darunter. */
+/** Package header card, visually raised above its rows. */
 @Composable
 fun PackageCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
@@ -72,7 +67,7 @@ fun PackageCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
     ) { Column { content() } }
 }
 
-/** Zeile innerhalb eines Pakets: flacher, leicht abgesetzter Hintergrund. */
+/** Row card inside a package. */
 @Composable
 fun RowCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
@@ -83,7 +78,7 @@ fun RowCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     ) { Column { content() } }
 }
 
-/** Duenner, abgerundeter Fortschrittsbalken; null = unbestimmt. */
+/** Thin rounded progress bar; null means indeterminate. */
 @Composable
 fun ThinProgress(fraction: Float?, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
     val m = modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp))
@@ -98,7 +93,6 @@ fun jdTopBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(
     titleContentColor = MaterialTheme.colorScheme.onSurface
 )
 
-/** Abschnittsueberschrift in Einstellungen. */
 @Composable
 fun SectionTitle(text: String) {
     Text(
@@ -109,7 +103,6 @@ fun SectionTitle(text: String) {
     )
 }
 
-/** Gruppe von Einstellungen in einer Karte. */
 @Composable
 fun SettingsGroup(content: @Composable () -> Unit) {
     Card(
@@ -120,7 +113,7 @@ fun SettingsGroup(content: @Composable () -> Unit) {
     ) { Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) { content() } }
 }
 
-/** Kleine Zeile "Bezeichnung · Wert" fuer Meta-Angaben. */
+/** Small meta line, optionally prefixed with the hoster icon. */
 @Composable
 fun MetaRow(
     text: String,
@@ -128,7 +121,6 @@ fun MetaRow(
     hosterId: String? = null
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        // Kleines Hoster-Symbol vor dem Text, falls eines hinterlegt ist
         hosterId?.let { hosterIconRes(it) }?.let { res ->
             Image(
                 painterResource(res),
@@ -145,7 +137,7 @@ fun MetaRow(
     }
 }
 
-/** Symbol je Hoster (siehe THIRD_PARTY_NOTICES.md); null, wenn keines hinterlegt ist. */
+/** Hoster icon (see THIRD_PARTY_NOTICES.md) or null. */
 fun hosterIconRes(id: String): Int? = when (id) {
     "rapidgator" -> com.jdandroid.R.drawable.hoster_rapidgator
     "onefichier" -> com.jdandroid.R.drawable.hoster_onefichier
@@ -154,10 +146,8 @@ fun hosterIconRes(id: String): Int? = when (id) {
 }
 
 /**
- * Symbole, die nicht im schlanken material-icons-core enthalten sind. Die
- * Pfaddaten entsprechen den Material-Symbolen (24-dp-Raster), damit das
- * Erscheinungsbild dem der uebrigen Icons entspricht - ohne das grosse
- * icons-extended-Paket (mehrere MB) einzubinden.
+ * Material icons missing from material-icons-core, as 24-dp path data,
+ * to avoid the multi-megabyte icons-extended dependency.
  */
 object JdIcons {
     private fun icon(name: String, pathData: String): ImageVector =
@@ -169,7 +159,6 @@ object JdIcons {
             viewportHeight = 24f
         ).addPath(pathData = addPathNodes(pathData), fill = SolidColor(Color.Black)).build()
 
-    /** Archiv mit Pfeil nach oben: Entpacken. */
     val Unarchive: ImageVector by lazy {
         icon(
             "Unarchive",
@@ -179,7 +168,6 @@ object JdIcons {
         )
     }
 
-    /** Datei mit Pfeil nach oben: Datei importieren (DLC). */
     val UploadFile: ImageVector by lazy {
         icon(
             "UploadFile",
@@ -188,12 +176,10 @@ object JdIcons {
         )
     }
 
-    /** Pfeil nach unten auf einer Linie: Downloads. */
     val Download: ImageVector by lazy {
         icon("Download", "M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z")
     }
 
-    /** Kettenglied: Linksammler. */
     val Link: ImageVector by lazy {
         icon(
             "Link",
@@ -203,12 +189,10 @@ object JdIcons {
         )
     }
 
-    /** Zwei Balken: Pause. */
     val Pause: ImageVector by lazy {
         icon("Pause", "M6,19h4V5H6v14zM14,5v14h4V5h-4z")
     }
 
-    /** Geoeffneter Ordner: Datei waehlen. */
     val FolderOpen: ImageVector by lazy {
         icon(
             "FolderOpen",
@@ -217,7 +201,6 @@ object JdIcons {
         )
     }
 
-    /** Kreis mit Ausrufezeichen: Fehler. */
     val Error: ImageVector by lazy {
         icon(
             "Error",
@@ -226,7 +209,6 @@ object JdIcons {
         )
     }
 
-    /** Kreis mit Fragezeichen: unbekannt / nicht geprueft. */
     val Help: ImageVector by lazy {
         icon(
             "Help",
@@ -237,7 +219,6 @@ object JdIcons {
         )
     }
 
-    /** Schluessel: Passwort / API-Key. */
     val Key: ImageVector by lazy {
         icon(
             "Key",

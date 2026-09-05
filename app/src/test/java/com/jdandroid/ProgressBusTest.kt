@@ -32,7 +32,7 @@ class ProgressBusTest {
         ProgressBus.update(1, LiveProgress(100, 10), now = 1_000)
         assertFalse(ProgressBus.update(1, LiveProgress(200, 20), now = 1_400))
         assertEquals(LiveProgress(100, 10), ProgressBus.state.value[1])
-        // Genau 500 ms spaeter geht es wieder
+        // Exactly 500 ms later it passes again
         assertTrue(ProgressBus.update(1, LiveProgress(300, 30), now = 1_500))
         assertEquals(LiveProgress(300, 30), ProgressBus.state.value[1])
     }
@@ -40,7 +40,7 @@ class ProgressBusTest {
     @Test
     fun drosselungGiltJeEintrag() {
         ProgressBus.update(1, LiveProgress(100, 10), now = 1_000)
-        // Ein anderer Eintrag ist von der Drosselung des ersten nicht betroffen
+        // Another entry is not throttled by the first
         assertTrue(ProgressBus.update(2, LiveProgress(5, 1), now = 1_100))
         assertEquals(2, ProgressBus.state.value.size)
     }
@@ -50,7 +50,7 @@ class ProgressBusTest {
         ProgressBus.update(1, LiveProgress(100, 10), now = 1_000)
         ProgressBus.remove(1)
         assertNull(ProgressBus.state.value[1])
-        // Nach dem Entfernen zaehlt die alte Veroeffentlichung nicht mehr
+        // After removal the old publication no longer counts
         assertTrue(ProgressBus.update(1, LiveProgress(0, 0), now = 1_001))
     }
 
@@ -66,11 +66,11 @@ class ProgressBusTest {
     @Test
     fun unveraenderterWertLoestKeineNeueVeroeffentlichungAus() = runBlocking {
         val received = mutableListOf<Map<Long, LiveProgress>>()
-        // Unconfined: der Sammler laeuft sofort im Thread der Veroeffentlichung
+        // Unconfined: the collector runs on the publishing thread
         val collector = launch(Dispatchers.Unconfined) { ProgressBus.state.collect { received.add(it) } }
         try {
             assertTrue(ProgressBus.update(1, LiveProgress(100, 10), now = 1_000))
-            // Gleicher Wert ausserhalb der Drosselung: angenommen, aber kein neues Emit
+            // Same value outside throttling: accepted but not re-emitted
             assertTrue(ProgressBus.update(1, LiveProgress(100, 10), now = 2_000))
             assertTrue(ProgressBus.update(1, LiveProgress(200, 10), now = 3_000))
         } finally {

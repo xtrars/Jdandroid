@@ -17,25 +17,21 @@ import com.jdandroid.data.SettingsRepository
 import java.io.File
 
 /**
- * Ablageorte fertiger Dateien: der App-Ordner (Teildateien, Archive,
- * Entpack-Ziel), der vom Nutzer gewaehlte SAF-Zielordner und der oeffentliche
- * Ordner Downloads/JDAndroid (MediaStore). Kennt die Reihenfolge der Ziele
- * (SAF vor MediaStore vor App-Ordner) und holt Dateien fuer das nachtraegliche
- * Entpacken von dort zurueck.
+ * Storage locations for finished files: the app directory (part files,
+ * archives, extraction target), the user's SAF target folder and the public
+ * Downloads/JDAndroid folder (MediaStore). Targets are tried in the order
+ * SAF, MediaStore, app directory; exported files can be fetched back for
+ * later extraction.
  */
 internal class StorageTarget(
     private val context: Context,
     private val settings: SettingsRepository
 ) {
-    /** App-eigener Download-Ordner; wird bei Bedarf angelegt. */
     fun downloadDir(): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
             .apply { mkdirs() }
 
-    /**
-     * Vom Nutzer gewaehlter Zielordner (Storage Access Framework), z.B. auf der
-     * SD-Karte. null, wenn keiner gewaehlt oder die Berechtigung verloren ist.
-     */
+    /** The user's SAF target folder, or null if none is chosen or the permission was lost. */
     suspend fun targetTree(): DocumentFile? {
         val uri = settings.currentDownloadTreeUri() ?: return null
         return runCatching { DocumentFile.fromTreeUri(context, uri.toUri()) }
@@ -127,14 +123,13 @@ internal class StorageTarget(
         }
     }
 
-    /** Verschiebt die fertige Datei ins Ziel (oeffentlicher Download-Ordner oder App-Ordner). */
+    /** Moves a finished file to its target and returns the display path. */
     suspend fun finish(temp: File, fileName: String): String {
         targetTree()?.let { root ->
             copyToTree(TreeDir(root.uri, root.name), temp, fileName)?.let { path ->
                 temp.delete()
                 return path
             }
-            // Kopieren fehlgeschlagen (Berechtigung weg?) -> regulaerer Weg
         }
         val export = settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
         if (export) {
@@ -154,11 +149,10 @@ internal class StorageTarget(
                     return "Downloads/JDAndroid/$fileName"
                 }
             } catch (_: Exception) {
-                // Export fehlgeschlagen -> Datei bleibt im App-Ordner
             }
         }
-        // Liegt die Datei bereits unter ihrem Zielnamen im App-Ordner ("Erneut
-        // laden" mit vorhandener Datei), nicht in "name (2)" umbenennen
+        // A file already stored under its final name (re-download of an existing
+        // file) must not be renamed to "name (2)".
         if (temp.path == File(downloadDir(), fileName).path) return temp.absolutePath
         val dest = FileNames.uniqueFile(downloadDir(), fileName)
         if (temp.path != dest.path) {
@@ -168,12 +162,11 @@ internal class StorageTarget(
     }
 
     /**
-     * Exportiert alle entpackten Dateien in den Zielordner (SAF) oder den
-     * oeffentlichen Download-Ordner (Downloads/JDAndroid/<base>/...). Liefert
-     * den Anzeigepfad; ohne Export bleiben sie im App-Ordner ([dir]).
+     * Exports all extracted files to the SAF folder or to
+     * Downloads/JDAndroid/[base]/... and returns the display path; without
+     * export they stay in [dir].
      */
     suspend fun exportDirectory(dir: File, base: String): String {
-        // Eigener Zielordner (SAF) hat Vorrang vor Downloads/JDAndroid
         targetTree()?.let { root ->
             val target = TreeDir(root.uri, root.name).subDir(base) ?: return dir.absolutePath
             var allOk = true
@@ -188,8 +181,7 @@ internal class StorageTarget(
                 "${root.name ?: Texts.t("engine_target_folder")}/$base"
             } else dir.absolutePath
         }
-        // Direkter SDK_INT-Vergleich statt Hilfsvariable: Lint (AGP 8.13) erkennt
-        // den Versions-Guard sonst nicht und meldet NewApi fuer MediaStore.Downloads.
+        // Lint only recognises the version guard as a direct SDK_INT comparison.
         if (!settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return dir.absolutePath
         val resolver = context.contentResolver
         var allOk = true
@@ -231,10 +223,8 @@ internal class StorageTarget(
     }
 
     /**
-     * Datei in einen MediaStore-Eintrag kopieren. Ohne Ausgabestream oder bei
-     * einem Fehler mitten im Kopieren wird der (halbe) Eintrag wieder
-     * geloescht - sonst bliebe eine leere Datei in "Downloads" zurueck und die
-     * Quelle wuerde trotzdem entfernt.
+     * Copies a file into a MediaStore entry. On failure the half-written entry
+     * is deleted, otherwise an empty file would remain in Downloads.
      */
     private fun copyToMediaStore(resolver: ContentResolver, uri: Uri, source: File): Boolean {
         try {
@@ -250,11 +240,7 @@ internal class StorageTarget(
         }
     }
 
-    /**
-     * Exportierte Datei [name] aus dem Zielordner (SAF) oder aus
-     * Downloads/JDAndroid (MediaStore) nach [dest] zurueckkopieren. false,
-     * wenn sie dort nicht liegt oder das Kopieren scheitert.
-     */
+    /** Copies the exported file [name] from the SAF folder or Downloads/JDAndroid back to [dest]. */
     suspend fun restoreExported(name: String, dest: File): Boolean {
         targetTree()?.let { root -> TreeDir(root.uri, null).fileUri(name) }?.let { uri ->
             return copyUriTo(uri, dest)

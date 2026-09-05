@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Ab Android 12: Konten (auch verschluesselt), Download-Liste und
-  Einstellungen gehoeren weder in Cloud-Backups noch in den Geraetewechsel.
-  Der Keystore-Schluessel wandert ohnehin nicht mit; die Daten waeren
-  nach einer Wiederherstellung unbrauchbar.
--->
+<!-- Android 12+: accounts, download list and settings stay on the device;
+     the Keystore key would not be transferred anyway. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="database" />

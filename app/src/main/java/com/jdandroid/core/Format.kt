@@ -3,10 +3,8 @@ package com.jdandroid.core
 import java.util.Locale
 
 /**
- * Binaere Einheiten mit korrekter Beschriftung (1 MiB = 1.048.576 Byte),
- * wie im JDownloader. Wird von Oberflaeche und Benachrichtigungen genutzt.
- * Das Dezimalzeichen folgt der Sprache des Geraets (Komma/Punkt), die
- * Einheiten bleiben unuebersetzt.
+ * Binary units (1 MiB = 1,048,576 bytes). The decimal separator follows the
+ * device locale; the unit labels are not translated.
  */
 fun formatBytes(bytes: Long): String {
     if (bytes < 0) return "?"

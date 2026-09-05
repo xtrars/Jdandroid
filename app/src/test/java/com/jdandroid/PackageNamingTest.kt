@@ -50,7 +50,7 @@ class PackageNamingTest {
     fun verfeinerterNameNurWennErSichAendert() {
         val auto = DownloadPackage(id = 1, name = "Paket 1")
         assertEquals("film", PackageNaming.refinedName(auto, listOf("film.part1.rar", "film.part2.rar")))
-        // Schon aktuell oder von Hand benannt: nichts schreiben
+        // Already current or manually named: nothing to write
         assertNull(PackageNaming.refinedName(auto.copy(name = "film"), listOf("film.part1.rar")))
         assertNull(PackageNaming.refinedName(auto.copy(autoNamed = false), listOf("film.part1.rar")))
         assertNull(PackageNaming.refinedName(auto, emptyList()))

@@ -57,7 +57,7 @@ class FileNamesTest {
         assertEquals("download.bin", FileNames.sanitize(""))
         assertEquals("download.bin", FileNames.sanitize(" ... "))
         assertEquals("download.bin", FileNames.fromResponse(null, "https://example.com/".toHttpUrl()))
-        // Leerer Header-Name zaehlt nicht als Name: dann greift die Adresse
+        // An empty header name does not count; the URL applies
         assertEquals("My File.rar", FileNames.fromResponse("attachment; filename=\"\"", url))
     }
 
@@ -77,7 +77,7 @@ class FileNamesTest {
         val limited = FileNames.limitLength(long)
         assertTrue(limited.endsWith(".rar"))
         assertTrue(limited.toByteArray().size <= 200)
-        // Multibyte: Byte-Grenze, nicht Zeichenzahl
+        // Multibyte: byte limit, not character count
         val umlauts = "ü".repeat(150) + ".mkv"
         val limitedUmlauts = FileNames.sanitize(umlauts)
         assertTrue(limitedUmlauts.endsWith(".mkv"))

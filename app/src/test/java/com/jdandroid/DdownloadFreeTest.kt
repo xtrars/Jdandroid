@@ -19,16 +19,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Free-Modus von ddownload, geprüft gegen die tatsächliche Dateiseite
- * (abgerufen am 04.09.2026): Turnstile im Download-Formular, Countdown 60 s,
- * Fehlermeldungen in dk-dl-alert und als Sprechblase am gesperrten Knopf.
- * Dazu die klassischen XFileSharing-Muster (Span-Captcha, "You have to wait").
+ * ddownload free mode against the actual file page: Turnstile in the download
+ * form, 60 s countdown, errors in dk-dl-alert and as a tooltip on the locked
+ * button, plus the classic XFileSharing patterns (span captcha, "You have to wait").
  */
 class DdownloadFreeTest {
 
     private val hoster = DdownloadHoster()
 
-    /** Ausschnitt der echten Dateiseite (GET, ohne Fehler). */
+    /** Excerpt of the real file page (GET, no error). */
     private val seite = """
         <html><head><title>Download scn smps8 S37E02 rar</title></head><body>
         <form name="F1" method="POST" action="" style="display:contents;">
@@ -58,7 +57,7 @@ class DdownloadFreeTest {
         </body></html>
     """.trimIndent()
 
-    /** Antwort auf op=download2 ohne gültiges Turnstile-Token. */
+    /** Response to op=download2 without a valid Turnstile token. */
     private val wrongCaptcha = seite.replace(
         """<button type="button" id="downloadbtn" class="dk-dl-btn dk-btn-disabled" disabled>Normaler Download</button>""",
         """<div class="dk-dl-alert">Wrong captcha</div>
@@ -68,7 +67,7 @@ class DdownloadFreeTest {
 
     private val expiredSession = wrongCaptcha.replace("Wrong captcha", "Expired download session")
 
-    /** Sperre: der Knopf trägt die Rohsekunden. */
+    /** Block: the button carries the raw seconds. */
     private val gesperrt = wrongCaptcha
         .replace("""<div class="dk-dl-alert">Wrong captcha</div>""", "")
         .replace("""data-toast-msg="Wrong captcha" data-wait-seconds="0"""",
@@ -222,7 +221,7 @@ class DdownloadFreeTest {
         assertFalse(form.containsKey("code"))
     }
 
-    /** Der im Browser abgefangene Direktlink wird ohne Netz samt Cookies und Browser-Kennung übernommen. */
+    /** A direct link captured in the browser is used offline with cookies and browser user agent. */
     @Test
     fun direktlinkAusDemBrowserWirdMitCookiesUebernommen() = runBlocking {
         val alt = Http.browserUserAgent
@@ -245,7 +244,7 @@ class DdownloadFreeTest {
         }
     }
 
-    /** Weiterleitung auf ein fremdes CDN: der Link zaehlt, die Hoster-Cookies gehen nicht mit. */
+    /** Redirect to a foreign CDN: the link counts, the hoster cookies do not travel. */
     @Test
     fun fremderHostBekommtKeineCookies() = runBlocking {
         val link = hoster.resolveFree(
@@ -268,9 +267,9 @@ class DdownloadFreeTest {
     }
 
     /**
-     * Countdown ueber der Inline-Grenze: das Formular wird gemerkt und der
-     * Folgeversuch laedt die Seite nicht erneut - sonst stuende der Countdown
-     * wieder auf demselben Wert und der Eintrag kreiste ohne Fortschritt.
+     * Countdown above the inline limit: the form is remembered and the next
+     * attempt does not reload the page, otherwise the countdown would restart
+     * at the same value and the entry would loop without progress.
      */
     @Test
     fun langerCountdownMerktFormularStattSeiteNeuZuLaden() = runBlocking {
@@ -291,7 +290,7 @@ class DdownloadFreeTest {
             assertEquals(601, (erste as WaitException).seconds)
             assertEquals(1, server.requestCount)
             assertEquals("/chnaz5epeg4t", server.takeRequest().path)
-            // Zweiter Versuch (Engine nach Ablauf oder frueher): keine neue Seite, Restzeit
+            // Second attempt (after expiry or earlier): no new page, remaining time
             val zweite = runCatching { lokal.resolveFree(url, FreeHints()) }.exceptionOrNull()
             assertTrue("$zweite", zweite is WaitException)
             assertTrue((zweite as WaitException).seconds in 590..601)
@@ -310,7 +309,7 @@ class DdownloadFreeTest {
         assertFalse(fehler is CaptchaRequiredException)
     }
 
-    /** Free-Antworten leiten auch auf Fileserver-Pfade ohne Dateiendung. */
+    /** Free responses also redirect to file server paths without a file extension. */
     @Test
     fun fileserverPfadeOhneEndungGeltenAlsDirektlink() {
         assertTrue(hoster.isDirectDownloadUrl("https://fs07.ddownload.com:183/cgi-bin/dl.cgi/token123"))

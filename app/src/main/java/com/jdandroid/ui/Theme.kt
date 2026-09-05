@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** Hell/Dunkel: dem System folgen oder fest waehlen (Einstellungen). */
+/** Light/dark preference: follow the system or a fixed choice. */
 enum class ThemeMode(val key: String) {
     SYSTEM("system"),
     LIGHT("light"),
@@ -34,7 +34,6 @@ private val JdTypography = Typography().let { base ->
     )
 }
 
-/** Ist der Dunkelmodus fuer diese Einstellung aktiv? */
 @Composable
 fun isDarkFor(mode: ThemeMode): Boolean = when (mode) {
     ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -43,9 +42,8 @@ fun isDarkFor(mode: ThemeMode): Boolean = when (mode) {
 }
 
 /**
- * Material You: Farben kommen ab Android 12 vom System (Hintergrundbild,
- * Systemakzent). Aeltere Geraete erhalten das Material-Standardschema -
- * keine eigene Palette mehr.
+ * Material You only: dynamic colors from Android 12 on, the Material
+ * baseline scheme below. No custom palette.
  */
 @Composable
 fun JdTheme(

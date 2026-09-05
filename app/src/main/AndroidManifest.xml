@@ -6,20 +6,15 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- Leerlauf (Click'n'Load lauscht, Warten auf WLAN) laeuft als specialUse,
-         damit das 6-Stunden-Kontingent fuer dataSync (Android 15) nicht
-         verbraucht wird, waehrend nichts geladen wird. -->
+    <!-- Idle phases (Click'n'Load listening, waiting for Wi-Fi) run as specialUse
+         so they do not consume the 6-hour dataSync budget of Android 15. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!--
-      allowBackup="false": Konten (auch verschluesselt) und Download-Liste
-      gehoeren nicht in Cloud-Backups. Ein Backup wuerde zudem den Keystore-
-      Schluessel nicht mitnehmen und die Konten waeren nach Wiederherstellung
-      ohnehin unbrauchbar.
-    -->
+    <!-- No backups: accounts and the download list must not leave the device,
+         and the Keystore key would not be restored anyway. -->
     <application
         android:name=".JdApp"
         android:allowBackup="false"
@@ -42,31 +37,24 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Links aus anderen Apps teilen (z.B. Browser -> Teilen) -->
+            <!-- Links shared from other apps -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!--
-              DLC-Container oeffnen, Weg 1: nach MIME-Typ. Android kennt die
-              Endung .dlc nicht und meldet solche Dateien als
-              application/octet-stream - so liefern Downloads-App, Chrome und
-              Dateimanager sie (content://-URI ohne Endung im Pfad). Ob es
-              wirklich ein DLC ist, prueft die App am Inhalt.
-            -->
+            <!-- DLC containers by MIME type: Android does not know .dlc and
+                 hands such files over as application/octet-stream with a
+                 content:// URI without extension. The app checks the content. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="content" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
-            <!--
-              Weg 2: nach Dateiendung (file:// bzw. content:// mit sichtbarem
-              Pfad). pathAdvancedPattern statt pathPattern, weil ".*" bei
-              pathPattern nicht zuruecksetzt und "Serie.S01.dlc" sonst nicht
-              erkannt wuerde.
-            -->
+            <!-- DLC containers by extension. pathAdvancedPattern, because ".*"
+                 in pathPattern does not backtrack and "Show.S01.dlc" would not
+                 match. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -75,16 +63,15 @@
                 <data android:scheme="content" />
                 <data android:host="*" />
                 <data android:pathAdvancedPattern=".*\\.[dD][lL][cC]" />
-                <!-- pathAdvancedPattern gilt erst ab Android 12; darunter greifen
-                     diese pathPattern-Varianten (".*" setzt dort nicht zurueck,
-                     daher je Punkt im Namen ein eigenes Muster). -->
+                <!-- Below Android 12 only pathPattern applies: one pattern per
+                     dot in the file name. -->
                 <data android:pathPattern=".*\\.dlc" />
                 <data android:pathPattern=".*\\..*\\.dlc" />
                 <data android:pathPattern=".*\\..*\\..*\\.dlc" />
                 <data android:pathPattern=".*\\..*\\..*\\..*\\.dlc" />
                 <data android:pathPattern=".*\\..*\\..*\\..*\\..*\\.dlc" />
             </intent-filter>
-            <!-- DLC per "Teilen" aus Dateimanagern -->
+            <!-- DLC shared from file managers -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -101,11 +88,8 @@
                 android:value="Click'n'Load-Empfang auf localhost:9666 und Warten auf WLAN zwischen Downloads" />
         </service>
 
-        <!--
-          Nach einem Neustart darf ein dataSync-Dienst nicht direkt aus dem
-          Hintergrund starten (Android 15). Der Receiver stellt die Warteschlange
-          konsistent her und erinnert per Benachrichtigung an offene Downloads.
-        -->
+        <!-- A dataSync service may not start from the background after boot
+             (Android 15); the receiver repairs the queue and posts a reminder. -->
         <receiver
             android:name=".engine.BootReceiver"
             android:enabled="true"

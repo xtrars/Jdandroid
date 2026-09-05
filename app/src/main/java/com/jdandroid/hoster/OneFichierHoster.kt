@@ -22,9 +22,9 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 1fichier.com – offizielle REST-API (API-Key, Premium/Access erforderlich);
- * ohne Konto der Free-Ablauf der Website ([resolveFree]: Dateiseite,
- * Countdown, Formular, Direktlink).
+ * 1fichier.com: official REST API (API key, Premium/Access required); without
+ * an account the website's free flow ([resolveFree]: file page, countdown,
+ * form, direct link).
  */
 class OneFichierHoster : Hoster {
 
@@ -38,9 +38,9 @@ class OneFichierHoster : Hoster {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     /**
-     * Alle Domains, unter denen 1fichier Dateien ausliefert. Die Datei-Id ist
-     * laut Doku kleingeschrieben; Grossbuchstaben werden beim Erkennen
-     * toleriert und in [normalize] auf Kleinschreibung gebracht.
+     * All domains under which 1fichier serves files. Per the docs the file id
+     * is lower case; upper case is tolerated when matching and lower-cased in
+     * [normalize].
      */
     private val pattern = Regex(
         """https?://(?:www\.)?(?:1fichier\.com|alterupload\.com|cjoint\.net|desfichiers\.com|""" +
@@ -48,11 +48,11 @@ class OneFichierHoster : Hoster {
             """tenvoi\.com|dl4free\.com)/\?([A-Za-z0-9]{5,20})(?![A-Za-z0-9])"""
     )
 
-    /** user/info.cgi erlaubt nur einen Aufruf pro 5 Minuten - Ergebnis zwischenspeichern. */
+    /** user/info.cgi allows one call per 5 minutes, so the result is cached. */
     private val accountCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, Result<AccountInfo>>>()
     private val accountCacheMs = 5L * 60 * 1000
 
-    /** Fehler der Zugangsdaten (ungueltiger API-Key), immer permanent. */
+    /** Credential error (invalid API key), always permanent. */
     private class AuthException(message: String) : HosterException(message, permanent = true)
 
     override val siteHosts: Set<String> = listOf(
@@ -64,15 +64,11 @@ class OneFichierHoster : Hoster {
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
-    // ------------------------------------------------------------------
-    // Free-Modus (Website-Ablauf ohne Konto)
-    // ------------------------------------------------------------------
-
     private val siteBase = "https://1fichier.com"
 
     /**
-     * Browser-Kennung wie in der Captcha-Ansicht: Dateiseite, Formular und
-     * Dateiabruf laufen unter derselben Kennung und denselben Cookies.
+     * Browser user agent as in the captcha view: file page, form and file
+     * request run under the same user agent and cookies.
      */
     private val browserUa: String
         get() = Http.browserUserAgent
@@ -80,13 +76,13 @@ class OneFichierHoster : Hoster {
                 "Chrome/122.0.0.0 Mobile Safari/537.36"
 
     /**
-     * Zustand eines Free-Ablaufs je Datei-Kennung: eigener Cookie-Speicher
-     * (Session der Dateiseite, `LG=en`), das ausgelesene Formular und der
-     * Zeitpunkt, ab dem es abgeschickt werden darf. Lebt nur im Prozess.
+     * State of a free flow per file id: own cookie store (file page session,
+     * `LG=en`), the parsed form and the time from which it may be submitted.
+     * Lives only in-process.
      */
     private class FreeSession(val pageUrl: String) {
         var form: OneFichierForm? = null
-        /** Hotlink: die Dateiseite lieferte schon die Datei, kein Formular noetig. */
+        /** Hotlink: the file page already served the file, no form needed. */
         var hotlink: ResolvedLink? = null
         var fileName: String? = null
         var fileSize = -1L
@@ -113,7 +109,7 @@ class OneFichierHoster : Hoster {
 
         val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
 
-        /** Cookie-Header fuer [url], null ohne passende Cookies. */
+        /** Cookie header for [url], null without matching cookies. */
         fun cookieHeader(url: String): String? {
             val http = url.toHttpUrlOrNull() ?: return null
             val now = System.currentTimeMillis()
@@ -131,7 +127,7 @@ class OneFichierHoster : Hoster {
         val body: String,
         val location: String?,
         val finalUrl: String,
-        /** Antwort ist eine Datei (Content-Disposition oder Nicht-Text). */
+        /** Response is a file (Content-Disposition or non-text). */
         val isFile: Boolean
     )
 
@@ -156,7 +152,7 @@ class OneFichierHoster : Hoster {
         return c.newCall(builder.build()).execute().use { resp ->
             val type = resp.header("Content-Type").orEmpty().lowercase()
             val attachment = resp.header("Content-Disposition")?.contains("attachment", true) == true
-            // Nur Seiten als Text lesen, nie eine Datei (Heap)
+            // Only read pages as text, never a file (heap)
             val textual = !attachment && (
                 type.isBlank() || type.startsWith("text/") || type.contains("json") ||
                     type.contains("javascript") || type.contains("xml")
@@ -173,10 +169,10 @@ class OneFichierHoster : Hoster {
     }
 
     /**
-     * Sperren und Hinweise einer Seite pruefen: HTTP-Status (503 Wartung,
-     * 403/429 Sperre - nie permanent), Offline-Text, dann die Muster im
-     * sichtbaren Text ([OneFichierFreePage.classify], auf der Dateiseite mit
-     * [downloadOffered]). Kehrt zurueck, wenn nichts dagegen spricht.
+     * Checks blocks and notices of a page: HTTP status (503 maintenance,
+     * 403/429 block, never permanent), offline text, then the patterns in the
+     * visible text ([OneFichierFreePage.classify], on the file page with
+     * [downloadOffered]). Returns if nothing objects.
      */
     private fun checkPage(resp: Resp, downloadOffered: Boolean = false) {
         if (resp.code == 404 || OneFichierFreePage.isOffline(resp.body)) throw FileOfflineException()
@@ -193,17 +189,16 @@ class OneFichierHoster : Hoster {
     }
 
     /**
-     * Free-Modus ohne Konto. Ablauf ohne Nutzer: Dateiseite (englisch) holen,
-     * Offline, Sperren mit Wartezeit und dauerhafte Gruende auswerten; ist die
-     * Antwort bereits die Datei (Hotlink), wird sie direkt geladen. Sonst
-     * das Download-Formular lesen, den Countdown (`var count`) abwarten -
-     * kurz im Prozess, lang als [WaitException] an die Engine - und das
-     * Formular abschicken; der Direktlink steht in der Antwort oder in der
-     * Weiterleitung. Nur im Browser gehen: ein Captcha (nur bei auffaelligen
-     * Adressen) und passwortgeschuetzte Dateien - beides als
-     * [CaptchaRequiredException] mit der Dateiseite, der Nutzer arbeitet die
-     * Seite dort durch und die Navigation auf `a-<n>.1fichier.com/<token>`
-     * wird abgefangen ([FreeHints.direktUrlAusBrowser]).
+     * Free mode without an account. Unattended flow: fetch the file page (in
+     * English), evaluate offline, blocks with wait time and permanent reasons;
+     * if the response is already the file (hotlink) it is loaded directly.
+     * Otherwise read the download form, wait out the countdown (`var count`),
+     * short in-process, long as [WaitException] to the engine, and submit the
+     * form; the direct link is in the response or the redirect. Browser only:
+     * a captcha (only for suspicious addresses) and password-protected files,
+     * both as [CaptchaRequiredException] with the file page; the user works
+     * through the page there and the navigation to `a-<n>.1fichier.com/<token>`
+     * is intercepted ([FreeHints.direktUrlAusBrowser]).
      */
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
         withContext(Dispatchers.IO) {
@@ -225,7 +220,7 @@ class OneFichierHoster : Hoster {
                 ?: startFreeSession(id, link, pageUrl)
             session.hotlink?.let { return@withContext it }
 
-            // Countdown: kurze Reste im Prozess abwarten, lange an die Engine
+            // Countdown: short remainders in-process, long ones to the engine
             val remaining = session.readyAt - System.currentTimeMillis()
             if (remaining > MAX_INLINE_WAIT_MS) {
                 throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_onefichier_free_countdown"))
@@ -246,13 +241,13 @@ class OneFichierHoster : Hoster {
                     currentUrl = target
                     continue
                 }
-                // Nach einer Weiterleitung per GET darf die Antwort die Datei sein;
-                // die POST-Adresse selbst ist per GET nur die Dateiseite
+                // After a redirect via GET the response may be the file; the
+                // POST address itself, fetched via GET, is only the file page
                 if (resp.isFile && currentUrl != action) { direct = resp.finalUrl; break }
                 direct = OneFichierFreePage.directLink(resp.body)
                 break
             }
-            // Formular ist verbraucht: beim naechsten Versuch die Seite neu holen
+            // The form is used up: the next attempt fetches the page again
             freeSessions.remove(id)
             if (direct.isNullOrBlank()) {
                 checkPage(resp)
@@ -270,25 +265,25 @@ class OneFichierHoster : Hoster {
         }
 
     /**
-     * Dateiseite holen und auswerten. Liefert die Session mit Formular und
-     * Startzeitpunkt; bei einem Hotlink (Antwort ist die Datei) steht der
-     * fertige Link in [FreeSession.hotlink], ein Formular ist dann unnoetig.
+     * Fetches and parses the file page. Returns the session with form and
+     * ready time; for a hotlink (response is the file) the finished link is in
+     * [FreeSession.hotlink] and no form is needed.
      */
     private fun startFreeSession(id: String, link: String, pageUrl: String): FreeSession {
         freeSessions.remove(id)
         val session = FreeSession(pageUrl)
-        // Englische Texte erzwingen, damit die Fehlermuster greifen
+        // Force English texts so the error patterns match
         session.store.add(Cookie.Builder().name("LG").value("en").domain("1fichier.com").path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
         if (page.isFile) {
-            // Hotlink: Besitzer zahlt den Traffic, keine Wartezeit
+            // Hotlink: the owner pays the traffic, no wait
             session.hotlink = ResolvedLink(
                 secure(page.finalUrl), headers = freeHeaders(link, page.finalUrl, session.cookieHeader(page.finalUrl))
             )
             return session
         }
-        // Mit Formular gilt der Hinweis "only one file at a time" nicht als
-        // Sperre - ob gesperrt ist, zeigt erst die Antwort auf das Formular
+        // With a form present the notice "only one file at a time" is not a
+        // block; whether it is blocked is only shown by the form response
         val form = OneFichierFreePage.downloadForm(page.body, id)
         checkPage(page, downloadOffered = form != null)
         if (OneFichierFreePage.hasCaptcha(page.body)) {
@@ -309,14 +304,15 @@ class OneFichierHoster : Hoster {
     private fun resolveLocation(base: String, location: String): String =
         base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
-    /** Cleartext ist in der App gesperrt: Fileserver-Links immer ueber HTTPS. */
+    /** Cleartext is disabled in the app: file server links always via HTTPS. */
     private fun secure(url: String): String =
         if (url.startsWith("http://", ignoreCase = true)) "https://" + url.substring(7) else url
 
     /**
-     * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung, Referer der
-     * Dateiseite und die Session-Cookies, falls der Fileserver sie verlangt.
-     * Cookies only for the hoster's own hosts, never for a foreign [directUrl].
+     * Headers for the file request in free mode: browser user agent, Referer
+     * of the file page and the session cookies in case the file server
+     * requires them. Cookies only for the hoster's own hosts, never for a
+     * foreign [directUrl].
      */
     internal fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
@@ -329,8 +325,8 @@ class OneFichierHoster : Hoster {
     }
 
     /**
-     * Fileserver-Adresse `https://a-3.1fichier.com/<token>` (ohne Dateiendung,
-     * daher neben [DirectLinks]); Seiten der Hauptdomain zaehlen nie.
+     * File server address `https://a-3.1fichier.com/<token>` (no file
+     * extension, hence in addition to [DirectLinks]); main domain pages never count.
      */
     override fun isDirectDownloadUrl(url: String): Boolean {
         val host = url.toHttpUrlOrNull()?.host?.lowercase() ?: return false
@@ -339,14 +335,14 @@ class OneFichierHoster : Hoster {
     }
 
     private companion object {
-        /** Countdown-Reste bis hierhin laufen im Prozess ab, laengere gehen als Wartezeit an die Engine. */
+        /** Countdown remainders up to this run in-process; longer ones go to the engine as wait time. */
         const val MAX_INLINE_WAIT_MS = 90_000L
         const val SESSION_MAX_AGE_MS = 10L * 60 * 1000
     }
 
     /**
-     * Kanonische Form fuer API-Aufrufe: https://1fichier.com/?<id> (id klein),
-     * unabhaengig von Alias-Domain, www. oder Anhaengseln. null = kein 1fichier-Link.
+     * Canonical form for API calls: https://1fichier.com/?<id> (lower-case id),
+     * regardless of alias domain, www. or suffixes. null = not a 1fichier link.
      */
     internal fun normalize(url: String): String? =
         pattern.find(url)?.groupValues?.get(1)?.lowercase()?.let { "https://1fichier.com/?$it" }
@@ -359,15 +355,14 @@ class OneFichierHoster : Hoster {
             .post(body.toString().toRequestBody(jsonType))
             .build()
         val (code, text) = Http.client.newCall(request).execute().use { resp ->
-            // begrenzt lesen, siehe Http.MAX_TEXT_BYTES
             resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
         }
         val json = runCatching { JSONObject(text) }.getOrNull()
         val msg = json?.optString("message")?.ifBlank { null }
-        // Voruebergehendes zuerst: Flood-Sperre (kommt auch als HTTP 403),
-        // Rate-Limit, Serverfehler, Cloudflare-Seite. Nur ein klar
-        // ausgewiesener Anmeldefehler darf das Konto dauerhaft abschalten -
-        // ein pauschales 403 waere sonst das Aus fuer alle 1fichier-Downloads.
+        // Temporary first: flood block (also comes as HTTP 403), rate limit,
+        // server error, Cloudflare page. Only a clearly stated authentication
+        // error may disable the account permanently; a blanket 403 would
+        // otherwise kill all 1fichier downloads.
         val flood = msg?.let { it.contains("Flood", true) || it.contains("try again", true) } == true
         if (flood || code == 429 || code in 500..599) {
             throw HosterException(Texts.t("hoster_onefichier_api_error", msg ?: Texts.t("hoster_too_many_requests", code)), permanent = false)
@@ -384,10 +379,10 @@ class OneFichierHoster : Hoster {
     }
 
     /**
-     * Einordnung einer API-Antwort mit status=KO. Flood/Rate-Limit ist
-     * voruebergehend; fehlende/geloeschte Datei und fehlendes Premium/Access
-     * ("You must be a Premium/Access user") sind permanent - ein Free-Konto
-     * kommt auch nach fuenf Versuchen nicht durch.
+     * Classification of an API reply with status=KO. Flood/rate limit is
+     * temporary; missing/deleted file and missing Premium/Access ("You must
+     * be a Premium/Access user") are permanent: a free account does not get
+     * through on a later attempt either.
      */
     internal fun koFailure(message: String?): HosterException {
         val m = message?.ifBlank { null } ?: Texts.t("hoster_unknown_error")
@@ -406,10 +401,10 @@ class OneFichierHoster : Hoster {
     }
 
     /**
-     * Oeffentlicher Link-Check ohne API-Key: check_links.pl liefert je Zeile
-     * "url;dateiname;groesse" fuer eine vorhandene Datei und "url;;NOT FOUND"
-     * bzw. "url;BAD LINK" sonst. Entscheidend ist das letzte Feld, nicht die
-     * Spaltenzahl - so bleibt die Auswertung gegen Formatvarianten robust.
+     * Public link check without an API key: check_links.pl returns per line
+     * "url;filename;size" for an existing file and "url;;NOT FOUND" or
+     * "url;BAD LINK" otherwise. The last field decides, not the column count,
+     * which keeps the parsing robust against format variants.
      */
     internal fun parseCheckLine(line: String): LinkInfo {
         val parts = line.trim().split(';').map { it.trim() }
@@ -444,9 +439,9 @@ class OneFichierHoster : Hoster {
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
         val key = account.plainApiKey ?: throw HosterException(Texts.t("hoster_no_api_key"), true)
         val now = System.currentTimeMillis()
-        // Auch Fehlschlaege zwischenspeichern: 1fichier erlaubt user/info nur
-        // alle 5 Minuten, und die Kontenansicht fragt jede Minute nach. Ein
-        // wiederholter Fehlversuch wuerde sonst erst die Flood-Sperre ausloesen.
+        // Cache failures too: 1fichier allows user/info only every 5 minutes
+        // and the accounts view asks every minute. A repeated failed attempt
+        // would otherwise trigger the flood block.
         accountCache[account.id]?.let { (at, cached) ->
             if (now - at < accountCacheMs) return@withContext cached.getOrThrow()
         }
@@ -457,7 +452,7 @@ class OneFichierHoster : Hoster {
 
     private fun fetchAccount(key: String): AccountInfo {
         val json = post("user/info.cgi", key, JSONObject())
-        // "offer" kann als Zahl (>0 = zahlend) oder als Text ("Premium"/"Access"/"Free") kommen
+        // "offer" may be a number (>0 = paying) or text ("Premium"/"Access"/"Free")
         val offerRaw = json.opt("offer")?.toString()?.trim().orEmpty()
         val endText = json.optString("subscription_end")
         val end = runCatching {
@@ -469,8 +464,8 @@ class OneFichierHoster : Hoster {
             end > System.currentTimeMillis() -> true
             else -> false
         }
-        // 1fichier begrenzt Premium/Access-Downloads nicht; CDN-Guthaben (GB) nur
-        // als Hinweis. "cdn" ist nur das 0/1-Kennzeichen, der Betrag steht in
+        // 1fichier does not limit Premium/Access downloads; the CDN credit (GB)
+        // is only a hint. "cdn" is just the 0/1 flag, the amount is in
         // available_credits_in_gb.
         val cdnGb = json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
         return AccountInfo(
@@ -499,16 +494,16 @@ class OneFichierHoster : Hoster {
                 fileName = info.optString("filename").ifBlank { null }
                 size = info.optLong("size", -1)
             } catch (e: AuthException) {
-                // Ungueltiger API-Key: get_token wuerde genauso scheitern
+                // Invalid API key: get_token would fail the same way
                 throw e
             } catch (_: Exception) {
-                // Name/Groesse sind optional, ein Fehler hier verhindert den Download nicht
+                // Name/size are optional; an error here does not prevent the download
             }
             val token = post("download/get_token.cgi", key, JSONObject().put("url", link))
             val direct = token.optString("url")
             if (direct.isBlank()) throw HosterException(Texts.t("hoster_onefichier_no_download_url"), true)
-            // Die von 1fichier gelieferte Pruefsumme ist Whirlpool (128 Hex), kein
-            // SHA-1/MD5 - fuer die Integritaetspruefung daher nicht verwendbar.
+            // The checksum 1fichier returns is Whirlpool (128 hex), not
+            // SHA-1/MD5, so it is unusable for the integrity check.
             ResolvedLink(direct, fileName, size, hash = null)
         }
 }

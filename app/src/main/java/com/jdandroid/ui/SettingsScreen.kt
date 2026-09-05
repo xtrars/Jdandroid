@@ -97,8 +97,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
 
-    // Eingaben ueberleben Drehen und Tabwechsel; nur beim ersten Aufbau aus
-    // den gespeicherten Werten vorbelegen
+    // Prefill from the stored values only once; edits survive rotation and tab switches.
     var maxConcurrentText by rememberSaveable { mutableStateOf("") }
     var speedLimitText by rememberSaveable { mutableStateOf("") }
     var loaded by rememberSaveable { mutableStateOf(false) }
@@ -110,8 +109,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Zielordner per Storage Access Framework (auch SD-Karte); die Berechtigung
-    // wird dauerhaft uebernommen, damit der Download-Dienst dort schreiben darf.
+    // The persisted permission lets the download service write to the folder.
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
@@ -132,9 +130,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         Column(
             Modifier
                 .padding(padding)
-                // Seitliche Insets (Displayausschnitt, Querformat) freihalten
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                // Tastatur: das fokussierte Feld bleibt ueber der Tastatur sichtbar
+                // Keeps the focused field above the keyboard.
                 .imePadding()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
@@ -177,7 +174,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             OutlinedTextField(
                 value = speedLimitText,
                 onValueChange = { value ->
-                    // Ziffern und ein Dezimaltrenner (Komma oder Punkt)
+                    // Digits and a single decimal separator (comma or period).
                     val cleaned = buildString {
                         var separator = false
                         for (c in value) {
@@ -302,7 +299,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 title = stringResource(R.string.settings_excludes_title),
                 description = stringResource(
                     R.string.settings_excludes_description,
-                    // Beispielmuster als Liste, damit die Uebersetzung sie nicht abtippen muss
                     stringArrayResource(R.array.settings_exclude_examples).joinToString(", ")
                 ),
                 emptyText = stringResource(R.string.settings_excludes_empty),
@@ -386,14 +382,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall
             )
 
-
             Spacer(Modifier.height(24.dp))
             Text(
                 stringResource(R.string.settings_hosters_hint),
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(12.dp))
-            // Installierte Version, damit bei Rueckfragen klar ist, welche APK laeuft
             val packageInfo = remember {
                 runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
             }
@@ -410,7 +404,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
-/** Anzeigetext der Hell/Dunkel-Auswahl in der Gerätesprache. */
 private fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.SYSTEM -> R.string.settings_theme_system
     ThemeMode.LIGHT -> R.string.settings_theme_light
@@ -418,8 +411,8 @@ private fun ThemeMode.labelRes(): Int = when (this) {
 }
 
 /**
- * Lesbarer Name eines SAF-Ordners: "primary:Download/JD" -> "Download/JD".
- * Leer, wenn der Hauptspeicher selbst gewaehlt ist (Aufrufer setzt den Text).
+ * Readable name of a SAF tree: "primary:Download/JD" -> "Download/JD".
+ * Empty when the storage root itself is selected.
  */
 private fun displayTree(uri: String): String {
     val decoded = runCatching { Uri.decode(uri) }.getOrDefault(uri)
@@ -427,10 +420,7 @@ private fun displayTree(uri: String): String {
     return tree.substringAfter(':', tree)
 }
 
-/**
- * Textliste (Passwoerter, Ausschlussmuster): ein Eintrag pro Zeile mit
- * Loeschen, neuer Eintrag per Feld, Sammel-Import fuer mehrere Zeilen.
- */
+/** Editable string list (passwords, exclude patterns) with bulk import. */
 @Composable
 private fun StringListEditor(
     title: String,
@@ -447,8 +437,7 @@ private fun StringListEditor(
     val passwords = items
     var newPassword by rememberSaveable { mutableStateOf("") }
     var importOpen by rememberSaveable { mutableStateOf(false) }
-    // Zusammengeklappt, bis man die Liste braucht: die Einstellungen bleiben
-    // uebersichtlich, die Anzahl der Eintraege ist trotzdem sichtbar
+    // Collapsed by default; the entry count stays visible.
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
 
     Row(
@@ -510,8 +499,7 @@ private fun StringListEditor(
             onValueChange = { newPassword = it },
             label = { Text(fieldLabel) },
             singleLine = true,
-            // Wie die Browser-Adresszeile: keine Autokorrektur, kein
-            // automatisches Leerzeichen nach einem Punkt.
+            // Uri keyboard: no autocorrect, no space after a period.
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
                 autoCorrectEnabled = false
@@ -563,8 +551,8 @@ private fun SettingSwitch(
     checked: Boolean,
     onChange: (Boolean) -> Unit
 ) {
-    // Die ganze Zeile ist der Schalter: groessere Trefferflaeche, und
-    // Screenreader lesen Titel, Beschreibung und Zustand als ein Element
+    // The whole row toggles: larger target, and screen readers read title,
+    // description and state as one element.
     Row(
         Modifier
             .fillMaxWidth()
@@ -580,11 +568,11 @@ private fun SettingSwitch(
     }
 }
 
-/** Mbit/s fuer das Eingabefeld: ganze Zahl ohne Nachkommastellen, sonst mit Komma. */
+/** Mbit/s for the input field: integers without decimals, otherwise with a comma. */
 private fun formatMbit(value: Double): String =
     if (value == Math.floor(value)) value.toLong().toString()
     else String.format(java.util.Locale.GERMANY, "%.2f", value).trimEnd('0').trimEnd(',')
 
-/** Eingabe mit Komma oder Punkt lesen; null bei leerem oder unvollstaendigem Text. */
+/** Parses comma or period input; null for empty or incomplete text. */
 private fun parseMbit(text: String): Double? =
     text.trim().replace(',', '.').takeIf { it.isNotEmpty() && it != "." }?.toDoubleOrNull()

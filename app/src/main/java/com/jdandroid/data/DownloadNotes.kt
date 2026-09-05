@@ -1,21 +1,20 @@
 package com.jdandroid.data
 
 /**
- * Vermerke, die als Code in `downloads.errorMessage` gespeichert und von
- * SQL-Abfragen oder der Engine spaeter verglichen werden. Sie duerfen nie
- * uebersetzt gespeichert werden (Sprachwechsel zwischen Schreiben und Lesen);
- * die Oberflaeche uebersetzt den Code erst bei der Anzeige.
+ * Codes stored in `downloads.errorMessage` and compared later by SQL queries
+ * or the engine. They are never stored translated (the language may change
+ * between writing and reading); the UI translates them on display.
  */
 object DownloadNotes {
-    /** Fertiger Archiv-Teil, der auf die uebrigen Teile des Sets wartet. */
+    /** Completed archive part waiting for the remaining parts of its set. */
     const val WAITING_PARTS = "WAITING_PARTS"
 
-    /** Download wurde wegen "Nur WLAN" zurueck in die Warteschlange gestellt. */
+    /** Download re-queued because of the "Wi-Fi only" setting. */
     const val WAITING_WIFI = "WAITING_WIFI"
 
-    /** Deutscher Wortlaut vor Version 11 der Datenbank (nur fuer die Migration). */
+    /** German wording used before database version 11 (migration only). */
     const val LEGACY_WAITING_PARTS = "Warte auf weitere Archiv-Teile"
 
-    /** Deutscher Wortlaut vor Version 11 der Datenbank (nur fuer die Migration). */
+    /** German wording used before database version 11 (migration only). */
     const val LEGACY_WAITING_WIFI = "Wartet auf WLAN"
 }

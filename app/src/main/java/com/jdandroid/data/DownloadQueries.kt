@@ -1,18 +1,15 @@
 package com.jdandroid.data
 
 /**
- * Weitere Abfragen des [DownloadDao] mit eigener Logik, die der JVM-Test
- * (DownloadQueriesTest, gegen eine echte SQLite-Datenbank mit dem
- * exportierten Schema) prueft - wie die Set-Abfragen in [ArchiveSets]
- * stehen sie hier als Konstanten, damit DAO und Test denselben Text nutzen.
+ * [DownloadDao] queries with non-trivial logic, kept as constants so the DAO
+ * and the JVM test (DownloadQueriesTest, against a real SQLite database with
+ * the exported schema) share the same text.
  */
 object DownloadQueries {
     /**
-     * Ergebnis der Online-Pruefung eintragen. Name, Archivschluessel und
-     * Groesse nur, wenn bekannt: ohne :fileName bleibt archiveKey stehen
-     * (eine OFFLINE-Pruefung darf die Set-Zugehoerigkeit nicht loeschen),
-     * mit Name wird der berechnete Schluessel gesetzt - auch NULL fuer ein
-     * Nicht-Archiv.
+     * Records an online check. Without :fileName the archiveKey is kept (an
+     * OFFLINE result must not drop set membership); with a name the computed
+     * key is stored, including NULL for a non-archive.
      */
     const val APPLY_CHECK =
         "UPDATE downloads SET online = :online, errorMessage = :note, " +
@@ -21,26 +18,26 @@ object DownloadQueries {
             "fileSize = CASE WHEN :fileSize > 0 THEN :fileSize ELSE fileSize END " +
             "WHERE id = :id AND status = 'COLLECTED'"
 
-    /** "Alle fortsetzen": pausierte und gescheiterte Eintraege in einem Schritt, nichts anderes. */
+    /** "Resume all": paused and failed entries in one step, nothing else. */
     const val REQUEUE_PAUSED_AND_FAILED =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
             "retryAt = 0 WHERE status IN ('PAUSED', 'FAILED')"
 
     /**
-     * Naechster Zeitpunkt, zu dem ein wartender Eintrag von selbst startet:
-     * kleinstes retryAt in der Zukunft bis :horizon (Captcha-Eintraege liegen
-     * dahinter). NULL, wenn nichts ansteht. Die Engine stellt darauf ihren
-     * Timer - auch nach einem Neustart des Dienstes, dessen delay()-Aufrufe
-     * mit dem alten Prozess verschwunden sind.
+     * Next time a waiting entry starts on its own: smallest future retryAt up
+     * to :horizon (captcha entries lie beyond it), NULL if nothing is pending.
+     * The engine arms its timer from this, also after a service restart whose
+     * delay() calls died with the old process.
      */
     const val NEXT_RETRY_AT =
         "SELECT MIN(retryAt) FROM downloads WHERE status = 'QUEUED' " +
             "AND retryAt > :now AND retryAt <= :horizon"
 
     /**
-     * Summe des Bytestands offener Eintraege ohne :except - die Eintraege mit
-     * Live-Stand im ProgressBus, deren Datenbankwert bis zu 30 s alt ist.
-     * Room expandiert die Liste; sie darf nie leer sein (Aufrufer haengt -1 an).
+     * Sum of downloaded bytes of open entries except :except, the ones whose
+     * live value lives in the ProgressBus while the database value may be up
+     * to 30 s old. Room expands the list; it must never be empty (callers
+     * append -1).
      */
     const val OPEN_DOWNLOADED_BYTES_EXCEPT =
         "SELECT COALESCE(SUM(downloadedBytes), 0) FROM downloads " +

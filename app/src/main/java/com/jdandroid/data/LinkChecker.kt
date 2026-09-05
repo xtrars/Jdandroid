@@ -10,14 +10,12 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /**
- * Online-Pruefung im Linksammler: fragt beim Hoster nach, ob die Datei
- * existiert, und traegt Name und Groesse ein - wie der JDownloader, bevor
- * ein Download ueberhaupt gestartet wird. Laeuft im App-Scope, damit die
- * Pruefung auch ohne offenen Bildschirm (Click'n'Load, DLC) durchlaeuft.
+ * Online check in the link grabber: asks the hoster whether the file exists
+ * and fills in name and size. Runs in the app scope so it completes without
+ * an open screen (Click'n'Load, DLC).
  */
 object LinkChecker {
 
-    /** Nicht mehr als drei Hoster-Anfragen gleichzeitig. */
     private val permits = Semaphore(3)
 
     fun schedule(app: JdApp, ids: List<Long>) {
@@ -52,7 +50,6 @@ object LinkChecker {
         }
     }
 
-    /** Alle noch ungeprueften oder nicht pruefbaren Eintraege erneut pruefen. */
     fun recheckAll(app: JdApp) {
         app.appScope.launch {
             val items = app.db.downloadDao().collectedWithOnline(

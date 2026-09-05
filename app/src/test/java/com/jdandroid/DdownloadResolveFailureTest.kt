@@ -6,9 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Antwortet das Download-Formular ohne Direktlink, entscheidet der HTTP-Status
- * mit, ob der Download endgültig scheitert oder später erneut versucht wird.
- * Serverfehler und Drosselung dürfen nie dauerhaft in FAILED landen.
+ * When the download form answers without a direct link, the HTTP status
+ * decides between a permanent failure and a retry; server errors and
+ * throttling must never end in FAILED.
  */
 class DdownloadResolveFailureTest {
 

@@ -4,9 +4,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Sichtbarer Laufzeitzustand des Click'n'Load-Servers: ob wirklich jemand auf
- * dem Port lauscht - und, falls nicht, warum. Ohne das sieht der Nutzer bei
- * einem fehlgeschlagenen Start nur "läuft nicht" ohne Grund.
+ * Visible runtime state of the Click'n'Load server: whether something is
+ * actually listening on the port and, if not, why.
  */
 object CnlStatus {
     private val _running = MutableStateFlow(false)
@@ -18,7 +17,7 @@ object CnlStatus {
     private val _boundTo = MutableStateFlow<String?>(null)
     val boundTo: StateFlow<String?> = _boundTo
 
-    /** Letzte eingegangene Anfrage (Uhrzeit, Methode, Pfad, Ergebnis) - eine Zeile. */
+    /** Last received request (time, method, path, outcome) as one line. */
     private val _lastRequest = MutableStateFlow<String?>(null)
     val lastRequest: StateFlow<String?> = _lastRequest
 

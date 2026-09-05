@@ -43,9 +43,9 @@ import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Host-Filter der Captcha-Ansicht: die Hoster-Domains (inklusive Subdomains),
- * die Seite selbst sowie die Captcha-Dienste von Cloudflare, Google
- * (reCAPTCHA) und hCaptcha. Alles andere wird leer beantwortet.
+ * Host filter of the captcha view: hoster domains, the page host and the
+ * captcha services of Cloudflare, Google and hCaptcha. Everything else is
+ * answered with an empty response.
  */
 internal fun isCaptchaHostAllowed(host: String?, siteHosts: Set<String>, pageHost: String?): Boolean {
     val h = host?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
@@ -63,20 +63,14 @@ internal fun isHosterHost(host: String?, siteHosts: Set<String>, pageHost: Strin
     return own.any { h == it || h.endsWith(".$it") }
 }
 
-/** Was die Captcha-Ansicht mit einer Anfrage der WebView tut. */
 internal enum class CaptchaRequestAction { CAPTURE, LOAD, BLOCK }
 
 /**
- * Entscheidung je Anfrage: nur eine Navigation des Hauptrahmens (Formular-
- * Weiterleitung, Klick auf den Download-Knopf) darf als Direktlink gelten.
- * Unterressourcen (Bilder, Skripte, XHR, iframes) werden nie abgefangen -
- * sonst schloesse ein Werbe- oder Captcha-Skript, das eine Datei mit
- * passender Endung laedt, die Ansicht, bevor der Nutzer ein Captcha sah -
- * sondern nur gegen den Host-Filter geprueft.
- *
- * A direct link is captured only on a hoster host ([hosterHost]): the captured
- * link is fetched with the hoster's cookies, which must not reach a foreign
- * host (ad scripts navigate the main frame to arbitrary files).
+ * Decides per request. Only a main-frame navigation on a hoster host counts as
+ * a direct link: sub-resources are never captured, or an ad or captcha script
+ * loading a file with a matching extension would close the view before the
+ * user saw the captcha; and the captured link is fetched with the hoster's
+ * cookies, which must not reach a foreign host.
  */
 internal fun captchaRequestAction(
     isMainFrame: Boolean,
@@ -90,20 +84,15 @@ internal fun captchaRequestAction(
 }
 
 /**
- * Captcha im eingebetteten Browser loesen (Free-Modus). Der Nutzer arbeitet
- * die Hoster-Seite bis zum Download-Knopf durch; die Navigation auf den
- * Fileserver ([isDirectDownloadUrl]) wird abgefangen, nicht geladen:
- * Adresse und Cookies gehen ueber [onDirectLink] an die Engine, die den
- * Eintrag sofort neu startet. Ein Download im Browser selbst findet nie
- * statt (Navigation, Subressource und DownloadListener werden abgefangen).
+ * Solves a captcha in an embedded browser (free mode). The user works the
+ * hoster page through to the download button; the navigation to the file
+ * server ([isDirectDownloadUrl]) is intercepted, not loaded, and handed to
+ * the engine via [onDirectLink] with the cookies. The browser itself never
+ * downloads a file.
  *
- * Aufbau wie [WebLoginScreen]: eigener Bildschirm (Insets), JavaScript an
- * (Captcha-Dienste brauchen es), nur Hoster- und Captcha-Domains, Cookies
- * und WebStorage werden nach Uebernahme wie nach Abbruch geloescht. Die
- * Session-Cookies des Hoster-Ablaufs ([cookies] fuer [cookieUrl], z.B.
- * Rapidgator-Timer) werden erst hier, unmittelbar vor dem Laden, gesetzt:
- * so loescht keine andere Browser-Ansicht sie vorher, und zwei wartende
- * Eintraege desselben Hosters kommen sich nicht in die Quere.
+ * The hoster's session [cookies] (e.g. the Rapidgator timer) are set right
+ * before loading, so no other browser view clears them first and two waiting
+ * entries of the same hoster do not interfere.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,8 +112,7 @@ fun CaptchaScreen(
     val captchaHint = stringResource(R.string.linkgrabber_captcha_hint)
     var status by remember { mutableStateOf(captchaHint) }
     val pageHost = remember(pageUrl) { pageUrl.toUri().host }
-    // Nur einmal uebernehmen: Weiterleitung und DownloadListener koennen
-    // dieselbe Adresse mehrfach melden
+    // Redirect and DownloadListener can report the same URL more than once.
     val captured = remember { AtomicBoolean(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -146,7 +134,6 @@ fun CaptchaScreen(
     fun allowed(host: String?): Boolean = isCaptchaHostAllowed(host, siteHosts, pageHost)
     fun hosterHost(host: String?): Boolean = isHosterHost(host, siteHosts, pageHost)
 
-    /** Direktlink samt Cookies der Hoster-Seite (und des Fileservers) uebergeben. */
     fun capture(url: String) {
         if (!captured.compareAndSet(false, true)) return
         val manager = CookieManager.getInstance()
@@ -159,7 +146,7 @@ fun CaptchaScreen(
         clearWebSession()
     }
 
-    /** Aus einem Hintergrund-Thread (shouldInterceptRequest) auf den Hauptthread. */
+    /** For calls from the shouldInterceptRequest background thread. */
     fun captureLater(url: String) {
         if (captured.get()) return
         mainHandler.post { capture(url) }
@@ -194,14 +181,12 @@ fun CaptchaScreen(
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-                        // Der Browser laedt nie selbst eine Datei: jeder Download
-                        // (Content-Disposition, unbekannter Typ) wird als
-                        // Direktlink uebernommen
+                        // Any browser download (Content-Disposition, unknown type)
+                        // becomes the direct link instead.
                         setDownloadListener { url, _, _, _, _ ->
                             if (hosterHost(url.toUri().host)) capture(url)
                         }
                         webViewClient = object : WebViewClient() {
-                            // Nur Navigationen des Hauptrahmens
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?
@@ -225,9 +210,8 @@ fun CaptchaScreen(
                                 }
                             }
 
-                            // Laeuft auf einem Hintergrund-Thread: auch eine
-                            // Weiterleitung nach einem Formular (POST) landet hier -
-                            // als Hauptrahmen. Unterressourcen nur filtern, nie abfangen
+                            // Background thread; a redirect after a POST arrives
+                            // here as main frame, not in shouldOverrideUrlLoading.
                             override fun shouldInterceptRequest(
                                 view: WebView?,
                                 request: WebResourceRequest?
@@ -248,7 +232,6 @@ fun CaptchaScreen(
                                 "text/plain", "utf-8", ByteArrayInputStream(ByteArray(0))
                             )
                         }
-                        // Cookies des Hoster-Ablaufs erst jetzt in den Browser
                         if (cookies.isNotEmpty()) {
                             runCatching {
                                 val manager = CookieManager.getInstance()

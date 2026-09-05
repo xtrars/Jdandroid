@@ -35,19 +35,15 @@ fun AddLinksDialog(
     onDismiss: () -> Unit,
     onAdd: (String, String?) -> Unit
 ) {
-    // rememberSaveable: Eingaben ueberleben Drehen; der Schluessel initialText
-    // setzt den Text bei neuer Vorbelegung (geteilter Text) zurueck.
+    // Keyed on initialText so newly shared text replaces the saved input.
     var text by rememberSaveable(initialText) { mutableStateOf(initialText) }
     var packageName by rememberSaveable { mutableStateOf("") }
     val recognized = remember(text) { LinkParser.parse(text) }
-    // Vorschlag aus den erkannten Links, wie im JDownloader
     val suggestion = remember(recognized) {
         if (recognized.isEmpty()) "" else PackageNaming.suggestFromUrls(recognized.map { it.first })
     }
 
-    // Inhaltshoehe an die Bildschirmhoehe koppeln: bei langen Linklisten und
-    // offener Tastatur bleiben Paketname, Erkennungshinweis und die Knoepfe
-    // sichtbar; der Inhalt scrollt, das Linkfeld scrollt zusaetzlich intern.
+    // Bounded height keeps package name and buttons visible with the keyboard open.
     val maxContentHeight = windowHeightDp() * 0.45f
     val resources = LocalResources.current
 

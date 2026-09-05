@@ -15,16 +15,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Free-Modus von Rapidgator, geprüft gegen die tatsächlichen Seiten
- * (abgerufen am 04.09.2026): Dateiseite mit Timer-Variablen, Ajax-Antworten
- * von AjaxStartTimer/AjaxGetDownloadLink, Captcha-Seite mit Turnstile.
- * Limit-Texte stammen aus den Referenz-Plugins (JDownloader, pyLoad).
+ * Rapidgator free mode against the actual pages: file page with timer
+ * variables, AjaxStartTimer/AjaxGetDownloadLink answers, Turnstile captcha
+ * page. Limit texts come from the reference plugins (JDownloader, pyLoad).
  */
 class RapidgatorFreeTest {
 
     private val hoster = RapidgatorHoster()
 
-    /** Ausschnitt der echten Dateiseite. */
+    /** Excerpt of the real file page. */
     private val seite = """
         <html><head><title>Download file c20-fundamentals.part02.rar</title></head><body>
         <div class="btm" style="height: 95px;">
@@ -67,7 +66,7 @@ class RapidgatorFreeTest {
         </body></html>
     """.trimIndent()
 
-    /** Ausschnitt der echten Captcha-Seite (GET /download/captcha). */
+    /** Excerpt of the real captcha page (GET /download/captcha). */
     private val captchaSeite = """
         <html><head><title>Rapidgator: Fast, safe and secure file hosting</title>
         <script>var captchaCallback = function(response){jQuery('#DownloadCaptchaForm_verifyCode').val(response);};</script>
@@ -109,7 +108,7 @@ class RapidgatorFreeTest {
         assertEquals("/download/AjaxGetDownloadLink", vars.getDownloadUrl)
         assertEquals("/download/captcha", vars.captchaUrl)
         assertNull(RapidgatorFreePage.md5(seite))
-        // Die feste Tabellenzeile "1 file per 120 minutes" ist keine Sperre
+        // The static table row "1 file per 120 minutes" is not a block
         assertNull(RapidgatorFreePage.pageBlock(seite))
         assertFalse(RapidgatorFreePage.isOffline(seite))
     }
@@ -219,7 +218,7 @@ class RapidgatorFreeTest {
 
     @Test
     fun sperrenNurImSichtbarenText() {
-        // Im Skript der Dateiseite stehen Texte, die keine Sperre sind
+        // The page script contains texts that are not blocks
         val html = seite.replace("var is_premium = 0;", "var msg = 'You have reached your daily downloads limit';")
         assertNull(RapidgatorFreePage.pageBlock(html))
         val sichtbar = seite.replace("SLOW SPEED DOWNLOAD", "Delay between downloads must be not less than 120 min")
@@ -240,7 +239,7 @@ class RapidgatorFreeTest {
         assertTrue(hoster.isDirectDownloadUrl("http://pr_srv.rapidgator.net//?r=download/index&session_id=AbC123"))
         assertTrue(hoster.isDirectDownloadUrl("https://pr12.rapidgator.net/?r=download/index&session_id=x&foo=1"))
         assertTrue(hoster.isDirectDownloadUrl("https://s3.rapidgator.net/dl/abc/video.mkv"))
-        // Seiten der Hauptdomain und Adressen ohne Sitzungskennung sind keine Datei
+        // Main-domain pages and URLs without a session id are not the file
         assertFalse(hoster.isDirectDownloadUrl("https://rapidgator.net/?r=download/index&session_id=x"))
         assertFalse(hoster.isDirectDownloadUrl("https://rapidgator.net/download/captcha"))
         assertFalse(hoster.isDirectDownloadUrl("https://rapidgator.net/file/0d348b3c239fe48ea3fed28b8810190d/x.rar.html"))
@@ -261,14 +260,14 @@ class RapidgatorFreeTest {
             assertEquals("sdata__=abc; lang=en", link.headers["Cookie"])
             assertEquals("Mozilla/5.0 (Test) WebView", link.headers["User-Agent"])
             assertEquals("https://rapidgator.net/download/captcha", link.headers["Referer"])
-            // Ohne Sitzung aus dem Prozess (Neustart) bleibt der Name dem Server ueberlassen
+            // Without an in-process session (restart) the server decides the name
             assertNull(link.fileName)
 
             val ohneCookies = hoster.resolveFree("https://rg.to/file/0d348b3c239fe48ea3fed28b8810190d", FreeHints(direct))
             assertNull(ohneCookies.headers["Cookie"])
             assertNotNull(ohneCookies.headers["User-Agent"])
 
-            // Fremder Host: Link zaehlt, die Session-Cookies gehen nicht mit
+            // Foreign host: the link counts, the session cookies do not travel
             val fremd = hoster.resolveFree(
                 "https://rapidgator.net/file/0d348b3c239fe48ea3fed28b8810190d",
                 FreeHints(direktUrlAusBrowser = "https://cdn.example.net/d/abc/name.rar", cookies = "sdata__=abc")

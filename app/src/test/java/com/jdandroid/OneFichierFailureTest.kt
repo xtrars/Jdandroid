@@ -6,9 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Einordnung der 1fichier-Antworten mit status=KO: Sperren sind
- * vorübergehend, fehlende Datei und fehlendes Premium/Access permanent -
- * ein Free-Konto kommt auch mit Wiederholungen nie durch.
+ * Classification of 1fichier status=KO answers: blocks are temporary,
+ * missing file and missing Premium/Access permanent.
  */
 class OneFichierFailureTest {
 

@@ -4,7 +4,7 @@ import com.jdandroid.data.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Die gespeicherte Passwortliste bleibt begrenzt, auch wenn Click'n'Load-Seiten beliebig viele Eintraege schicken. */
+/** The stored password list stays capped even when Click'n'Load pages send arbitrarily many entries. */
 class PasswordListTest {
 
     @Test
@@ -21,7 +21,7 @@ class PasswordListTest {
             list = SettingsRepository.mergePasswords(list, (1..50).map { "pw-$round-$it" })
         }
         assertEquals(max, list.size)
-        // Die aeltesten Eintraege fallen weg, die neuesten bleiben
+        // Oldest entries are dropped
         assertEquals("pw-19-50", list.last())
         assertEquals("pw-16-1", list.first())
     }

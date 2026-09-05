@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Einstellungen (SettingsScreen, Click'n'Load-Status, Entpacken, Netz) und Absturzdialog. Schluessel: settings_<bedeutung>. -->
+    <!-- Settings (SettingsScreen, Click'n'Load status, extraction, network) and crash dialog. Keys: settings_<meaning>. -->
     <string name="settings_title">Einstellungen</string>
 
-    <!-- Darstellung -->
+    <!-- Appearance -->
     <string name="settings_section_appearance">Darstellung</string>
     <string name="settings_theme_label">Hell / Dunkel</string>
     <string name="settings_theme_system">System</string>
@@ -23,7 +23,7 @@
     <string name="settings_free_mode_title">Free-Modus</string>
     <string name="settings_free_mode_subtitle">Ohne Konto laden: mit Wartezeiten und ggf. Captcha</string>
 
-    <!-- Zielordner -->
+    <!-- Target folder -->
     <string name="settings_target_folder">Zielordner</string>
     <string name="settings_target_folder_chosen">Gewählt: %1$s</string>
     <string name="settings_target_folder_default_public">Standard: Downloads/JDAndroid</string>
@@ -34,7 +34,7 @@
     <string name="settings_export_title">In öffentlichen Download-Ordner</string>
     <string name="settings_export_subtitle">Fertige Dateien nach Downloads/JDAndroid verschieben</string>
 
-    <!-- Entpacken -->
+    <!-- Extraction -->
     <string name="settings_auto_extract_title">Archive automatisch entpacken</string>
     <string name="settings_auto_extract_subtitle">ZIP, 7z und RAR nach dem Download entpacken, auch mehrteilige Archive</string>
     <string name="settings_flat_extract_title">Flach entpacken</string>
@@ -44,7 +44,7 @@
     <string name="settings_remove_entries_title">Einträge nach dem Entpacken entfernen</string>
     <string name="settings_remove_entries_subtitle">Alle Teile des Archivs verschwinden aus der Download-Liste, sobald es erfolgreich entpackt wurde</string>
 
-    <!-- Passwortliste -->
+    <!-- Password list -->
     <string name="settings_passwords_title">Passwortliste</string>
     <string name="settings_passwords_description">Beim Entpacken werden alle Passwörter der Reihe nach ausprobiert. Passwörter aus Click\'n\'Load werden automatisch ergänzt.</string>
     <string name="settings_passwords_empty">Noch keine Passwörter.</string>
@@ -53,9 +53,9 @@
     <string name="settings_passwords_import_placeholder">Ein Passwort pro Zeile</string>
     <string name="settings_passwords_remove">Passwort entfernen</string>
 
-    <!-- Ausschlussmuster -->
+    <!-- Exclusion patterns -->
     <string name="settings_excludes_title">Vom Entpacken ausschließen</string>
-    <!-- %1$s: Beispielmuster aus settings_exclude_examples, mit Komma verbunden -->
+    <!-- %1$s: example patterns from settings_exclude_examples, joined by commas -->
     <string name="settings_excludes_description">Dateien im Archiv, die zu diesen Mustern passen, werden nicht entpackt. * steht für beliebige Zeichen, ? für eines, z.B. %1$s</string>
     <string name="settings_excludes_empty">Keine Ausschlüsse – alles wird entpackt.</string>
     <string name="settings_excludes_field_label">Neues Muster</string>
@@ -69,7 +69,7 @@
         <item>proof/*</item>
     </string-array>
 
-    <!-- Listeneditor (Passwoerter, Muster) -->
+    <!-- List editor (passwords, patterns) -->
     <string name="settings_list_empty">keine Einträge</string>
     <plurals name="settings_list_count">
         <item quantity="one">%1$d Eintrag</item>
@@ -81,7 +81,7 @@
     <string name="settings_import_multiple">Mehrere einfügen …</string>
     <string name="settings_apply">Übernehmen</string>
 
-    <!-- Container und Click'n'Load -->
+    <!-- Containers and Click'n'Load -->
     <string name="settings_section_cnl">Container &amp; Click\'n\'Load</string>
     <string name="settings_cnl_title">Click\'n\'Load aktivieren</string>
     <string name="settings_cnl_subtitle">Lokaler Server auf Port %1$d. Browser auf diesem Gerät können Links direkt hierher senden.</string>
@@ -96,12 +96,12 @@
     <string name="settings_cnl_chrome_hint">Hinweis: Chrome fragt beim ersten Click\'n\'Load, ob die Seite auf das lokale Netzwerk zugreifen darf – das muss erlaubt werden. Erscheint hier nach dem Klick keine Anfrage, hat der Browser die Verbindung zu 127.0.0.1 blockiert.</string>
     <string name="settings_dlc_hint">DLC-Dateien lassen sich über \"Öffnen mit\" bzw. Teilen importieren. Die Entschlüsselung nutzt den JDownloader-DLC-Dienst.</string>
 
-    <!-- Fusszeile -->
+    <!-- Footer -->
     <string name="settings_hosters_hint">Unterstützte Hoster: Rapidgator, 1fichier, ddownload.\nDownloads laufen über die offiziellen APIs der Hoster und benötigen einen Premium-Account bzw. API-Key (Tab \"Konten\").</string>
     <!-- %1$s: versionName, %2$d: versionCode -->
     <string name="settings_version">JDAndroid %1$s (%2$d)</string>
 
-    <!-- Absturzdialog (CrashDialog) -->
+    <!-- Crash dialog (CrashDialog) -->
     <string name="settings_crash_title">Die App ist abgestürzt</string>
     <string name="settings_crash_hint">Bitte diesen Bericht kopieren und weitergeben – daraus lässt sich die Ursache eindeutig bestimmen.</string>
     <string name="settings_crash_clip_label">Absturzbericht</string>

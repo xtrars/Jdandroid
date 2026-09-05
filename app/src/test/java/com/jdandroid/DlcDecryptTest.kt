@@ -7,17 +7,14 @@ import org.junit.Test
 import java.util.Base64
 
 /**
- * Regressionstests fuer die DLC-Entschluesselung, offline. Der rc-Wert stammt
- * aus einer echten Antwort des JDownloader-Dienstes; er verraet nichts ueber
- * den Inhalt des Containers.
+ * Offline DLC decryption. The rc value comes from a real JDownloader service
+ * response and reveals nothing about the container content.
  */
 class DlcDecryptTest {
 
     /**
-     * Der Fehler, der "DLC enthaelt keine lesbaren Links" ausloeste: ein
-     * falscher statischer IV. Weil ein einzelner CBC-Block den IV nur per XOR
-     * einrechnet, ergab der falsche IV trotzdem ASCII-aehnliche Bytes
-     * ("vyIZrRCdZoIIh-WU") und taeuschte einen korrekten Schluessel vor.
+     * Guards the static IV: a single CBC block only XORs the IV in, so a wrong
+     * IV still yields ASCII-like bytes and mimics a correct key.
      */
     @Test
     fun containerSchluesselWirdKorrektAbgeleitet() {
@@ -29,7 +26,7 @@ class DlcDecryptTest {
     fun auffuellbytesNachAesWerdenIgnoriert() {
         val xml = "<dlc><content></content></dlc>"
         val b64 = Base64.getEncoder().encodeToString(xml.toByteArray())
-        // wie nach AES/NoPadding: Nullbytes und 0x10-Padding am Ende
+        // As after AES/NoPadding: zero bytes and 0x10 padding at the end
         val padded = b64.toByteArray() + ByteArray(12) + ByteArray(16) { 0x10 }
         assertEquals(xml, ContainerDecrypter.decodeXml(padded))
     }

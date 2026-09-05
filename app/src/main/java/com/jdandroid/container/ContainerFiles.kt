@@ -6,13 +6,12 @@ import android.provider.OpenableColumns
 import java.io.IOException
 
 /**
- * Liest Container-Dateien (DLC) sicher ein: mit fester Obergrenze, damit
- * eine versehentlich geteilte grosse Datei (Video, Archiv) nicht den ganzen
- * Speicher belegt.
+ * Reads container files (DLC) safely with a fixed upper limit, so an
+ * accidentally shared large file (video, archive) does not fill the memory.
  */
 object ContainerFiles {
 
-    /** DLC-Dateien sind einige Kilobyte gross; 2 MiB ist grosszuegig. */
+    /** DLC files are a few kilobytes; 2 MiB is generous. */
     const val MAX_BYTES = 2L * 1024 * 1024
 
     class TooLargeException(size: Long) : IOException(
@@ -20,9 +19,9 @@ object ContainerFiles {
     )
 
     /**
-     * Liefert den Textinhalt oder wirft [TooLargeException] bzw. [IOException].
-     * Die Groesse wird vorab ueber den ContentResolver geprueft und beim
-     * Lesen zusaetzlich begrenzt (nicht jeder Provider meldet eine Groesse).
+     * Returns the text content or throws [TooLargeException] or [IOException].
+     * The size is checked up front via the ContentResolver and limited again
+     * while reading (not every provider reports a size).
      */
     fun readText(resolver: ContentResolver, uri: Uri): String {
         querySize(resolver, uri)?.let { size ->
@@ -53,8 +52,8 @@ object ContainerFiles {
     }.getOrNull()
 
     /**
-     * Sieht der Inhalt wie ein DLC aus? Ein DLC ist reines Base64, mindestens
-     * 88 Zeichen (der Schluesselteil) und endet wegen dessen Laenge immer auf "==".
+     * Does the content look like a DLC? A DLC is pure Base64, at least 88
+     * characters (the key part) and always ends with "==" because of its length.
      */
     fun looksLikeDlc(content: String): Boolean {
         val data = content.filterNot { it.isWhitespace() }

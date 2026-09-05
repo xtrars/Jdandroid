@@ -15,9 +15,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Prueft die Room-Migrationen gegen die exportierten Schemata in app/schemas.
- * Laeuft nur auf Geraet/Emulator (connectedDebugAndroidTest); im CI wird der
- * Test lediglich kompiliert.
+ * Room migrations against the exported schemas in app/schemas. Runs only on
+ * a device or emulator (connectedDebugAndroidTest); CI merely compiles it.
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
@@ -188,7 +187,7 @@ class MigrationTest {
                 )
             )
         }
-        // AUTOINCREMENT laeuft nach dem Neuaufbau hinter den vorhandenen Ids weiter
+        // AUTOINCREMENT continues after the existing ids once the table is rebuilt
         db.execSQL(
             "INSERT INTO downloads (url, hosterId, fileSize, downloadedBytes, speedBps, status, attempts, " +
                 "retryAt, online, addedAt) VALUES ('https://example.org/e', 'ddownload', -1, 0, 0, 'QUEUED', 0, 0, 0, 1)"
@@ -219,7 +218,7 @@ class MigrationTest {
         }
     }
 
-    /** Fuegt eine downloads-Zeile im Schema der Version 10 ein (mit extractProgress und archiveKey) samt Vermerk. */
+    /** Inserts a downloads row in the version 10 schema (extractProgress and archiveKey) with a note. */
     private fun insertDownload10(
         db: SupportSQLiteDatabase, id: Long, url: String, fileName: String?, archiveKey: String?,
         packageId: Long?, extractProgress: Int, note: String?
@@ -232,7 +231,7 @@ class MigrationTest {
         )
     }
 
-    /** Fuegt eine downloads-Zeile im Schema der Version 9 ein (mit extractProgress, ohne archiveKey). */
+    /** Inserts a downloads row in the version 9 schema (extractProgress, no archiveKey). */
     private fun insertDownload9(db: SupportSQLiteDatabase, id: Long, url: String, fileName: String?) {
         db.execSQL(
             "INSERT INTO downloads (id, url, hosterId, packageId, fileName, fileSize, downloadedBytes, " +
@@ -242,7 +241,7 @@ class MigrationTest {
         )
     }
 
-    /** Fuegt eine downloads-Zeile im Schema der Versionen 7 und 8 ein (Spalte online vorhanden). */
+    /** Inserts a downloads row in the version 7/8 schema (online column present). */
     private fun insertDownload(db: SupportSQLiteDatabase, id: Long, url: String) {
         db.execSQL(
             "INSERT INTO downloads (id, url, hosterId, packageId, fileName, fileSize, downloadedBytes, " +

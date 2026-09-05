@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Download-Liste (DownloadsScreen, Paket-/Eintragszeilen, Statusanzeigen, Meldungen). Schluessel: downloads_<bedeutung>. -->
+    <!-- Downloads screen (DownloadsScreen, package/item rows, status labels, messages). Keys: downloads_<meaning>. -->
 
-    <!-- Titelleiste, Suche, Filter -->
+    <!-- Top bar, search, filters -->
     <string name="downloads_title">Downloads</string>
     <string name="downloads_search_open">Suchen</string>
     <string name="downloads_search_close">Suche schließen</string>
@@ -16,7 +16,7 @@
     <string name="downloads_empty_hint">Noch keine Downloads.\n\nLinks werden im Linksammler hinzugefügt (Plus-Knopf, Teilen aus dem Browser, DLC, Click\'n\'Load) und von dort gestartet.</string>
     <string name="downloads_empty_filter">Keine Einträge für diesen Filter.</string>
 
-    <!-- Paketkopf -->
+    <!-- Package header -->
     <string name="downloads_expand">Aufklappen</string>
     <string name="downloads_collapse">Zuklappen</string>
     <plurals name="downloads_file_count">
@@ -50,7 +50,7 @@
     <string name="downloads_rename_title">Paket umbenennen</string>
     <string name="downloads_save">Speichern</string>
 
-    <!-- Eintragszeile -->
+    <!-- Item row -->
     <string name="downloads_delete_item_title">Download löschen?</string>
     <string name="downloads_delete_item_completed">%1$s\n\nDie fertige Datei bleibt erhalten.</string>
     <string name="downloads_delete_item_partial">%1$s\n\nBereits geladene Daten gehen verloren.</string>

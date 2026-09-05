@@ -8,21 +8,18 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Prueft Konten beim Hoster (Premium-Status, Ablauf, verbleibender Traffic)
- * und schreibt das Ergebnis in die Datenbank. Genutzt von der Kontenansicht
- * (manuell und beim Oeffnen, wenn die Daten aelter sind) und von der
- * Download-Engine nach jedem fertigen Download, damit der Traffic-Stand
- * aktuell bleibt - wie im JDownloader.
+ * Checks accounts at the hoster (premium status, expiry, remaining traffic)
+ * and stores the result. Used by the accounts view and by the download
+ * engine after each completed download.
  */
 object AccountRefresher {
 
-    /** Laufende Pruefungen, damit dieselbe Konto-Id nicht doppelt angefragt wird. */
     private val inFlight = ConcurrentHashMap.newKeySet<Long>()
 
-    /** Konto beim Oeffnen der Kontenansicht neu pruefen, wenn aelter als das. */
+    /** Re-check on opening the accounts view when the data is older than this. */
     const val STALE_MS = 15 * 60_000L
 
-    /** Nach einem Download hoechstens so oft nachfragen. */
+    /** Minimum interval between checks triggered by completed downloads. */
     const val AFTER_DOWNLOAD_MIN_INTERVAL_MS = 3 * 60_000L
 
     suspend fun check(app: JdApp, accountId: Long) {
@@ -45,11 +42,10 @@ object AccountRefresher {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Nur ein endgueltiger Fehler (falsches Passwort, Konto gesperrt,
-                // Zugangsdaten nicht mehr entschluesselbar) macht das Konto
-                // ungueltig. Netzausfall, Cloudflare oder ein API-Schluckauf im
-                // Minutentakt duerfen nicht alle Downloads des Hosters in
-                // "kein Premium-Konto" laufen lassen.
+                // Only a permanent failure (wrong password, banned account,
+                // undecryptable credentials) invalidates the account; a network
+                // outage or Cloudflare must not push all downloads of the
+                // hoster into "no premium account".
                 val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
                 account.copy(
                     valid = if (permanent) false else account.valid,
@@ -96,17 +92,16 @@ object AccountRefresher {
         else listOfNotNull(status?.takeIf { it.isNotBlank() }, upgradeError).joinToString(" · ")
 
     /**
-     * Minutentakt: nur gueltige oder noch nie gepruefte Konten; ein dauerhaft
-     * ungueltiges Konto (falsches Passwort, abgelaufene Browser-Sitzung) wird
-     * erst durch die manuelle Pruefung wieder angefragt. Konten ohne Limit
-     * (1fichier) nur alle [STALE_MS] - deren Stand aendert sich nicht, und
-     * 1fichier sperrt bei zu vielen Anfragen voruebergehend.
+     * Minute timer: only valid or never-checked accounts; an invalid one is
+     * queried again only by a manual check. Unlimited accounts (1fichier)
+     * only every [STALE_MS], since their state does not change and 1fichier
+     * temporarily blocks frequent requests.
      */
     fun dueForMinuteRefresh(account: Account, now: Long): Boolean =
         (account.valid || account.lastChecked == 0L) &&
             (!account.trafficUnlimited || account.lastChecked < now - STALE_MS)
 
-    /** Alle Konten, deren letzte Pruefung aelter als [maxAgeMs] ist. */
+    /** Checks all accounts last checked more than [maxAgeMs] ago. */
     fun refreshStale(app: JdApp, maxAgeMs: Long = STALE_MS) {
         app.appScope.launch {
             val cutoff = System.currentTimeMillis() - maxAgeMs
@@ -126,7 +121,7 @@ object AccountRefresher {
         }
     }
 
-    /** Nach einem Download: Traffic des betroffenen Hosters aktualisieren. */
+    /** After a download: refresh traffic of the affected hoster. */
     fun refreshHoster(app: JdApp, hosterId: String) {
         app.appScope.launch {
             val cutoff = System.currentTimeMillis() - AFTER_DOWNLOAD_MIN_INTERVAL_MS

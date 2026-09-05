@@ -14,11 +14,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Nach Neustart oder App-Update: haengen gebliebene "laufende" Downloads
- * wieder einreihen und - falls etwas offen ist - per Benachrichtigung daran
- * erinnern. Der Download-Dienst selbst darf ab Android 15 nicht mehr aus
- * BOOT_COMPLETED heraus als dataSync-Vordergrunddienst starten; ein Tipp auf
- * die Benachrichtigung oeffnet die App, die ihn dann regulaer startet.
+ * After a reboot or app update, requeues downloads left in RUNNING and posts a
+ * reminder notification if anything is open. Since Android 15 a dataSync
+ * foreground service may not be started from BOOT_COMPLETED, so the
+ * notification opens the app, which starts the service normally.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -35,7 +34,7 @@ class BootReceiver : BroadcastReceiver() {
                 val open = dao.queuedCount()
                 if (open > 0) notifyPending(context, open)
             } catch (_: Exception) {
-                // Nichts zu retten - die App stellt den Zustand beim Start her
+                // The app repairs the state on its next start.
             } finally {
                 pending.finish()
             }

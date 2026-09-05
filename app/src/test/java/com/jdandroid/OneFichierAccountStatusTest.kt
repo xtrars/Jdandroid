@@ -6,7 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Das CDN-Guthaben von 1fichier steht im Kontostatus in 1024-basierten Einheiten. */
+/** The 1fichier CDN credit appears in the account status in 1024-based units. */
 class OneFichierAccountStatusTest {
 
     private val hoster = OneFichierHoster()

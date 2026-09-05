@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Kanonische 1fichier-URL fuer API-Aufrufe: https://1fichier.com/?<id>, id klein. */
+/** Canonical 1fichier URL for API calls: https://1fichier.com/?<id>, lower-case id. */
 class OneFichierNormalizeTest {
 
     private val hoster = OneFichierHoster()

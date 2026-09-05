@@ -153,7 +153,7 @@ class ExtractorTest {
         val fremdOrdner = File(dest, "Unterordner").apply { mkdirs() }
         File(fremdOrdner, "datei.txt").writeText("bleibt auch")
 
-        // Erst ohne Passwort, dann "falsch" schlagen fehl, dann Erfolg
+        // No password and "falsch" fail, then success
         val used = Extractor.extract(zip, dest, listOf("falsch", "richtig"))
         assertEquals("richtig", used)
         assertEquals("bleibt", fremd.readText())
@@ -172,7 +172,7 @@ class ExtractorTest {
             Extractor.extract(zip, dest, listOf("falsch"))
             throw AssertionError("IOException erwartet")
         } catch (e: IOException) {
-            // erwartet
+            // expected
         }
         assertEquals("bleibt", fremd.readText())
         assertEquals(listOf("fremd.txt"), dest.list()!!.toList())
@@ -268,7 +268,7 @@ class ExtractorTest {
             Extractor.extract(zip, dest, emptyList())
             throw AssertionError("IOException erwartet")
         } catch (e: IOException) {
-            // erwartet
+            // expected
         }
         assertFalse(File(tmp.root, "evil.txt").exists())
         assertFalse(File(dest, "evil.txt").exists())
@@ -332,7 +332,7 @@ class ExtractorTest {
                 target.child(bad)
                 throw AssertionError("IOException erwartet fuer '$bad'")
             } catch (e: IOException) {
-                // erwartet
+                // expected
             }
         }
     }

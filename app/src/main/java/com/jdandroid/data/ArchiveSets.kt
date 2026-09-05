@@ -1,28 +1,26 @@
 package com.jdandroid.data
 
 /**
- * SQL fuer Multipart-Archive: welche Eintraege gehoeren zu einem Set, und
- * fehlen noch Teile? Grundlage ist die Spalte downloads.archiveKey (siehe
- * [com.jdandroid.core.ArchiveNames.archiveKey]). Ein Set ist immer auf ein
- * Paket begrenzt - gleichnamige Archive in zwei Paketen sind zwei Sets;
- * "packageId IS :packageId" trifft dabei auch Eintraege ohne Paket.
+ * SQL for multipart archives: which entries form a set and whether parts are
+ * still missing, based on downloads.archiveKey (see
+ * [com.jdandroid.core.ArchiveNames.archiveKey]). A set never spans packages;
+ * "packageId IS :packageId" also matches entries without a package.
  *
- * Die Abfragen stehen hier als Konstanten, damit [DownloadDao] und der
- * JVM-Test (ArchiveSetsTest, gegen eine echte SQLite-Datenbank) dieselben
- * Texte verwenden.
+ * Kept as constants so [DownloadDao] and the JVM test (ArchiveSetsTest,
+ * against a real SQLite database) share the same text.
  */
 object ArchiveSets {
-    /** Noch nicht fertige Teile: blockieren das automatische Entpacken. */
+    /** Unfinished parts that block automatic extraction. */
     const val ACTIVE_STATUSES = "'COLLECTED', 'QUEUED', 'RUNNING', 'PAUSED', 'EXTRACTING'"
 
-    /** Teile, die noch geladen werden (fuer das manuelle "Entpacken"). */
+    /** Parts still loading (for the manual "extract" action). */
     const val LOADING_STATUSES = "'COLLECTED', 'QUEUED', 'RUNNING', 'PAUSED'"
 
     /**
-     * Ausstehende Teile des Archivs :key im Paket :packageId ohne :selfId.
-     * Zaehlt auch Eintraege desselben Pakets ohne Dateinamen (Sofortstart:
-     * der Name kommt erst mit dem Aufloesen). FAILED-Teile und fremde
-     * Pakete zaehlen nicht.
+     * Pending parts of archive :key in package :packageId, excluding :selfId.
+     * Entries of the same package without a file name count too (instant
+     * start: the name only arrives with resolving). FAILED parts and other
+     * packages do not.
      */
     private const val PENDING_FROM =
         "FROM downloads WHERE id != :selfId AND packageId IS :packageId " +
@@ -33,31 +31,31 @@ object ArchiveSets {
     const val PENDING_LOADING = "SELECT COUNT(*) $PENDING_FROM$LOADING_STATUSES)"
 
     /**
-     * Alle fertigen oder entpackenden Eintraege des Sets, inklusive :selfId -
-     * auch wenn der gerade noch RUNNING ist. Andere laufende Teile gehoeren
-     * nicht dazu: sie wuerden sonst mitten im Download auf EXTRACTING gesetzt.
+     * All completed or extracting entries of the set including :selfId, even
+     * if that one is still RUNNING. Other running parts are excluded: they
+     * would otherwise be flipped to EXTRACTING mid-download.
      */
     const val SET_IDS =
         "SELECT id FROM downloads WHERE id = :selfId OR (packageId IS :packageId AND archiveKey = :key " +
             "AND status IN ('COMPLETED', 'EXTRACTING')) ORDER BY id"
 
-    /** Fertige Teile des Sets (nachtraegliches Entpacken, Zurueckholen der Dateien). */
+    /** Completed parts of the set (manual extraction, restoring files). */
     const val COMPLETED_PARTS =
         "SELECT * FROM downloads WHERE packageId IS :packageId AND archiveKey = :key AND status = 'COMPLETED' ORDER BY id"
 
-    /** "Links nach dem Entpacken entfernen": alle fertigen Teile des Sets plus den Ausloeser. */
+    /** "Remove links after extraction": all completed parts of the set plus the trigger. */
     const val DELETE_EXTRACTED =
         "DELETE FROM downloads WHERE packageId IS :packageId AND archiveKey = :key AND (id = :selfId OR status = 'COMPLETED')"
 
-    /** Fertige Archiv-Teile eines Pakets mit Wartehinweis (:note), gruppierbar nach archiveKey. */
+    /** Completed archive parts of a package carrying the wait note :note, groupable by archiveKey. */
     const val WAITING_PARTS =
         "SELECT * FROM downloads WHERE packageId = :packageId AND status = 'COMPLETED' " +
             "AND errorMessage = :note AND archiveKey IS NOT NULL ORDER BY id"
 
-    /** Fertige Archive eines Pakets (Aktion "Paket entpacken"). */
+    /** Completed archives of a package ("extract package" action). */
     const val COMPLETED_ARCHIVES =
         "SELECT * FROM downloads WHERE packageId = :packageId AND status = 'COMPLETED' AND archiveKey IS NOT NULL ORDER BY addedAt"
 
-    /** Referenziert noch ein Eintrag des Pakets die Archivdateien von :key (Paketordner)? */
+    /** Does any entry of the package still reference the archive files of :key? */
     const val COUNT_KEY = "SELECT COUNT(*) FROM downloads WHERE packageId IS :packageId AND archiveKey = :key"
 }

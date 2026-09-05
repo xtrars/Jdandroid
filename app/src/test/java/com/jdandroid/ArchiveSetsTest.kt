@@ -9,11 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Prueft die SQL-Abfragen fuer Archiv-Sets ([ArchiveSets]) gegen eine echte
- * SQLite-Datenbank mit dem exportierten Room-Schema (siehe [SchemaDbTest]) -
- * dieselben Texte, die [com.jdandroid.data.DownloadDao] verwendet.
- */
+/** [ArchiveSets] queries against a real SQLite database with the exported schema (see [SchemaDbTest]). */
 class ArchiveSetsTest : SchemaDbTest() {
 
     private fun pendingActive(packageId: Long?, key: String, selfId: Long) =
@@ -48,7 +44,7 @@ class ArchiveSetsTest : SchemaDbTest() {
         item(1, "film.part1.rar", DownloadStatus.RUNNING)
         item(2, null, DownloadStatus.RUNNING)
         assertTrue(pendingActive(1, "film", 1))
-        // Auch pausiert: der Name kommt erst mit dem Aufloesen
+        // Also when paused: the name only arrives with resolving
         bind("UPDATE downloads SET status = 'PAUSED' WHERE id = 2").use { it.executeUpdate() }
         assertTrue(pendingActive(1, "film", 1))
     }
@@ -113,7 +109,7 @@ class ArchiveSetsTest : SchemaDbTest() {
         item(5, "film part5 rar", DownloadStatus.COMPLETED)
         item(6, "film.part6.rar", DownloadStatus.COMPLETED, packageId = 2)
         item(7, "other.rar", DownloadStatus.COMPLETED)
-        // Der ausloesende Eintrag (noch RUNNING) gehoert immer dazu, andere laufende nicht
+        // The triggering entry (still RUNNING) always belongs, other running ones do not
         assertEquals(listOf(1L, 2L, 4L, 5L), setIds(1, "film", 1))
         assertEquals(listOf(6L), setIds(2, "film", 6))
     }
@@ -140,14 +136,14 @@ class ArchiveSetsTest : SchemaDbTest() {
 
     @Test
     fun `nach deleteExtractedSet liefert SET_IDS die Kennungen nicht mehr`() {
-        // Die Engine muss die Kennungen des Sets vor dem Entpacken erfassen und
-        // am Ende genau diese aus dem ProgressBus entfernen: eine erneute
-        // Abfrage nach "Links nach dem Entpacken entfernen" findet nichts mehr,
-        // und die Bus-Eintraege blieben fuer immer liegen
+        // The engine must capture the set ids before extracting and remove
+        // exactly those from the ProgressBus afterwards: a second query after
+        // "remove links after extraction" finds nothing and the bus entries
+        // would stay forever
         item(1, "film.part1.rar", DownloadStatus.EXTRACTING)
         item(2, "film.part2.rar", DownloadStatus.EXTRACTING)
         assertEquals(listOf(1L, 2L), setIds(1, "film", 1))
-        // Wie die Engine: erst completeExtractingSet, dann das Loeschen
+        // Like the engine: completeExtractingSet first, then delete
         execute("UPDATE downloads SET status = 'COMPLETED' WHERE id IN (1, 2)")
         execute(ArchiveSets.DELETE_EXTRACTED, "packageId" to 1L, "key" to "film", "selfId" to 1L)
         assertEquals(emptyList<Long>(), setIds(1, "film", 1))

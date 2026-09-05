@@ -6,27 +6,25 @@ import com.jdandroid.JdApp
 import com.jdandroid.hoster.LinkParser
 
 /**
- * Zentrale Stelle zum Einreihen von Links – genutzt von der UI, vom
- * Click'n'Load-Server und vom DLC-Import. Filtert auf unterstützte Hoster
- * und überspringt Duplikate.
+ * Single entry point for queuing links, used by the UI, the Click'n'Load
+ * server and the DLC import. Filters for supported hosters and skips
+ * duplicates.
  */
 object LinkSink {
 
     /**
-     * Wird nach dem Einreihen mit Sofortstart aufgerufen, damit der
-     * Download-Dienst anlaeuft. Die Datenschicht kennt die Engine nicht;
-     * [com.jdandroid.JdApp] setzt den Aufruf beim Start.
+     * Called after queuing with auto-start so the download service starts.
+     * The data layer does not know the engine; [com.jdandroid.JdApp] sets it.
      */
     @Volatile
     var onQueued: (Context) -> Unit = {}
 
     /**
-     * Liefert die Anzahl tatsächlich neu hinzugefügter Downloads. Alle Links
-     * eines Aufrufs landen wie im JDownloader in einem gemeinsamen Paket.
+     * Returns the number of downloads actually added. All links of one call
+     * share a package.
      *
-     * @param source Herkunft (z.B. Webseite bei Click'n'Load), wird am Paket angezeigt.
-     * @param passwords Entpack-Passwörter, die mitgeliefert wurden; sie werden
-     *   der Passwortliste hinzugefügt.
+     * @param source origin (e.g. the web page for Click'n'Load), shown on the package.
+     * @param passwords extraction passwords supplied with the links; added to the password list.
      */
     suspend fun addFromText(
         context: Context,
@@ -42,15 +40,15 @@ object LinkSink {
         val parsed = LinkParser.parse(text)
         if (parsed.isEmpty()) return 0
 
-        // Wie im JDownloader: Links landen zuerst im Linksammler und werden
-        // dort online geprueft; erst "Starten" reiht sie ein. Optional sofort.
+        // Links go to the link grabber and are checked there; "Start" queues
+        // them, unless auto-start is enabled.
         val autoStart = app.settings.currentAutoStartLinks()
         val status = if (autoStart) DownloadStatus.QUEUED else DownloadStatus.COLLECTED
 
-        // Duplikatpruefung und Einfuegen in EINER Transaktion: Click'n'Load-
-        // Seiten senden oft doppelt (Formular + XHR) - sonst entstehen zwei
-        // Pakete mit denselben Links. Der eindeutige Index auf url faengt den
-        // Rest (insert liefert dann -1).
+        // Duplicate check and insert in one transaction: Click'n'Load pages
+        // often send twice (form + XHR), which would create two packages with
+        // the same links. The unique index on url catches the rest (insert
+        // returns -1).
         val ids = app.db.withTransaction {
             val links = parsed.filter { dao.countByUrl(it.first) == 0 }
             if (links.isEmpty()) return@withTransaction emptyList()
@@ -63,8 +61,8 @@ object LinkSink {
                     source = source?.let { displaySource(it) }
                 )
             )
-            // Ohne Dateinamen auch ohne archiveKey; beides kommt gemeinsam mit
-            // der Linkpruefung bzw. dem Aufloesen (DownloadDao.setFileName)
+            // No archiveKey without a file name; both arrive with the link
+            // check or resolving (DownloadDao.setFileName).
             val inserted = links.mapNotNull { (url, hoster) ->
                 dao.insert(DownloadItem(url = url, hosterId = hoster.id, packageId = packageId, status = status))
                     .takeIf { it > 0 }
@@ -73,7 +71,6 @@ object LinkSink {
             inserted
         }
         if (ids.isEmpty()) return 0
-        // Only requests that actually added links may extend the password list
         if (passwords.isNotEmpty()) app.settings.addPasswords(passwords)
         if (autoStart) onQueued(context)
         else LinkChecker.schedule(app, ids)
@@ -88,7 +85,7 @@ object LinkSink {
         passwords: List<String> = emptyList()
     ): Int = addFromText(context, urls.joinToString("\n"), packageName, source, passwords)
 
-    /** Aus einer URL nur den Host anzeigen ("example.com"), sonst den Text gekuerzt. */
+    /** Host of a URL ("example.com"), otherwise the trimmed text. */
     fun displaySource(source: String): String {
         val host = Regex("""^https?://([^/:?#]+)""", RegexOption.IGNORE_CASE)
             .find(source.trim())?.groupValues?.get(1)

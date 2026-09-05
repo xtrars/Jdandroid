@@ -16,7 +16,7 @@ class ResponseKindTest {
     @Test
     fun `416 mit passender Teildatei ist fertig`() {
         assertEquals(ResponseKind.AlreadyComplete, classifyResponse(416, null, null, 1000, 1000))
-        // Groesse unbekannt: der Teildatei vertrauen
+        // Unknown size: trust the partial file
         assertEquals(ResponseKind.AlreadyComplete, classifyResponse(416, null, null, 1000, -1))
     }
 
@@ -56,7 +56,7 @@ class ResponseKindTest {
         assertEquals(1000L, transferTotal(600, 400, 1000))
         assertEquals(1000L, transferTotal(-1, 400, 1000))
         assertEquals(-1L, transferTotal(-1, 0, -1))
-        // Gerundete Seitenangabe (1000er- statt 1024er-Basis) ist kein Widerspruch
+        // A rounded page size (1000- instead of 1024-based) is no contradiction
         assertEquals(1_380_000_000L, transferTotal(1_380_000_000L, 0, 1_481_763_717L))
     }
 
@@ -71,14 +71,14 @@ class ResponseKindTest {
 
     @Test
     fun `Laenge im Widerspruch zur bekannten Groesse wird abgelehnt`() {
-        // Kurzer Fehlertext statt der Datei
+        // Short error text instead of the file
         val known = 700L * 1024 * 1024
         val e = assertThrows(HosterException::class.java) { transferTotal(48, 0, known) }
         assertFalse(e.permanent)
         assertEquals(Texts.t("engine_size_mismatch", formatBytes(48), formatBytes(known)), e.message)
-        // Fremde, viel groessere Datei
+        // A different, much larger file
         assertThrows(HosterException::class.java) { transferTotal(5000, 0, 1000) }
-        // Bei Fortsetzung zaehlt der Offset mit
+        // The resume offset counts
         assertThrows(HosterException::class.java) { transferTotal(10, 400, 5000) }
     }
 }

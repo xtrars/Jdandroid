@@ -4,26 +4,26 @@ import com.jdandroid.core.Texts
 import com.jdandroid.core.formatBytes
 import com.jdandroid.hoster.HosterException
 
-/** Einordnung der Server-Antwort auf eine (Range-)Download-Anfrage. */
+/** Classification of the server response to a (range) download request. */
 internal enum class ResponseKind {
-    /** 416 und Teildatei passt zur bekannten Groesse: war schon vollstaendig. */
+    /** 416 and the part file matches the known size: already complete. */
     AlreadyComplete,
-    /** 416, Teildatei aber zu lang (Fremdinhalt): loeschen und neu laden. */
+    /** 416 but the part file is too long (foreign content): delete and reload. */
     RestartMismatch,
-    /** Kein 2xx. */
+    /** Not 2xx. */
     HttpError,
-    /** HTML statt Datei (abgelaufener Link, Sitzungsseite): nie speichern. */
+    /** HTML instead of the file (expired link, session page): never store it. */
     HtmlPage,
-    /** Server ignoriert Range (200 statt 206): von vorn beginnen. */
+    /** Server ignored the Range header (200 instead of 206): start over. */
     RangeIgnored,
-    /** Normal weiterladen. */
+    /** Continue transferring. */
     Continue
 }
 
 /**
- * Reine Einordnung, damit die Faelle ohne OkHttp/DB testbar sind.
- * [offset] = bereits vorhandene Bytes der Teildatei, [knownSize] = bekannte
- * Dateigroesse oder <= 0.
+ * Pure classification so the cases are testable without OkHttp or the database.
+ * [offset] is the size of the existing part file, [knownSize] the known file
+ * size or <= 0.
  */
 internal fun classifyResponse(
     code: Int,

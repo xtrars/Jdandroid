@@ -13,7 +13,7 @@ import org.junit.Test
 
 class DownloadGroupingTest {
 
-    /** Anzeigename der Gruppe ohne Paket (in der App uebersetzt aus den Ressourcen). */
+    /** Display name of the group without a package (translated from resources in the app). */
     private val LOOSE = "Ohne Paket"
 
     private fun item(id: Long, packageId: Long?, addedAt: Long = id) = DownloadItem(
@@ -47,7 +47,7 @@ class DownloadGroupingTest {
 
     @Test
     fun eintraegeMitGeloeschtemPaketBleibenSichtbar() {
-        // Paket 99 existiert nicht mehr - der Eintrag darf nicht verschwinden
+        // Package 99 no longer exists; the entry must stay visible
         val packages = listOf(DownloadPackage(id = 1, name = "A"))
         val groups = groupDownloads(listOf(item(10, 1), item(11, 99), item(12, null)), packages, LOOSE)
         assertEquals(listOf("A", LOOSE), groups.map { it.pkg.name })
@@ -65,7 +65,7 @@ class DownloadGroupingTest {
         val group = groupDownloads(listOf(extracting, other, done), packages, LOOSE, live).single()
         assertEquals(42, group.extractPercent(extracting))
         assertEquals(-1, group.extractPercent(other))
-        // Paketwert: hoechster Stand der gerade entpackenden Eintraege
+        // Package value: highest percent of the extracting entries
         assertEquals(42, group.extractPercent)
     }
 
@@ -79,8 +79,8 @@ class DownloadGroupingTest {
 
     @Test
     fun gleicherInhaltErgibtGleicheGruppen() {
-        // Gleiche Datenbank- und Live-Werte muessen gleiche Gruppen liefern, sonst
-        // rekomponiert der Paketkopf bei jedem Fortschritts-Tick
+        // Equal inputs must yield equal groups, otherwise the package header
+        // recomposes on every progress tick
         val packages = listOf(DownloadPackage(id = 1, name = "A", addedAt = 5))
         val items = listOf(item(10, 1).copy(status = DownloadStatus.EXTRACTING), item(11, 1))
         val live = mapOf(10L to LiveProgress(extractPercent = 7))
@@ -96,7 +96,7 @@ class DownloadGroupingTest {
         val items = listOf(
             item(10, 1).copy(status = DownloadStatus.COMPLETED, fileSize = 100, downloadedBytes = 100),
             item(11, 1).copy(status = DownloadStatus.RUNNING, fileSize = 200, downloadedBytes = 50, speedBps = 7),
-            // Unbekannte Groesse: weder Gesamt noch Stand zaehlen
+            // Unknown size: neither total nor progress count
             item(12, 1).copy(status = DownloadStatus.RUNNING, fileSize = -1, downloadedBytes = 999, speedBps = 3),
             item(13, 1).copy(status = DownloadStatus.FAILED),
             item(14, 1).copy(status = DownloadStatus.EXTRACTING)

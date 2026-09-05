@@ -8,10 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Der Meldungskanal liegt in der Kernschicht: Engine und Dienste koennen
- * ohne Oberflaeche melden, die letzte Meldung bleibt bis zur Anzeige erhalten.
- */
+/** The last message posted without a UI is kept until it is shown. */
 class AppMessagesTest {
 
     @Before

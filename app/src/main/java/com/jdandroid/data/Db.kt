@@ -16,10 +16,10 @@ import androidx.room.Update
 import com.jdandroid.core.ArchiveNames
 import kotlinx.coroutines.flow.Flow
 
-/** COLLECTED = liegt im Linksammler und wurde noch nicht gestartet (wie im JDownloader). */
+/** COLLECTED = sitting in the link grabber, not started yet. */
 enum class DownloadStatus { COLLECTED, QUEUED, RUNNING, PAUSED, EXTRACTING, COMPLETED, FAILED, OFFLINE }
 
-/** Ergebnis der Online-Pruefung im Linksammler. */
+/** Result of the online check in the link grabber. */
 object OnlineState {
     const val UNKNOWN = 0
     const val ONLINE = 1
@@ -27,14 +27,14 @@ object OnlineState {
     const val CHECKING = 3
 }
 
-/** Paket wie im JDownloader: buendelt zusammen hinzugefuegte Links. */
+/** Bundles links that were added together. */
 @Entity(tableName = "packages")
 data class DownloadPackage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    /** Automatisch benannt: darf spaeter aus den Dateinamen verfeinert werden. */
+    /** Auto-named packages may later be renamed from the file names. */
     val autoNamed: Boolean = true,
-    /** Herkunft, z.B. die Webseite bei Click'n'Load - sichtbar in der Liste. */
+    /** Origin, e.g. the web page for Click'n'Load. */
     val source: String? = null,
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -43,7 +43,6 @@ data class DownloadPackage(
     tableName = "downloads",
     indices = [
         Index(value = ["url"], unique = true), Index(value = ["archiveKey"]),
-        // Warteschlange und Zaehler filtern nach status, Pakete nach packageId
         Index(value = ["status"]), Index(value = ["packageId"])
     ]
 )
@@ -54,9 +53,9 @@ data class DownloadItem(
     val packageId: Long? = null,
     val fileName: String? = null,
     /**
-     * Basisname des Archivs ([ArchiveNames.archiveKey] aus [fileName]),
-     * null = kein Archiv oder Name unbekannt. Wird ueberall mitgeschrieben,
-     * wo der Name gesetzt wird; Archiv-Sets werden darueber abgefragt.
+     * Archive base name ([ArchiveNames.archiveKey] of [fileName]), null = no
+     * archive or name unknown. Written wherever the name is set; archive sets
+     * are queried through it.
      */
     val archiveKey: String? = null,
     val fileSize: Long = -1,
@@ -65,11 +64,10 @@ data class DownloadItem(
     val status: DownloadStatus = DownloadStatus.QUEUED,
     val errorMessage: String? = null,
     val localPath: String? = null,
-    /** Bisherige automatische Wiederholversuche. */
     val attempts: Int = 0,
-    /** Fruehester Zeitpunkt fuer den naechsten Versuch (Backoff). */
+    /** Earliest time for the next attempt (backoff). */
     val retryAt: Long = 0,
-    /** Online-Pruefung (siehe [OnlineState]); Hinweis dazu in [errorMessage]. */
+    /** See [OnlineState]; the related note is in [errorMessage]. */
     val online: Int = OnlineState.UNKNOWN,
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -81,14 +79,13 @@ data class Account(
     val username: String? = null,
     val password: String? = null,
     val apiKey: String? = null,
-    /** Session-Cookies aus dem Browser-Login (Name=Wert; ...), falls genutzt. */
+    /** Session cookies from the browser login (name=value; ...). */
     val cookies: String? = null,
     val premiumUntil: Long = 0,
-    /** Verbleibender Traffic in Byte, -1 = unbekannt. */
+    /** Remaining traffic in bytes, -1 = unknown. */
     val trafficLeft: Long = -1,
-    /** Gesamtkontingent in Byte, -1 = unbekannt. */
+    /** Total quota in bytes, -1 = unknown. */
     val trafficTotal: Long = -1,
-    /** Hoster ohne Traffic-Limit. */
     val trafficUnlimited: Boolean = false,
     val valid: Boolean = false,
     val lastChecked: Long = 0,
@@ -96,10 +93,9 @@ data class Account(
 )
 
 /**
- * Konto hat Premium: Ablaufdatum in der Zukunft oder - ohne Datum - ein
- * Premium-Kontostatus (ddownload: "Premium"/"Ultimate", 1fichier:
- * "Premium/Access"). Ein gueltiges Konto ohne Premium ist ein Free-Konto:
- * die Engine laedt dann im Free-Modus, nicht ueber den Premium-Weg.
+ * Premium: expiry in the future or, without a date, a premium status text
+ * (ddownload "Premium"/"Ultimate", 1fichier "Premium/Access"). A valid
+ * account without premium is a free account and the engine uses free mode.
  */
 fun Account.hasPremium(now: Long = System.currentTimeMillis()): Boolean =
     valid && (
@@ -118,44 +114,30 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads")
     suspend fun all(): List<DownloadItem>
 
-    /**
-     * Naechster wartender Eintrag, der nicht bereits laeuft ([running]): sonst
-     * koennte derselbe Download nach requeueRunning() ein zweites Mal starten.
-     */
+    /** Next queued entry not already in [running]; otherwise a download could start twice after requeueRunning(). */
     @Query(
         "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
             "AND id NOT IN (:running) ORDER BY addedAt ASC LIMIT 1"
     )
     suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
 
-    /** Offene Arbeit (wartend, laufend, entpackend) - fuer den App-Start. */
     @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('QUEUED', 'RUNNING', 'EXTRACTING')")
     suspend fun openCount(): Int
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
 
-    /**
-     * Wartende Eintraege, die bis [before] von selbst starten. Eintraege, die
-     * auf ein Captcha warten (retryAt weit in der Zukunft), zaehlen nicht:
-     * sie halten den Dienst nicht am Leben.
-     */
+    /** Queued entries starting by themselves before [before]; captcha waiters (far-future retryAt) do not keep the service alive. */
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED' AND retryAt <= :before")
     suspend fun queuedCountDue(before: Long): Int
 
-    /** Naechstes retryAt in der Zukunft bis [horizon], null ohne (siehe [DownloadQueries.NEXT_RETRY_AT]). */
     @Query(DownloadQueries.NEXT_RETRY_AT)
     suspend fun nextRetryAt(now: Long, horizon: Long): Long?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
     suspend fun pausedCount(): Int
 
-    /**
-     * Summen fuer die Fortschrittsanzeige in der Benachrichtigung. [except]
-     * sind die Eintraege mit Live-Stand im ProgressBus; ihr Datenbankwert
-     * ist bis zu 30 s alt und wird von der Engine durch den Live-Wert ersetzt
-     * (siehe [DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT]).
-     */
+    /** Notification progress sum; [except] are the entries whose live value comes from the ProgressBus. */
     @Query(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT)
     suspend fun openDownloadedBytesExcept(except: List<Long>): Long
 
@@ -168,11 +150,10 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'PAUSED'")
     suspend fun requeuePaused()
 
-    /** "Alle pausieren": auch Wartende anhalten, sonst startet pump() sofort die naechsten. */
+    /** "Pause all" must include queued entries, otherwise pump() starts the next ones at once. */
     @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")
     suspend fun pauseQueued()
 
-    /** Linksammler: Paket starten bzw. alles starten. */
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'COLLECTED' AND packageId = :packageId")
     suspend fun startCollected(packageId: Long)
 
@@ -188,7 +169,6 @@ interface DownloadDao {
     @Query("UPDATE downloads SET online = :online WHERE id = :id AND status = 'COLLECTED'")
     suspend fun setOnline(id: Long, online: Int)
 
-    /** Ergebnis der Online-Pruefung eintragen (siehe [DownloadQueries.APPLY_CHECK]). */
     @Query(DownloadQueries.APPLY_CHECK)
     suspend fun applyCheck(
         id: Long, online: Int, note: String?, fileName: String?, archiveKey: String?, fileSize: Long
@@ -200,7 +180,7 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE url = :url")
     suspend fun countByUrl(url: String): Int
 
-    /** Liefert -1, wenn die URL bereits vorhanden ist (eindeutiger Index). */
+    /** Returns -1 when the URL already exists (unique index). */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: DownloadItem): Long
 
@@ -210,43 +190,36 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = :status, errorMessage = :error WHERE id = :id")
     suspend fun setStatus(id: Long, status: DownloadStatus, error: String? = null)
 
-    /**
-     * Bytestand sichern: beim Start der Uebertragung, hoechstens alle 30 s und
-     * beim Verlassen der Uebertragung. Geschwindigkeit wird hier nicht
-     * geschrieben - sie ist ein Live-Wert des ProgressBus.
-     */
+    /** Persisted at transfer start, at most every 30 s and on leaving the transfer; speed is a live ProgressBus value only. */
     @Query("UPDATE downloads SET downloadedBytes = :bytes, fileSize = :total WHERE id = :id")
     suspend fun saveProgress(id: Long, bytes: Long, total: Long)
 
-    /** Nach Prozess-Ende: laufende und entpackende Eintraege wieder einreihen. */
+    /** After a process restart: re-queue running and extracting entries. */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 " +
             "WHERE status IN ('RUNNING', 'EXTRACTING')"
     )
     suspend fun requeueRunning()
 
-    /** Wie [requeueRunning], aber ohne Eintraege, die im Prozess gerade noch entpackt werden. */
+    /** [requeueRunning] without the entries still being extracted in this process. */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 " +
             "WHERE status IN ('RUNNING', 'EXTRACTING') AND id NOT IN (:except)"
     )
     suspend fun requeueRunningExcept(except: List<Long>)
 
-    /** Alle Teile eines Archiv-Sets auf "wird entpackt" setzen (auch den gerade fertigen). */
     @Query(
         "UPDATE downloads SET status = 'EXTRACTING', errorMessage = NULL, speedBps = 0 " +
             "WHERE id IN (:ids) AND status IN ('COMPLETED', 'EXTRACTING', 'RUNNING')"
     )
     suspend fun setExtractingSet(ids: List<Long>)
 
-    /** Entpacken beendet: alle Teile des Sets zurueck auf fertig, mit Zielpfad bzw. Fehlerhinweis. */
     @Query(
         "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
             "attempts = 0, retryAt = 0 WHERE id IN (:ids) AND status = 'EXTRACTING'"
     )
     suspend fun completeExtractingSet(ids: List<Long>, path: String?, note: String?)
 
-    /** Pause nur, wenn der Eintrag wirklich noch laeuft (nicht bereits fertig/entpackend). */
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
     suspend fun pauseIfActive(id: Long)
 
@@ -254,14 +227,14 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE packageId = :packageId AND status IN ('RUNNING', 'QUEUED')")
     suspend fun pauseActiveInPackage(packageId: Long)
 
-    /** "Nur WLAN": laufenden Download zurueck in die Warteschlange (startet bei WLAN automatisch). */
+    /** "Wi-Fi only": send a running download back to the queue. */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
             "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
     )
     suspend fun requeueIfRunning(id: Long)
 
-    /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
+    /** Completes only if the entry was not paused or deleted meanwhile. */
     @Query(
         "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
             "speedBps = 0, attempts = 0, retryAt = 0 " +
@@ -269,34 +242,29 @@ interface DownloadDao {
     )
     suspend fun completeIfActive(id: Long, path: String?, note: String?): Int
 
-    /** Fertige Teile eines Archiv-Sets nach erfolgreichem Entpacken aktualisieren. */
     @Query("UPDATE downloads SET localPath = :path, errorMessage = NULL WHERE id IN (:ids) AND status = 'COMPLETED'")
     suspend fun updateCompletedSet(ids: List<Long>, path: String?)
 
-    /** Haengen gebliebene Linkpruefungen (Prozess-Ende) zuruecksetzen. */
+    /** Resets link checks left in CHECKING by a process exit. */
     @Query("UPDATE downloads SET online = 0 WHERE online = 3")
     suspend fun resetChecking()
 
-    /** Automatischer Wiederholversuch mit Backoff. */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', attempts = :attempts, retryAt = :retryAt, " +
             "errorMessage = :error, speedBps = 0 WHERE id = :id"
     )
     suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
-    /** Name und Archivschluessel gehoeren zusammen - siehe [renameFile]. */
+    /** Name and archive key belong together, see [renameFile]. */
     @Query("UPDATE downloads SET fileName = :name, archiveKey = :archiveKey WHERE id = :id")
     suspend fun setFileName(id: Long, name: String, archiveKey: String?)
 
-    /** Ausstehende Teile des Sets (siehe [ArchiveSets.PENDING_ACTIVE]). */
     @Query(ArchiveSets.PENDING_ACTIVE)
     suspend fun pendingActiveParts(packageId: Long?, key: String, selfId: Long): Int
 
-    /** Noch ladende Teile des Sets (siehe [ArchiveSets.PENDING_LOADING]). */
     @Query(ArchiveSets.PENDING_LOADING)
     suspend fun pendingLoadingParts(packageId: Long?, key: String, selfId: Long): Int
 
-    /** Fertige/entpackende Teile des Sets inklusive [selfId] (siehe [ArchiveSets.SET_IDS]). */
     @Query(ArchiveSets.SET_IDS)
     suspend fun archiveSetIds(packageId: Long?, key: String, selfId: Long): List<Long>
 
@@ -315,35 +283,30 @@ interface DownloadDao {
     @Query(ArchiveSets.COUNT_KEY)
     suspend fun countByArchiveKey(packageId: Long?, key: String): Int
 
-    /** Fertigen Eintrag von vorn laden. */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0, " +
             "downloadedBytes = 0, localPath = NULL WHERE id = :id AND status = 'COMPLETED'"
     )
     suspend fun requeueCompleted(id: Long)
 
-    /** Nach echtem Fortschritt: Fehlversuche zaehlen von vorn. */
+    /** After real progress the attempt counter starts over. */
     @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
     suspend fun resetAttempts(id: Long)
 
-    /** Manueller Neustart: nur fuer pausierte/gescheiterte Eintraege (laufende nie doppelt starten). */
+    /** Manual restart, never for running entries (would start twice). */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
             "retryAt = 0 WHERE id = :id AND status IN ('PAUSED', 'FAILED', 'OFFLINE')"
     )
     suspend fun requeue(id: Long)
 
-    /**
-     * Wartenden Eintrag sofort freigeben (Captcha im Browser geloest): nur
-     * QUEUED, ein inzwischen pausierter oder laufender Eintrag bleibt unberuehrt.
-     */
+    /** Releases a waiting entry at once (captcha solved); a paused or running entry stays untouched. */
     @Query(
         "UPDATE downloads SET retryAt = 0, errorMessage = NULL, speedBps = 0 " +
             "WHERE id = :id AND status = 'QUEUED'"
     )
     suspend fun releaseQueued(id: Long)
 
-    /** "Alle fortsetzen": pausierte und gescheiterte Eintraege (siehe [DownloadQueries.REQUEUE_PAUSED_AND_FAILED]). */
     @Query(DownloadQueries.REQUEUE_PAUSED_AND_FAILED)
     suspend fun requeuePausedAndFailed()
 
@@ -360,7 +323,7 @@ interface DownloadDao {
     suspend fun deletePackageItems(packageId: Long)
 }
 
-/** Dateinamen setzen und den Archivschluessel daraus ableiten - die eine Stelle dafuer. */
+/** Sets the file name and derives the archive key from it. */
 suspend fun DownloadDao.renameFile(id: Long, name: String) =
     setFileName(id, name, ArchiveNames.archiveKey(name))
 
@@ -384,7 +347,6 @@ interface PackageDao {
     @Query("DELETE FROM packages WHERE id = :id")
     suspend fun delete(id: Long)
 
-    /** Leere Pakete aufraeumen. */
     @Query("DELETE FROM packages WHERE id NOT IN (SELECT DISTINCT packageId FROM downloads WHERE packageId IS NOT NULL)")
     suspend fun deleteEmpty()
 }
@@ -428,10 +390,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /**
-         * Datenbanken der Versionen 1 bis 4 (fruehe Entwicklungsstaende) werden
-         * nicht mehr migriert, sondern neu aufgebaut
-         * (fallbackToDestructiveMigrationFrom in [com.jdandroid.JdApp]).
-         * Ab Version 5 bleiben Konten und Downloadliste bei Updates erhalten.
+         * Versions 1 to 4 (early development states) are rebuilt instead of
+         * migrated (fallbackToDestructiveMigrationFrom in [com.jdandroid.JdApp]).
+         * From version 5 on accounts and the download list survive updates.
          */
         val DESTRUCTIVE_FROM = intArrayOf(1, 2, 3, 4)
 
@@ -450,8 +411,8 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Doppelte URLs (aus parallelen Click'n'Load-Anfragen) bereinigen,
-                // dann eindeutigen Index anlegen
+                // Remove duplicate URLs (parallel Click'n'Load requests) before
+                // creating the unique index.
                 db.execSQL("DELETE FROM downloads WHERE id NOT IN (SELECT MIN(id) FROM downloads GROUP BY url)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_downloads_url ON downloads(url)")
             }
@@ -463,17 +424,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * Archivschluessel als Spalte: vorher wurde die Zugehoerigkeit zu einem
-         * Archiv-Set bei jedem Aufruf aus allen Dateinamen berechnet. Bestehende
-         * Zeilen werden aus ihrem Dateinamen nachgefuellt.
-         */
+        /** Adds the archiveKey column and back-fills it from existing file names. */
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE downloads ADD COLUMN archiveKey TEXT")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_downloads_archiveKey ON downloads(archiveKey)")
-                // Erst alle Schluessel lesen, dann schreiben: nicht in die Tabelle
-                // schreiben, ueber die der Cursor gerade laeuft
+                // Read all keys first: never write to the table the cursor is
+                // iterating over.
                 val keys = ArrayList<Pair<Long, String>>()
                 db.query("SELECT id, fileName FROM downloads WHERE fileName IS NOT NULL").use { c ->
                     while (c.moveToNext()) {
@@ -487,16 +444,11 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * Spalte extractProgress entfernen: der Entpack-Stand lebt nur noch im
-         * [com.jdandroid.core.ProgressBus]. SQLite kann keine Spalte loeschen,
-         * daher Tabellen-Neuaufbau (Daten kopieren, alte Tabelle ersetzen);
-         * dabei kommen Indizes auf status und packageId hinzu. Die CREATE-
-         * Anweisungen muessen exakt dem exportierten Schema 11 entsprechen.
-         *
-         * Anschliessend werden gespeicherte Vermerke als Code statt als
-         * deutscher Text abgelegt: die Engine sucht wartende Archiv-Teile per
-         * SQL-Gleichheit, die Oberflaeche uebersetzt den Code bei der Anzeige
-         * (siehe [DownloadNotes]).
+         * Drops extractProgress (the state now lives in
+         * [com.jdandroid.core.ProgressBus]). SQLite cannot drop a column, so
+         * the table is rebuilt; indices on status and packageId are added. The
+         * CREATE statements must match exported schema 11 exactly. Stored
+         * German notes are then converted to codes (see [DownloadNotes]).
          */
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -519,7 +471,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_archiveKey` ON `downloads` (`archiveKey`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_status` ON `downloads` (`status`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_packageId` ON `downloads` (`packageId`)")
-                // Deutsche Vermerke aus aelteren Versionen in Codes wandeln
                 db.execSQL(
                     "UPDATE downloads SET errorMessage = ? WHERE errorMessage = ?",
                     arrayOf<Any>(DownloadNotes.WAITING_PARTS, DownloadNotes.LEGACY_WAITING_PARTS)

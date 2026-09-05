@@ -29,8 +29,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Foreground-Service, der die DownloadEngine am Leben haelt und den
- * Gesamtfortschritt als Benachrichtigung anzeigt.
+ * Foreground service that hosts the [DownloadEngine], the Click'n'Load
+ * server and the progress notification.
  */
 class DownloadService : Service() {
 
@@ -38,40 +38,38 @@ class DownloadService : Service() {
         SupervisorJob() + Dispatchers.IO + JdApp.backgroundErrors(this, R.string.service_scope_download_service)
     )
 
-    /** Letzte startId fuer stopSelfResult: kein Stopp, wenn gerade ein neuer Befehl eintraf. */
+    /** For stopSelfResult: no stop if a newer command has arrived meanwhile. */
     @Volatile
     private var lastStartId = -1
 
-    /** Aktueller Vordergrund-Typ (dataSync waehrend Downloads, sonst specialUse). */
+    /** Current foreground type: dataSync while downloading, specialUse otherwise. */
     private var foregroundType = -1
     private lateinit var engine: DownloadEngine
     private var wakeLock: PowerManager.WakeLock? = null
     private var cnlServer: ClickNLoadServer? = null
 
     /**
-     * Gewuenschter Click'n'Load-Zustand. Wird synchron gesetzt, waehrend der
-     * Server selbst asynchron startet: sonst koennte refresh() den Service
-     * beenden, bevor cnlServer gesetzt ist, und CnL liefe nie.
+     * Desired Click'n'Load state, set synchronously while the server starts
+     * asynchronously; otherwise refresh() could stop the service before
+     * cnlServer is assigned.
      */
     @Volatile
     private var cnlWanted = false
 
-    /** Vor Abschluss des Starts darf sich der Service nicht selbst beenden. */
+    /** The service must not stop itself before startup has finished. */
     @Volatile
     private var startupDone = false
 
     /**
-     * startForeground wurde vom System abgelehnt (Android 14/15, Start aus dem
-     * Hintergrund bzw. nach dem 6-h-Limit): dann darf nichts mehr angestossen
-     * werden, sonst bleiben Eintraege als RUNNING zurueck, wenn das System den
-     * Dienst gleich wieder beendet.
+     * startForeground was refused (Android 14/15: background start or the 6 h
+     * limit). Nothing may be started then, or entries stay RUNNING when the
+     * system kills the service right away.
      */
     @Volatile
     private var foregroundRefused = false
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-    /** Bei Netzwechsel erneut anstossen (z.B. WLAN wieder verfuegbar). */
     private fun registerNetworkCallback() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -95,24 +93,23 @@ class DownloadService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification(getString(R.string.service_preparing)))
-        // Service is already stopping: no startup block, no network callback.
+        // Already stopping: no startup, no network callback
         if (foregroundRefused) return
         scope.launch {
             try {
-                // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
+                // CnL state first, pump later (race with refresh otherwise)
                 if ((application as JdApp).settings.currentClickNLoadEnabled()) {
                     cnlWanted = true
                     startClickNLoadServer()
                 }
-                // Nach Prozess-Neustart haengen gebliebene RUNNING/EXTRACTING-
-                // Eintraege wieder einreihen - BEVOR irgendein pump() laeuft
-                // Eintraege, die eine vorige Dienst-Instanz gerade noch entpackt
-                // (NonCancellable), nicht neu einreihen - sonst doppelt entpackt
+                // Requeue RUNNING/EXTRACTING entries left by a dead process before
+                // any pump() runs; entries a previous service instance is still
+                // extracting (NonCancellable) stay as they are.
                 (application as JdApp).db.downloadDao()
                     .requeueRunningExcept(ExtractionRegistry.activeIds())
                 startupDone = true
             } finally {
-                // Startsperre der Engine oeffnen (auch bei Fehler, sonst haengt pump())
+                // Open the engine's start gate even on failure, or pump() hangs
                 engine.markReady()
             }
             engine.pump()
@@ -155,16 +152,15 @@ class DownloadService : Service() {
     }
 
     /**
-     * Android 15 begrenzt dataSync-Vordergrunddienste auf 6 Stunden je Tag.
-     * Statt hart beendet zu werden, pausieren wir sauber und erklaeren es in
-     * einer Benachrichtigung; "Fortsetzen" startet den Dienst neu.
+     * Android 15 limits dataSync foreground services to 6 hours per day.
+     * Pause cleanly and explain it in a notification whose "Resume" restarts
+     * the service.
      */
     override fun onTimeout(startId: Int, fgsType: Int) {
         scope.launch {
             val wasActive = engine.activeCount > 0
             engine.pauseAll()
-            // Nur melden, wenn wirklich Downloads liefen - im Leerlauf (CnL an)
-            // sollte der Dienst ohnehin als specialUse laufen und nicht auslaufen
+            // Idle with CnL on, the service should run as specialUse and not time out
             if (wasActive) {
                 notifyEvent(
                     NOTIFICATION_TIMEOUT,
@@ -185,16 +181,14 @@ class DownloadService : Service() {
     }
 
     /**
-     * Synchronisiert: der Start wird sowohl aus onCreate (Einstellung "an")
-     * als auch per ACTION_START_CNL (App-Start) angestossen. Liefen beide
-     * gleichzeitig, band der zweite Versuch denselben Port und meldete
-     * "Address already in use", obwohl der erste Server laeuft.
+     * Synchronized: onCreate (setting enabled) and ACTION_START_CNL (app start)
+     * can both trigger the start; a concurrent second attempt would fail with
+     * "Address already in use" although the first server runs.
      */
     @Synchronized
     private fun startClickNLoadServer() {
         cnlServer?.let { existing ->
             if (existing.isAlive) return
-            // Server-Objekt vorhanden, aber tot (Socket geschlossen): neu starten
             runCatching { existing.stop() }
             cnlServer = null
         }
@@ -206,8 +200,7 @@ class DownloadService : Service() {
                     source = request.source,
                     passwords = request.passwords
                 )
-                // Sichtbar machen, woher die Links kamen - eine Webseite kann den
-                // Server sonst unbemerkt fuettern.
+                // Show where the links came from: a web page could feed the server unnoticed
                 val origin = request.source?.let { LinkSink.displaySource(it) }
                     ?: getString(R.string.service_cnl_origin_website)
                 notifyEvent(
@@ -221,9 +214,8 @@ class DownloadService : Service() {
                 )
             }
         }
-        // Ausschliesslich Loopback: ein Server auf allen Schnittstellen waere
-        // fuer jedes Geraet im WLAN erreichbar. Falls 127.0.0.1 nicht bindbar
-        // ist, "localhost" (IPv6-Loopback) versuchen - nie ohne Hostnamen.
+        // Loopback only: a server on all interfaces would be reachable from the
+        // whole LAN. If 127.0.0.1 cannot be bound, try "localhost" (IPv6 loopback).
         var lastError: Exception? = null
         for (host in listOf(ClickNLoadServer.LOOPBACK, "localhost")) {
             try {
@@ -238,7 +230,7 @@ class DownloadService : Service() {
         }
         val raw = lastError?.message ?: lastError?.javaClass?.simpleName
             ?: getString(R.string.service_error_unknown)
-        // Systemtext des Sockets (nicht von uns uebersetzt), daher Textsuche
+        // Socket error text comes from the system, hence the text search
         val reason = if (raw.contains("in use", true) || raw.contains("EADDRINUSE", true)) {
             getString(R.string.service_cnl_port_in_use, ClickNLoadServer.PORT)
         } else raw
@@ -251,14 +243,12 @@ class DownloadService : Service() {
         val queued = dao.queuedCount()
         val active = engine.activeCount
         val cnlActive = cnlWanted
-        // WakeLock nur halten, solange wirklich geladen wird - sonst bliebe die
-        // CPU bei aktivem CnL dauerhaft wach.
+        // Hold the wake lock only while transferring, or CnL keeps the CPU awake for good
         updateWakeLock(active > 0)
-        // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht.
-        // Die Stopp-Entscheidung faellt unter der Engine-Sperre (isIdle) und mit
-        // stopSelfResult: ein gleichzeitig eintreffender Befehl verhindert den Stopp.
-        // Drop the foreground status only once the stop is certain, otherwise a
-        // concurrent command would leave a plain background service behind.
+        // With CnL on the service stays alive for the port. The stop decision is
+        // made under the engine lock (isIdle) and with stopSelfResult, so a
+        // concurrent command prevents it; the foreground status is dropped only
+        // once the stop is certain, otherwise a plain background service remained.
         if (startupDone && !cnlActive && engine.isIdle() && stopSelfResult(lastStartId)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             return
@@ -267,7 +257,6 @@ class DownloadService : Service() {
         val text = if (active == 0 && queued == 0 && cnlActive) {
             getString(R.string.service_status_cnl_active, ClickNLoadServer.PORT)
         } else {
-            // Teile als ganze Formatstrings, mit " · " verbunden
             val parts = mutableListOf(
                 if (queued > 0) resources.getQuantityString(R.plurals.service_status_active_queued, active, active, queued)
                 else resources.getQuantityString(R.plurals.service_status_active, active, active)
@@ -288,10 +277,9 @@ class DownloadService : Service() {
     }
 
     /**
-     * Android 15 zaehlt das 6-Stunden-Kontingent fuer dataSync auch im
-     * Leerlauf. Waehrend nichts laedt (Click'n'Load lauscht, Warten auf WLAN)
-     * laeuft der Dienst daher als specialUse und wechselt erst mit dem
-     * naechsten Download zurueck zu dataSync.
+     * Android 15 counts the 6 h dataSync quota while idle too, so the service
+     * runs as specialUse while nothing transfers (CnL listening, waiting for
+     * Wi-Fi) and switches back to dataSync with the next download.
      */
     private fun ensureForegroundType(downloading: Boolean) {
         if (Build.VERSION.SDK_INT < 34) return
@@ -354,10 +342,10 @@ class DownloadService : Service() {
         return builder.build()
     }
 
-    /** Kurze, nicht dauerhafte Benachrichtigung (Click'n'Load, Zeitlimit). */
+    /** Short, dismissable notification (Click'n'Load, timeout). */
     private fun notifyEvent(id: Int, title: String, text: String, resumeAction: Boolean = false) {
-        // Bei "Fortsetzen" die App oeffnen und dort den Dienst starten: nach dem
-        // 6-h-Limit erlaubt Android 15 den Neustart nur aus dem Vordergrund.
+        // "Resume" opens the app, which starts the service: after the 6 h limit
+        // Android 15 allows a restart only from the foreground.
         val open = PendingIntent.getActivity(
             this, if (resumeAction) 3 else 0,
             Intent(this, MainActivity::class.java).apply {
@@ -382,9 +370,8 @@ class DownloadService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        // Ab Android 14 kann startForeground selbst werfen, wenn das System den
-        // Start als aus dem Hintergrund kommend wertet. Das darf die App nicht
-        // mitreissen: dann laeuft der Dienst eben ohne Vordergrund-Status.
+        // Since Android 14 startForeground itself may throw when the system
+        // considers the start to come from the background.
         try {
             if (Build.VERSION.SDK_INT >= 29) {
                 startForeground(
@@ -395,10 +382,9 @@ class DownloadService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            // Wurde der Dienst per startForegroundService angefordert und kommt
-            // kein startForeground zustande, beendet das System den Prozess mit
-            // ForegroundServiceDidNotStartInTimeException. Deshalb hier sauber
-            // selbst beenden statt abgeschossen zu werden.
+            // Requested via startForegroundService without a successful
+            // startForeground, the process would be killed with
+            // ForegroundServiceDidNotStartInTimeException; stop cleanly instead.
             android.util.Log.w("DownloadService", "startForeground abgelehnt: ${e.message}")
             foregroundRefused = true
             runCatching { stopSelf() }
@@ -425,7 +411,7 @@ class DownloadService : Service() {
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
-        /** Ganzes Paket pausieren/loeschen; [EXTRA_ID] traegt hier die Paket-ID. */
+        /** Package-wide actions: [EXTRA_ID] carries the package id. */
         const val ACTION_PAUSE_PACKAGE = "com.jdandroid.action.PAUSE_PACKAGE"
         const val ACTION_DELETE_PACKAGE = "com.jdandroid.action.DELETE_PACKAGE"
         const val ACTION_EXTRACT = "com.jdandroid.action.EXTRACT"
@@ -443,11 +429,9 @@ class DownloadService : Service() {
             try {
                 context.startForegroundService(intent)
             } catch (e: Exception) {
-                // Ab Android 12 verboten, wenn die App als "im Hintergrund" gilt
-                // (z.B. Link per Teilen oder Click'n'Load bei geschlossener App).
-                // Das darf die App nicht abstuerzen lassen - regulaerer Start als
-                // Rueckfallebene, sonst laeuft die Warteschlange beim naechsten
-                // Oeffnen der App weiter.
+                // Forbidden since Android 12 while the app counts as background
+                // (share sheet, Click'n'Load with the app closed): fall back to a
+                // plain start; the queue continues when the app is opened next.
                 android.util.Log.w("DownloadService", "Start abgelehnt: ${e.message}")
                 runCatching { context.startService(intent) }
             }

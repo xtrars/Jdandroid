@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Bildschirmuebergreifende Schaltflaechen und Aktionen. Schluessel: common_<bedeutung>.
-         Nur hier eintragen, was auf mehreren Bildschirmen gleichlautend vorkommt. -->
+    <!-- Buttons and actions shared across screens. Keys: common_<meaning>. -->
     <string name="common_cancel">Abbrechen</string>
     <string name="common_delete">Löschen</string>
     <string name="common_close">Schließen</string>

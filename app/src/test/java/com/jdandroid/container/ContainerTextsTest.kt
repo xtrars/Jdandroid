@@ -11,10 +11,9 @@ import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * Die deutsche Map in [ContainerTexts] muss wortgleich in
- * `values/strings_service.xml` stehen und in `values-en/strings_service.xml`
- * uebersetzt sein - sonst saehe der Nutzer auf dem Geraet einen anderen Text
- * als die Unit-Tests.
+ * The German map in [ContainerTexts] must match `values/strings_service.xml`
+ * verbatim and be translated in `values-en/strings_service.xml`, otherwise
+ * the device would show a different text than the unit tests.
  */
 class ContainerTextsTest {
 
@@ -48,7 +47,7 @@ class ContainerTextsTest {
     fun providerHatVorrang() {
         Texts.install { key, args -> if (key == "service_cnl_selftest_ok") "Server responds (HTTP ${args[0]})." else null }
         assertEquals("Server responds (HTTP 200).", ContainerTexts.t("service_cnl_selftest_ok", 200))
-        // Unbekannt beim Provider: deutscher Standardtext
+        // Unknown to the provider: German fallback
         assertEquals("Datei nicht lesbar", ContainerTexts.t("service_dlc_file_unreadable"))
     }
 

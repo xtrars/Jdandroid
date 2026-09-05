@@ -69,42 +69,31 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Ab targetSdk 35 erzwingt Android 15 Edge-to-Edge. Ohne diesen Aufruf
-        // werden die System-Insets nicht sauber eingerichtet und Leisten,
-        // FABs oder Buttons koennen hinter den Systemleisten liegen.
+        // Android 15 enforces edge-to-edge; without this the insets are not set up.
         enableEdgeToEdge()
-        // Nur beim ersten Start und nur, wenn die Berechtigung fehlt: sonst
-        // erscheint der Systemdialog bei jedem Drehen erneut.
+        // Only on first creation, or the system dialog reappears on every rotation.
         if (Build.VERSION.SDK_INT >= 33 && savedInstanceState == null &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        // Nur beim ersten Start: nach einer Neuerstellung (Drehen, Dunkelmodus-
-        // Wechsel) liefert getIntent() noch das alte VIEW/SEND-Intent - das DLC
-        // wuerde sonst erneut importiert bzw. der Dialog erneut geoeffnet.
+        // After recreation getIntent() still returns the old VIEW/SEND intent.
         if (savedInstanceState == null) handleIntent(intent)
         handleResumeRequest(intent)
-        // Click'n'Load ueberlebt keinen Prozessneustart: ist es aktiviert, muss
-        // der Dienst beim App-Start wieder hochgefahren werden, sonst lauscht
-        // niemand auf dem Port obwohl der Schalter an steht. Ausserdem wartende
-        // Downloads anstossen (z.B. nach Neustart des Geraets).
+        // Click'n'Load does not survive a process restart; restart the listener
+        // and kick pending downloads (e.g. after a reboot).
         lifecycleScope.launch {
             val app = application as JdApp
             if (app.settings.currentClickNLoadEnabled()) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
             }
-            // Auch haengen gebliebene RUNNING/EXTRACTING zaehlen: der Dienst setzt
-            // sie beim Start zurueck und laedt weiter
+            // openCount includes stuck RUNNING/EXTRACTING entries; the service resets them.
             if (withContext(Dispatchers.IO) { app.db.downloadDao().openCount() } > 0) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
             }
         }
         val settings = (application as JdApp).settings
-        // Gespeicherten Modus synchron lesen: sonst zeigt der erste Frame das
-        // Systemschema und springt danach um (Blitz bei jedem Kaltstart).
-        // Ein einziger blockierender Aufruf; schlaegt das Lesen fehl, gilt
-        // das Systemschema statt eines Absturzes beim Start.
+        // Read synchronously, or the first frame flashes the system scheme.
         val initialMode = try {
             runBlocking { settings.themeMode.first() }
         } catch (e: Exception) {
@@ -114,16 +103,14 @@ class MainActivity : ComponentActivity() {
             val modeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = initialMode)
             val mode = ThemeMode.fromKey(modeKey)
             val dark = isDarkFor(mode)
-            // Systemleisten zur gewaehlten Helligkeit passend einfaerben - auch
-            // wenn der Modus manuell vom System abweicht.
+            // System bars follow the chosen mode, even when it differs from the system.
             LaunchedEffect(dark) {
                 val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                 else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             JdTheme(mode = mode) {
-                // Fensterhintergrund in der Schemafarbe, damit beim Drehen kein
-                // andersfarbiger Streifen unter der Oberflaeche aufblitzt
+                // Prevents a differently colored strip from flashing on rotation.
                 val background = MaterialTheme.colorScheme.background
                 LaunchedEffect(background) {
                     window.setBackgroundDrawable(background.toArgb().toDrawable())
@@ -147,9 +134,9 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * "Fortsetzen" aus der Zeitlimit-Benachrichtigung: der Dienst darf auf
-     * Android 15 nach dem 6-h-Limit nur aus dem Vordergrund neu starten -
-     * also ueber die Activity, nicht per PendingIntent auf den Dienst.
+     * "Resume" from the time-limit notification: after the 6-hour limit,
+     * Android 15 allows the service to restart only from the foreground,
+     * hence via the Activity rather than a PendingIntent to the service.
      */
     private fun handleResumeRequest(intent: Intent?) {
         if (intent?.getBooleanExtra(DownloadService.EXTRA_RESUME_ALL, false) == true) {
@@ -158,7 +145,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Verteilt eingehende Intents auf geteilten Text bzw. DLC-Dateien. */
+    /** Routes incoming intents to shared text or DLC files. */
     private fun handleIntent(intent: Intent?) {
         intent ?: return
         val uri: Uri? = when (intent.action) {
@@ -172,9 +159,8 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (uri != null) {
-            // Groessenbegrenzt und im Hintergrund lesen: der Filter nimmt jede
-            // octet-stream-Datei an, und Cloud-Anbieter laden die Datei beim
-            // Oeffnen erst herunter (sonst ANR auf dem Hauptthread).
+            // Off the main thread: the filter accepts any octet-stream file,
+            // and cloud providers download it on open.
             lifecycleScope.launch(Dispatchers.IO) {
                 val result = runCatching { ContainerFiles.readText(contentResolver, uri) }
                 val content = result.getOrNull()
@@ -191,7 +177,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Tabs der unteren Leiste; [labelRes] ist die uebersetzte Beschriftung. */
+/** Tabs of the bottom navigation bar. */
 private enum class Tab(val labelRes: Int) {
     Downloads(R.string.accounts_tab_downloads),
     Collector(R.string.accounts_tab_collector),
@@ -206,8 +192,6 @@ fun MainScreen(
     dlcContent: String?,
     onDlcConsumed: () -> Unit
 ) {
-    // Tab ueber Drehen/Neuerstellung behalten (Enums sind Serializable und
-    // damit direkt im Bundle sicherbar)
     var tab by rememberSaveable { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -215,16 +199,12 @@ fun MainScreen(
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
 
-    // Die Dialoge "Links hinzufuegen" und "Konto hinzufuegen" werden von hier
-    // aus geoeffnet (Plus-Knopf der aeusseren Scaffold, geteilter Text) und
-    // ueberleben Drehen und Tabwechsel.
+    // Dialog state lives here so it survives rotation and tab switches.
     var showAddLinks by rememberSaveable { mutableStateOf(false) }
     var addLinksPrefill by rememberSaveable { mutableStateOf("") }
     var showAddAccount by rememberSaveable { mutableStateOf(false) }
 
-    // Ein DLC wird unabhaengig vom offenen Tab importiert (der Linksammler
-    // ist bei Sofortstart gar nicht aufgebaut); danach dorthin wechseln, wo
-    // die Links landen.
+    // Import regardless of the open tab, then switch to where the links land.
     LaunchedEffect(dlcContent) {
         if (dlcContent != null) {
             downloadVm.importDlc(dlcContent)
@@ -232,8 +212,7 @@ fun MainScreen(
             tab = if (settings.currentAutoStartLinks()) Tab.Downloads else Tab.Collector
         }
     }
-    // Geteilter Text oeffnet den Dialog im Linksammler - also dorthin wechseln,
-    // sonst passiert bei offenem Konten-/Einstellungs-Tab sichtbar nichts
+    // The dialog belongs to the collector tab; switch there so it is visible.
     LaunchedEffect(sharedText) {
         if (sharedText != null) {
             addLinksPrefill = sharedText
@@ -242,18 +221,16 @@ fun MainScreen(
             tab = Tab.Collector
         }
     }
-    // Zurueck fuehrt erst zu den Downloads, dann aus der App. Die Bildschirme
-    // registrieren eigene Handler (Suche schliessen, Browser-Login) spaeter
-    // und haben damit Vorrang.
+    // Back goes to Downloads first, then leaves the app. Screens register their
+    // own handlers later and thus take precedence.
     BackHandler(enabled = tab != Tab.Downloads) { tab = Tab.Downloads }
 
-    // Zentrale Meldungen (DLC-Import, Kontofehler, ...): eine Fortschrittsmeldung
-    // bleibt stehen, bis die naechste Meldung sie abloest.
+    // A progress message stays until the next message replaces it.
     val messageHost = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
-        // Den laufenden Anzeige-Job abbrechen statt nur currentSnackbarData zu
-        // schliessen: kommt das Ergebnis direkt nach der Fortschrittsmeldung,
-        // ist die noch gar nicht sichtbar und bliebe sonst endlos stehen.
+        // Cancel the showing job rather than dismissing currentSnackbarData: a
+        // result arriving right after a progress message would find it not yet
+        // visible and leave it up forever.
         var showing: Job? = null
         AppMessages.events.collect { message ->
             AppMessages.markShown()
@@ -269,8 +246,7 @@ fun MainScreen(
         CrashDialog(report = report, onDismiss = { crashReport = null })
     }
 
-    // Browser-Login ersetzt vorruebergehend den ganzen Bildschirm, damit die
-    // System-Insets greifen und die Schaltflaechen sichtbar bleiben.
+    // Browser login replaces the whole screen so the system insets apply.
     val webLoginHoster by accountVm.webLogin.collectAsStateWithLifecycle()
     val webLoginUrl = webLoginHoster?.webLoginUrl
     if (webLoginUrl != null) {
@@ -288,7 +264,6 @@ fun MainScreen(
         return
     }
 
-    // Captcha-Ansicht des Free-Modus: ebenfalls ganzer Bildschirm
     val captcha by downloadVm.captcha.collectAsStateWithLifecycle()
     captcha?.let { request ->
         CaptchaScreen(
@@ -305,12 +280,11 @@ fun MainScreen(
     }
 
     Scaffold(
-        // Die Insets behandeln die inneren Bildschirme (eigene TopAppBar) und
-        // die NavigationBar selbst - sonst kaeme der Abstand doppelt.
+        // Inner screens (own TopAppBar) and the NavigationBar handle the insets;
+        // otherwise the padding would be applied twice.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { JdSnackbarHost(messageHost) },
-        // Plus-Knopf in der aeusseren Scaffold: so schiebt die Snackbar den
-        // Knopf nach oben statt ihn zu verdecken.
+        // FAB in the outer Scaffold so the snackbar pushes it up instead of covering it.
         floatingActionButton = {
             when (tab) {
                 Tab.Collector -> FloatingActionButton(
@@ -347,8 +321,7 @@ fun MainScreen(
         }
     ) { padding ->
         val modifier = Modifier.padding(padding)
-        // Zustand je Tab (Suche, Filter, zugeklappte Pakete, Scrollposition)
-        // beim Tabwechsel behalten statt jedes Mal neu aufzubauen
+        // Keeps per-tab state (search, filters, collapsed packages, scroll position).
         val holder = rememberSaveableStateHolder()
         holder.SaveableStateProvider(tab.name) {
             when (tab) {
@@ -366,14 +339,13 @@ fun MainScreen(
     }
 
     if (showAddLinks) {
-        // key: neue Vorbelegung (geteilter Text) setzt den Dialogtext zurueck
+        // A new prefill (shared text) resets the dialog text.
         key(addLinksPrefill) {
             AddLinksDialog(
                 initialText = addLinksPrefill,
                 onDismiss = { showAddLinks = false },
                 onAdd = { text, pkg ->
-                    // Meldungen ueber die Ressourcen aufloesen: der Rueckruf
-                    // laeuft ausserhalb der Komposition
+                    // The callback runs outside composition; no stringResource here.
                     downloadVm.addLinks(text, pkg) { added, toCollector ->
                         if (added > 0) {
                             AppMessages.success(
