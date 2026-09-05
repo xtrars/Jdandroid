@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
 import com.jdandroid.JdApp
+import com.jdandroid.R
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import kotlinx.coroutines.launch
@@ -52,8 +53,10 @@ object AccountRefresher {
                 val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
                 account.copy(
                     valid = if (permanent) false else account.valid,
-                    statusText = (e.message ?: "Prüfung fehlgeschlagen") +
-                        if (!permanent && account.valid) " (vorübergehend)" else "",
+                    statusText = (e.message ?: app.getString(R.string.service_account_check_failed)).let {
+                        if (!permanent && account.valid) app.getString(R.string.service_account_status_temporary, it)
+                        else it
+                    },
                     lastChecked = System.currentTimeMillis()
                 )
             }

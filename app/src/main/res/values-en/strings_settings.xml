@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings (SettingsScreen, Click'n'Load status, extraction, network) and crash dialog. Keys: settings_<meaning>. -->
+    <string name="settings_title">Settings</string>
+
+    <!-- Appearance -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_label">Light / Dark</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+
+    <!-- Downloads -->
+    <string name="settings_section_downloads">Downloads</string>
+    <string name="settings_max_concurrent_label">Simultaneous downloads (1–99)</string>
+    <string name="settings_speed_limit_label">Speed limit (Mbit/s, 0 = unlimited)</string>
+    <string name="settings_speed_limit_hint">Shared by all running downloads</string>
+    <string name="settings_speed_limit_hint_bytes">Shared by all running downloads, equals %1$s/s</string>
+    <string name="settings_auto_start_title">Start new links immediately</string>
+    <string name="settings_auto_start_subtitle">Off: links go to the Link Grabber first, are checked online and only start on \"Start\"</string>
+    <string name="settings_wifi_only_title">Download over Wi-Fi only</string>
+    <string name="settings_wifi_only_subtitle">Pause downloads on mobile data and resume automatically as soon as Wi-Fi is available</string>
+    <string name="settings_free_mode_title">Free mode</string>
+    <string name="settings_free_mode_subtitle">Download without an account: with waiting times and possibly a captcha</string>
+
+    <!-- Target folder -->
+    <string name="settings_target_folder">Download folder</string>
+    <string name="settings_target_folder_chosen">Selected: %1$s</string>
+    <string name="settings_target_folder_default_public">Default: Downloads/JDAndroid</string>
+    <string name="settings_target_folder_default_private">Default: app folder (not public)</string>
+    <string name="settings_target_folder_main_storage">Internal storage</string>
+    <string name="settings_choose_folder">Choose folder …</string>
+    <string name="settings_reset">Reset</string>
+    <string name="settings_export_title">Use public Downloads folder</string>
+    <string name="settings_export_subtitle">Move finished files to Downloads/JDAndroid</string>
+
+    <!-- Extraction -->
+    <string name="settings_auto_extract_title">Extract archives automatically</string>
+    <string name="settings_auto_extract_subtitle">Extract ZIP, 7z and RAR after download, including multi-part archives</string>
+    <string name="settings_flat_extract_title">Flat extraction</string>
+    <string name="settings_flat_extract_subtitle">Folders inside the archive are ignored, all files go directly into the package folder; duplicate names get (2), (3) …</string>
+    <string name="settings_delete_archive_title">Delete archive after extraction</string>
+    <string name="settings_delete_archive_subtitle">Saves storage space, the original archive is removed</string>
+    <string name="settings_remove_entries_title">Remove entries after extraction</string>
+    <string name="settings_remove_entries_subtitle">All parts of the archive disappear from the download list once it has been extracted successfully</string>
+
+    <!-- Password list -->
+    <string name="settings_passwords_title">Password list</string>
+    <string name="settings_passwords_description">All passwords are tried in order when extracting. Passwords from Click\'n\'Load are added automatically.</string>
+    <string name="settings_passwords_empty">No passwords yet.</string>
+    <string name="settings_passwords_field_label">New password</string>
+    <string name="settings_passwords_import_title">Paste passwords</string>
+    <string name="settings_passwords_import_placeholder">One password per line</string>
+    <string name="settings_passwords_remove">Remove password</string>
+
+    <!-- Exclusion patterns -->
+    <string name="settings_excludes_title">Exclude from extraction</string>
+    <!-- %1$s: example patterns from settings_exclude_examples, joined by commas -->
+    <string name="settings_excludes_description">Files inside the archive that match these patterns are not extracted. * stands for any characters, ? for a single one, e.g. %1$s</string>
+    <string name="settings_excludes_empty">No exclusions – everything is extracted.</string>
+    <string name="settings_excludes_field_label">New pattern</string>
+    <string name="settings_excludes_import_title">Paste patterns</string>
+    <string name="settings_excludes_import_placeholder">One pattern per line</string>
+    <string name="settings_excludes_remove">Remove pattern</string>
+    <string-array name="settings_exclude_examples">
+        <item>*.nfo</item>
+        <item>*.sfv</item>
+        <item>*sample*</item>
+        <item>proof/*</item>
+    </string-array>
+
+    <!-- List editor (passwords, patterns) -->
+    <string name="settings_list_empty">no entries</string>
+    <plurals name="settings_list_count">
+        <item quantity="one">%1$d entry</item>
+        <item quantity="other">%1$d entries</item>
+    </plurals>
+    <string name="settings_collapse">Collapse</string>
+    <string name="settings_expand">Expand</string>
+    <string name="settings_add">Add</string>
+    <string name="settings_import_multiple">Paste several …</string>
+    <string name="settings_apply">Apply</string>
+
+    <!-- Containers and Click'n'Load -->
+    <string name="settings_section_cnl">Containers &amp; Click\'n\'Load</string>
+    <string name="settings_cnl_title">Enable Click\'n\'Load</string>
+    <string name="settings_cnl_subtitle">Local server on port %1$d. Browsers on this device can send links straight here.</string>
+    <string name="settings_cnl_status_running">Status: server is running on port %1$d (%2$s) and accepting links.</string>
+    <string name="settings_cnl_status_failed">Status: start failed – %1$s</string>
+    <string name="settings_cnl_status_starting">Status: server is starting …</string>
+    <string name="settings_cnl_status_off">Status: off.</string>
+    <string name="settings_cnl_last_request">Last request: %1$s</string>
+    <string name="settings_cnl_no_request">No request from a browser received yet.</string>
+    <string name="settings_cnl_test">Test connection</string>
+    <string name="settings_cnl_testing">Testing …</string>
+    <string name="settings_cnl_chrome_hint">Note: on the first Click\'n\'Load, Chrome asks whether the page may access the local network – this must be allowed. If no request appears here after clicking, the browser has blocked the connection to 127.0.0.1.</string>
+    <string name="settings_dlc_hint">DLC files can be imported via \"Open with\" or Share. Decryption uses the JDownloader DLC service.</string>
+
+    <!-- Footer -->
+    <string name="settings_hosters_hint">Supported hosters: Rapidgator, 1fichier, ddownload.\nDownloads use the hosters\' official APIs and require a premium account or API key (\"Accounts\" tab).</string>
+    <!-- %1$s: versionName, %2$d: versionCode -->
+    <string name="settings_version">JDAndroid %1$s (%2$d)</string>
+
+    <!-- Crash dialog (CrashDialog) -->
+    <string name="settings_crash_title">The app has crashed</string>
+    <string name="settings_crash_hint">Please copy this report and pass it on – it pinpoints the cause.</string>
+    <string name="settings_crash_clip_label">Crash report</string>
+    <string name="settings_crash_discard">Discard</string>
+</resources>

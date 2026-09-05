@@ -38,35 +38,37 @@ internal class FreeFlow(
             premium != null -> hoster.resolve(item.url, premium)
             settings.currentFreeMode() ->
                 hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
-            account != null -> throw HosterException(FreeMode.NO_PREMIUM_MESSAGE, true)
-            else -> throw HosterException(FreeMode.DISABLED_MESSAGE, true)
+            account != null -> throw HosterException(FreeMode.noPremiumMessage(), true)
+            else -> throw HosterException(FreeMode.disabledMessage(), true)
         }
     }
 
     /**
      * Der Hoster verlangt eine Wartezeit. Der Eintrag bleibt QUEUED mit
      * retryAt nach Ablauf (nextQueued prueft retryAt). Kein Fehlversuch -
-     * Warten ist kein Fehler. Der Grund des Hosters ("Tageslimit erreicht")
-     * bleibt in der Meldung sichtbar.
+     * Warten ist kein Fehler. Gespeichert wird der Code [FreeMode.WAIT_CODE]
+     * samt Grund des Hosters ("Tageslimit erreicht"); die Anzeige baut daraus
+     * Countdown und Text.
      */
     suspend fun scheduleWait(id: Long, seconds: Int, reason: String?) {
         val item = dao.byId(id) ?: return
         val retryAt = FreeMode.retryAt(System.currentTimeMillis(), seconds)
-        dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitMessage(seconds, reason))
+        dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitNote(reason))
     }
 
     /**
      * Captcha noetig. Der Eintrag bleibt QUEUED, aber mit retryAt weit in der
      * Zukunft - erst "Captcha loesen" (Browser) gibt ihn wieder frei. Seite
-     * und Session-Cookies merkt sich [FreeDownloads] prozessweit; die Meldung
-     * nennt den Grund des Hosters (Passwort, Turnstile).
+     * und Session-Cookies merkt sich [FreeDownloads] prozessweit; gespeichert
+     * wird der Code [FreeMode.CAPTCHA_CODE] samt Grund des Hosters (Passwort,
+     * Turnstile).
      */
     suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
         val item = dao.byId(id) ?: return
         FreeDownloads.captchaRequired(id, CaptchaPage(e.pageUrl, e.cookieUrl, e.cookies))
         dao.scheduleRetry(
             id, item.attempts, System.currentTimeMillis() + FreeMode.CAPTCHA_HOLD_MS,
-            FreeMode.captchaMessage(e.message)
+            FreeMode.captchaNote(e.message)
         )
     }
 }

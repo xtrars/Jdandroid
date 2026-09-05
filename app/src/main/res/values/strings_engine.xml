@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <!-- Engine ohne Context (DownloadEngine, Extractor, FreeMode, Format) ueber Texts.t; jeder Schluessel steht wortgleich in core/texts/EngineTexts.kt. Schluessel: engine_<bedeutung>.
+         UnusedResources ist abgeschaltet: die Aufloesung laeuft ueber getIdentifier, Lint sieht keine Verwendung. -->
+
+    <!-- Free-Modus: Anzeige der gespeicherten Codes -->
+    <string name="engine_free_wait">Wartezeit im Free-Modus: %1$s</string>
+    <string name="engine_free_wait_reason">Wartezeit im Free-Modus: %1$s – %2$s</string>
+    <string name="engine_free_captcha">Captcha nötig – im Menü „Captcha lösen“</string>
+    <string name="engine_free_captcha_reason">%1$s – im Menü „Captcha lösen“</string>
+    <string name="engine_free_disabled">Kein Konto und Free-Modus aus</string>
+    <string name="engine_free_no_premium">Konto ohne Premium und Free-Modus aus</string>
+
+    <!-- Download-Ablauf -->
+    <string name="engine_target_folder">Zielordner</string>
+    <string name="engine_unknown_hoster">Unbekannter Hoster</string>
+    <string name="engine_generic_error">Fehler</string>
+    <string name="engine_invalid_download_url">Ungültige Download-Adresse: %1$s</string>
+    <string name="engine_gave_up" tools:ignore="PluralsCandidate">%1$s (nach %2$d Versuchen aufgegeben)</string>
+    <string name="engine_retry_scheduled">%1$s – Versuch %2$d/%3$d in %4$d s</string>
+    <string name="engine_part_size_mismatch">Teildatei passt nicht zur Dateigröße – Neustart</string>
+    <string name="engine_http_error">Server antwortete mit HTTP %1$d</string>
+    <string name="engine_html_instead_of_file">Server lieferte eine HTML-Seite statt der Datei (%1$s) – Link wird neu aufgelöst</string>
+    <string name="engine_empty_response">Leere Antwort beim Download</string>
+    <string name="engine_not_enough_space">Zu wenig Speicherplatz: %1$s benötigt, %2$s frei</string>
+    <string name="engine_download_incomplete">Download unvollständig (%1$s von %2$s)</string>
+    <string name="engine_hash_mismatch">Prüfsumme (%1$s) stimmt nicht – Datei wird erneut geladen</string>
+
+    <!-- Archive und Entpacken -->
+    <string name="engine_archive_name_clash">Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt</string>
+    <string name="engine_first_volume_missing_not_extracted">Erstes Archiv-Teil fehlt, nicht entpackt</string>
+    <string name="engine_first_volume_missing">Erstes Archiv-Teil fehlt</string>
+    <string name="engine_entry_not_found">Eintrag nicht gefunden</string>
+    <string name="engine_already_extracting">Wird bereits entpackt</string>
+    <string name="engine_only_completed_extractable">Nur fertige Downloads lassen sich entpacken</string>
+    <string name="engine_file_name_unknown">Dateiname unbekannt</string>
+    <string name="engine_not_an_archive">Kein Archiv: %1$s</string>
+    <string name="engine_archive_part_missing">Archivteil nicht mehr vorhanden: %1$s</string>
+    <string name="engine_archive_incomplete_loading">Archiv unvollständig – weitere Teile werden noch geladen</string>
+
+    <!-- Entpacker -->
+    <string name="engine_seven_zip_unavailable">Native 7-Zip-Bibliothek konnte nicht geladen werden (RAR-Entpacken nicht möglich): %1$s</string>
+    <string name="engine_unknown_archive_format">Unbekanntes Archivformat: %1$s</string>
+    <string name="engine_extract_failed">Entpacken fehlgeschlagen (Passwort nicht in der Liste?): %1$s</string>
+    <string name="engine_move_failed">Konnte %1$s nicht nach %2$s verschieben</string>
+    <string name="engine_password_required">Passwort erforderlich</string>
+    <string name="engine_no_password_needed">Kein Passwort nötig</string>
+    <string name="engine_rar_extraction_result">RAR-Extraktion: %1$s</string>
+    <string name="engine_invalid_archive_path">Ungültiger Pfad im Archiv: %1$s</string>
+    <string name="engine_secrets_encrypt_failed">Zugangsdaten konnten nicht verschlüsselt werden (Android-Keystore nicht verfügbar: %1$s). Bitte Gerät entsperren und erneut versuchen.</string>
+    <string name="engine_secrets_decrypt_failed">Zugangsdaten nicht lesbar (Android-Keystore: %1$s). Bitte das Konto löschen und neu anlegen.</string>
+    <string name="engine_secrets_key_missing">Schlüssel fehlt im Keystore</string>
+    <string name="engine_package_from_date">Paket vom %1$s</string>
+</resources>

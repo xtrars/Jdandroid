@@ -6,6 +6,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.jdandroid.data.AppDatabase
+import com.jdandroid.data.DownloadNotes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -138,30 +139,39 @@ class MigrationTest {
     }
 
     @Test
-    fun migrate10To11_entferntExtractProgressUndBehaeltDaten() {
+    fun migrate10To11_entferntExtractProgressWandeltVermerkeUndBehaeltDaten() {
         helper.createDatabase(dbName, 10).apply {
             execSQL("INSERT INTO packages (id, name, autoNamed, source, addedAt) VALUES (1, 'Paket', 1, NULL, 1)")
-            insertDownload10(this, 1, "https://example.org/a", "x.part1.rar", "x", 1, 50)
-            insertDownload10(this, 2, "https://example.org/b", "film.mkv", null, null, -1)
+            insertDownload10(this, 1, "https://example.org/a", "x.part1.rar", "x", 1, 50, DownloadNotes.LEGACY_WAITING_PARTS)
+            insertDownload10(this, 2, "https://example.org/b", "film.mkv", null, null, -1, DownloadNotes.LEGACY_WAITING_WIFI)
+            insertDownload10(this, 3, "https://example.org/c", "c.bin", null, null, -1, "Hoster-Meldung")
+            insertDownload10(this, 4, "https://example.org/d", null, null, null, -1, null)
             close()
         }
         val db = helper.runMigrationsAndValidate(dbName, 11, true, AppDatabase.MIGRATION_10_11)
-        db.query("SELECT id, url, fileName, archiveKey, packageId, status, downloadedBytes FROM downloads ORDER BY id")
-            .use { c ->
-                assertEquals(2, c.count)
-                assertTrue(c.moveToFirst())
-                assertEquals(1L, c.getLong(0))
-                assertEquals("https://example.org/a", c.getString(1))
-                assertEquals("x.part1.rar", c.getString(2))
-                assertEquals("x", c.getString(3))
-                assertEquals(1L, c.getLong(4))
-                assertEquals("EXTRACTING", c.getString(5))
-                assertEquals(10L, c.getLong(6))
-                assertTrue(c.moveToNext())
-                assertEquals(2L, c.getLong(0))
-                assertTrue(c.isNull(3))
-                assertTrue(c.isNull(4))
-            }
+        db.query(
+            "SELECT id, url, fileName, archiveKey, packageId, status, downloadedBytes, errorMessage FROM downloads ORDER BY id"
+        ).use { c ->
+            assertEquals(4, c.count)
+            assertTrue(c.moveToFirst())
+            assertEquals(1L, c.getLong(0))
+            assertEquals("https://example.org/a", c.getString(1))
+            assertEquals("x.part1.rar", c.getString(2))
+            assertEquals("x", c.getString(3))
+            assertEquals(1L, c.getLong(4))
+            assertEquals("EXTRACTING", c.getString(5))
+            assertEquals(10L, c.getLong(6))
+            assertEquals(DownloadNotes.WAITING_PARTS, c.getString(7))
+            assertTrue(c.moveToNext())
+            assertEquals(2L, c.getLong(0))
+            assertTrue(c.isNull(3))
+            assertTrue(c.isNull(4))
+            assertEquals(DownloadNotes.WAITING_WIFI, c.getString(7))
+            assertTrue(c.moveToNext())
+            assertEquals("Hoster-Meldung", c.getString(7))
+            assertTrue(c.moveToNext())
+            assertTrue(c.isNull(7))
+        }
         db.query("PRAGMA table_info(downloads)").use { c ->
             val columns = generateSequence { if (c.moveToNext()) c.getString(1) else null }.toList()
             assertFalse(columns.contains("extractProgress"))
@@ -181,11 +191,11 @@ class MigrationTest {
         // AUTOINCREMENT laeuft nach dem Neuaufbau hinter den vorhandenen Ids weiter
         db.execSQL(
             "INSERT INTO downloads (url, hosterId, fileSize, downloadedBytes, speedBps, status, attempts, " +
-                "retryAt, online, addedAt) VALUES ('https://example.org/c', 'ddownload', -1, 0, 0, 'QUEUED', 0, 0, 0, 1)"
+                "retryAt, online, addedAt) VALUES ('https://example.org/e', 'ddownload', -1, 0, 0, 'QUEUED', 0, 0, 0, 1)"
         )
         db.query("SELECT MAX(id) FROM downloads").use { c ->
             assertTrue(c.moveToFirst())
-            assertEquals(3L, c.getLong(0))
+            assertEquals(5L, c.getLong(0))
         }
     }
 
@@ -209,16 +219,16 @@ class MigrationTest {
         }
     }
 
-    /** Fuegt eine downloads-Zeile im Schema der Version 10 ein (mit extractProgress und archiveKey). */
+    /** Fuegt eine downloads-Zeile im Schema der Version 10 ein (mit extractProgress und archiveKey) samt Vermerk. */
     private fun insertDownload10(
         db: SupportSQLiteDatabase, id: Long, url: String, fileName: String?, archiveKey: String?,
-        packageId: Long?, extractProgress: Int
+        packageId: Long?, extractProgress: Int, note: String?
     ) {
         db.execSQL(
             "INSERT INTO downloads (id, url, hosterId, packageId, fileName, archiveKey, fileSize, downloadedBytes, " +
                 "speedBps, status, errorMessage, localPath, attempts, retryAt, online, extractProgress, addedAt) VALUES " +
-                "(?, ?, 'ddownload', ?, ?, ?, 10, 10, 0, 'EXTRACTING', NULL, NULL, 0, 0, 0, ?, 1)",
-            arrayOf<Any?>(id, url, packageId, fileName, archiveKey, extractProgress)
+                "(?, ?, 'ddownload', ?, ?, ?, 10, 10, 0, 'EXTRACTING', ?, NULL, 0, 0, 0, ?, 1)",
+            arrayOf<Any?>(id, url, packageId, fileName, archiveKey, note, extractProgress)
         )
     }
 

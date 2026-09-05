@@ -1,5 +1,6 @@
 package com.jdandroid
 
+import com.jdandroid.core.Texts
 import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.Http
 import com.jdandroid.hoster.RapidgatorBlock
@@ -177,11 +178,11 @@ class RapidgatorFreeTest {
     }
 
     @Test
-    fun premiumGrenzenSindEndgueltigMitDeutscherMeldung() {
+    fun premiumGrenzenSindEndgueltigMitMeldung() {
         val zuGross = RapidgatorFreePage.classify(
             "You can download files up to 500 MB in free mode. Upgrade to premium"
         ) as RapidgatorBlock.Permanent
-        assertTrue(zuGross.text, zuGross.text.contains("500 MB") && zuGross.text.contains("Premium"))
+        assertEquals(Texts.t("hoster_rapidgator_free_size_limit", "500 MB"), zuGross.text)
         assertTrue(RapidgatorFreePage.classify("This file can be downloaded by premium only<") is RapidgatorBlock.Permanent)
         assertTrue(
             RapidgatorFreePage.classify(
@@ -194,7 +195,7 @@ class RapidgatorFreeTest {
     fun sperrenMitZeitangabeWerdenZurWartezeit() {
         val delay = RapidgatorFreePage.classify("Delay between downloads must be not less than 120 min") as RapidgatorBlock.Wait
         assertEquals(120 * 60 + 1, delay.seconds)
-        assertTrue(delay.text, delay.text.contains("120 Minuten"))
+        assertEquals(Texts.t("hoster_rapidgator_next_free_in", Texts.t("hoster_duration_hours", 2)), delay.text)
         assertEquals(10 * 60 + 1, (RapidgatorFreePage.classify("Try again in 10 minutes") as RapidgatorBlock.Wait).seconds)
         assertEquals(31, (RapidgatorFreePage.classify("Try again in 30 seconds") as RapidgatorBlock.Wait).seconds)
         assertEquals(3601, (RapidgatorFreePage.classify("Try again in 1 hour") as RapidgatorBlock.Wait).seconds)

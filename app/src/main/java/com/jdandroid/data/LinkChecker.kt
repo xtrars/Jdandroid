@@ -1,6 +1,7 @@
 package com.jdandroid.data
 
 import com.jdandroid.JdApp
+import com.jdandroid.R
 import com.jdandroid.core.ArchiveNames
 import com.jdandroid.core.FileNames
 import com.jdandroid.hoster.HosterRegistry
@@ -42,8 +43,8 @@ object LinkChecker {
                             val name = result.fileName?.let { FileNames.sanitize(it) }
                             dao.applyCheck(id, OnlineState.ONLINE, null, name, ArchiveNames.archiveKey(name), result.fileSize)
                         }
-                        false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: "Datei offline", null, null, -1)
-                        null -> dao.applyCheck(id, OnlineState.UNKNOWN, result?.note ?: "Prüfung nicht möglich", null, null, -1)
+                        false -> dao.applyCheck(id, OnlineState.OFFLINE, result.note ?: app.getString(R.string.service_link_offline), null, null, -1)
+                        null -> dao.applyCheck(id, OnlineState.UNKNOWN, result?.note ?: app.getString(R.string.service_link_check_unavailable), null, null, -1)
                     }
                     if (result?.online == true) PackageNaming.refineAutoName(app.db, item.packageId)
                 }

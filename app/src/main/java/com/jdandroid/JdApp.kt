@@ -3,8 +3,10 @@ package com.jdandroid
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import androidx.room.Room
 import com.jdandroid.core.AppMessages
+import com.jdandroid.core.Texts
 import com.jdandroid.data.AppDatabase
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.SettingsRepository
@@ -22,7 +24,9 @@ class JdApp : Application() {
      * Mit Exception-Handler: ein voller Speicher (SQLiteFullException) darf
      * die App nicht beenden, sondern wird als Meldung angezeigt.
      */
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + backgroundErrors("Hintergrund"))
+    val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + backgroundErrors(this, R.string.service_scope_background)
+    )
 
     lateinit var db: AppDatabase
         private set
@@ -32,6 +36,8 @@ class JdApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install(this)
+        // Texte der Engine/Hoster-Schicht in der Geraetesprache aufloesen
+        Texts.install(ResourceTexts(this))
         // WebView-Kennung im Hintergrund holen (laedt den WebView-Provider)
         Thread {
             com.jdandroid.hoster.Http.browserUserAgent =
@@ -59,16 +65,16 @@ class JdApp : Application() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_DOWNLOADS,
-                "Downloads",
+                getString(R.string.service_channel_downloads),
                 NotificationManager.IMPORTANCE_LOW
             )
         )
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_EVENTS,
-                "Hinweise",
+                getString(R.string.service_channel_events),
                 NotificationManager.IMPORTANCE_DEFAULT
-            ).apply { description = "Neue Links per Click'n'Load, offene Downloads nach Neustart" }
+            ).apply { description = getString(R.string.service_channel_events_description) }
         )
     }
 
@@ -76,10 +82,18 @@ class JdApp : Application() {
         const val CHANNEL_DOWNLOADS = "downloads"
         const val CHANNEL_EVENTS = "events"
 
-        /** Unbehandelte Fehler in Hintergrund-Coroutinen als Meldung statt Absturz. */
-        fun backgroundErrors(where: String) = CoroutineExceptionHandler { _, e ->
+        /**
+         * Unbehandelte Fehler in Hintergrund-Coroutinen als Meldung statt
+         * Absturz. [whereRes] ist der Bereichsname; er wird erst im Fehlerfall
+         * aufgeloest, weil der Handler in Feld-Initialisierern entsteht, wenn
+         * der Context noch nicht angebunden ist.
+         */
+        fun backgroundErrors(context: Context, whereRes: Int) = CoroutineExceptionHandler { _, e ->
+            val where = context.getString(whereRes)
             android.util.Log.w("JDAndroid", "$where: ${e.message}", e)
-            AppMessages.error("$where: ${e.message ?: e.javaClass.simpleName}")
+            AppMessages.error(
+                context.getString(R.string.service_background_error, where, e.message ?: e.javaClass.simpleName)
+            )
         }
     }
 }

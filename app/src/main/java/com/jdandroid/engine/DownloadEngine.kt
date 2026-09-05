@@ -10,6 +10,8 @@ import com.jdandroid.core.FileNames
 import com.jdandroid.core.FreeMode
 import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
+import com.jdandroid.core.Texts
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
@@ -265,7 +267,7 @@ class DownloadEngine(
                 }
             }
             val hoster = HosterRegistry.byId(item.hosterId)
-                ?: throw HosterException("Unbekannter Hoster", true)
+                ?: throw HosterException(Texts.t("engine_unknown_hoster"), true)
             // Premium- oder Free-Weg (Wartezeiten, Captcha) waehlt der FreeFlow
             val resolved = freeFlow.resolve(id, item, hoster)
 
@@ -286,14 +288,14 @@ class DownloadEngine(
             if (e.permanent) {
                 dao.setStatus(id, DownloadStatus.FAILED, e.message)
             } else {
-                handleTransientFailure(id, e.message ?: "Fehler")
+                handleTransientFailure(id, e.message ?: Texts.t("engine_generic_error"))
             }
         } catch (e: com.jdandroid.data.Secrets.SecretsException) {
             // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
             dao.setStatus(id, DownloadStatus.FAILED, e.message)
         } catch (e: IllegalArgumentException) {
             // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
-            dao.setStatus(id, DownloadStatus.FAILED, "Ungültige Download-Adresse: ${e.message}")
+            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_invalid_download_url", e.message ?: ""))
         } catch (e: Exception) {
             // Abbruch (Pause/Loeschen) kommt von OkHttp als IOException("Canceled"):
             // nicht als voruebergehenden Fehler zaehlen, sondern sauber beenden
@@ -320,16 +322,13 @@ class DownloadEngine(
         val item = dao.byId(id) ?: return
         val attempts = item.attempts + 1
         if (attempts > MAX_ATTEMPTS) {
-            dao.setStatus(
-                id, DownloadStatus.FAILED,
-                "$message (nach $MAX_ATTEMPTS Versuchen aufgegeben)"
-            )
+            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_gave_up", message, MAX_ATTEMPTS))
             return
         }
         val backoff = backoffMillis(attempts)
         dao.scheduleRetry(
             id, attempts, System.currentTimeMillis() + backoff,
-            "$message – Versuch $attempts/$MAX_ATTEMPTS in ${backoff / 1000}s"
+            Texts.t("engine_retry_scheduled", message, attempts, MAX_ATTEMPTS, backoff / 1000)
         )
         // Den Folgeversuch stoesst der Timer aus pump() an (run() ruft pump() im finally)
     }
@@ -443,15 +442,14 @@ class DownloadEngine(
             // Teildatei zu lang (z.B. Fremdinhalt): muss neu geladen werden
             ResponseKind.RestartMismatch -> {
                 target.delete()
-                throw HosterException("Teildatei passt nicht zur Dateigröße – Neustart")
+                throw HosterException(Texts.t("engine_part_size_mismatch"))
             }
-            ResponseKind.HttpError -> throw HosterException("Server antwortete mit HTTP ${resp.code}")
+            ResponseKind.HttpError -> throw HosterException(Texts.t("engine_http_error", resp.code))
             // HTML statt Datei (abgelaufener Link, Sitzungsseite, Fehlerseite):
             // niemals als Dateiinhalt speichern - sonst landet die Seite in der
             // .part und wird beim Fortsetzen mit dem echten Rest verklebt.
             ResponseKind.HtmlPage -> throw HosterException(
-                "Server lieferte eine HTML-Seite statt der Datei (${resp.request.url.host}) – " +
-                    "Link wird neu aufgelöst"
+                Texts.t("engine_html_instead_of_file", resp.request.url.host)
             )
             // Server ignoriert Range -> von vorn beginnen
             ResponseKind.RangeIgnored -> {
@@ -470,8 +468,7 @@ class DownloadEngine(
         val free = android.os.StatFs(storage.downloadDir().path).availableBytes
         if (needed > 0 && free in 0 until needed) {
             throw HosterException(
-                "Zu wenig Speicherplatz: ${needed / (1 shl 20)} MiB benötigt, " +
-                    "${free / (1 shl 20)} MiB frei",
+                Texts.t("engine_not_enough_space", formatBytes(needed), formatBytes(free)),
                 permanent = true
             )
         }
@@ -554,7 +551,7 @@ class DownloadEngine(
             }
         }
         if (total > 0 && written < total) {
-            throw IOException("Download unvollständig ($written von $total Bytes)")
+            throw IOException(Texts.t("engine_download_incomplete", formatBytes(written), formatBytes(total)))
         }
         return true
     }
@@ -593,7 +590,7 @@ class DownloadEngine(
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (!actual.equals(expected, ignoreCase = true)) {
             file.delete()
-            throw HosterException("Prüfsumme ($algorithm) stimmt nicht – Datei wird erneut geladen")
+            throw HosterException(Texts.t("engine_hash_mismatch", algorithm))
         }
     }
 

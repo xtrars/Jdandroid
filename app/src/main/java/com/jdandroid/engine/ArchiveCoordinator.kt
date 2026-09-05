@@ -6,9 +6,11 @@ import com.jdandroid.core.Clock
 import com.jdandroid.core.FileNames
 import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
+import com.jdandroid.core.Texts
 import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadDao
 import com.jdandroid.data.DownloadItem
+import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.SettingsRepository
 import com.jdandroid.data.renameFile
@@ -114,7 +116,7 @@ internal class ArchiveCoordinator(
             val clash = archiveFile.isFile && temp.path != archiveFile.path &&
                 dao.countSameNameElsewhere(fileName, packageId) > 0
             if (clash) {
-                markCompleted(id, storage.finish(temp, fileName), "Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt")
+                markCompleted(id, storage.finish(temp, fileName), Texts.t("engine_archive_name_clash"))
                 return@withLock null
             }
             // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
@@ -148,7 +150,7 @@ internal class ArchiveCoordinator(
         val primary = Extractor.findPrimaryVolume(storage.downloadDir(), set.base)
         if (primary == null) {
             dao.byId(set.id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
-            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, "Erstes Archiv-Teil fehlt, nicht entpackt")
+            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, Texts.t("engine_first_volume_missing_not_extracted"))
             return
         }
         // Entpacken in eigenem Job: der Download-Slot wird sofort frei, die
@@ -221,10 +223,10 @@ internal class ArchiveCoordinator(
     }
 
     private suspend fun extractNowInner(id: Long): String? {
-        val item = dao.byId(id) ?: return "Eintrag nicht gefunden"
-        if (item.status == DownloadStatus.EXTRACTING) return "Wird bereits entpackt"
-        if (item.status != DownloadStatus.COMPLETED) return "Nur fertige Downloads lassen sich entpacken"
-        var name = item.fileName ?: return "Dateiname unbekannt"
+        val item = dao.byId(id) ?: return Texts.t("engine_entry_not_found")
+        if (item.status == DownloadStatus.EXTRACTING) return Texts.t("engine_already_extracting")
+        if (item.status != DownloadStatus.COMPLETED) return Texts.t("engine_only_completed_extractable")
+        var name = item.fileName ?: return Texts.t("engine_file_name_unknown")
         var base = ArchiveNames.archiveBase(name)
         val downloadDir = storage.downloadDir()
         if (base == null) {
@@ -253,29 +255,29 @@ internal class ArchiveCoordinator(
             // Vielleicht ein Archiv ohne passende Endung
             val local = File(downloadDir, name).takeIf { it.isFile }
                 ?: run { val f = File(downloadDir, name); if (restoreArchive(item, f)) f else null }
-            val ext = local?.let { Extractor.sniffExtension(it) } ?: return "Kein Archiv: $name"
+            val ext = local?.let { Extractor.sniffExtension(it) } ?: return Texts.t("engine_not_an_archive", name)
             val renamed = File(downloadDir, "$name.$ext")
             local.renameTo(renamed)
             name = renamed.name
             dao.renameFile(id, name)
-            base = ArchiveNames.archiveBase(name) ?: return "Kein Archiv: $name"
+            base = ArchiveNames.archiveBase(name) ?: return Texts.t("engine_not_an_archive", name)
         }
         for (part in dao.completedParts(item.packageId, base)) {
             val partName = part.fileName ?: continue
             val local = File(downloadDir, partName)
             if (!local.isFile && !restoreArchive(part, local)) {
-                return "Archivteil nicht mehr vorhanden: $partName"
+                return Texts.t("engine_archive_part_missing", partName)
             }
         }
         val primary = Extractor.findPrimaryVolume(downloadDir, base)
-            ?: return "Erstes Archiv-Teil fehlt"
-        if (ExtractionRegistry.isActive(base)) return "Wird bereits entpackt"
+            ?: return Texts.t("engine_first_volume_missing")
+        if (ExtractionRegistry.isActive(base)) return Texts.t("engine_already_extracting")
         val set = ArchiveSet(id, item.packageId, base)
         completionMutex.withLock {
             // Laufende Teile gehoeren nicht ins Set: sie wuerden auf EXTRACTING
             // gesetzt und nach dem Entpacken als "fertig" markiert, obwohl sie noch laden
             if (dao.pendingLoadingParts(item.packageId, base, id) > 0) {
-                return "Archiv unvollständig – weitere Teile werden noch geladen"
+                return Texts.t("engine_archive_incomplete_loading")
             }
             dao.setExtractingSet(archiveSetIds(set))
         }
@@ -384,7 +386,11 @@ internal class ArchiveCoordinator(
     }
 
     internal companion object {
-        /** Hinweis an fertigen Archiv-Teilen, solange andere Teile noch laden. */
-        const val WAITING_NOTE = "Warte auf weitere Archiv-Teile"
+        /**
+         * Vermerk an fertigen Archiv-Teilen, solange andere Teile noch laden.
+         * Untranslatierter Code (SQL-Vergleich in [com.jdandroid.data.ArchiveSets.WAITING_PARTS]);
+         * die Anzeige uebersetzt ihn (`downloads_waiting_for_parts`).
+         */
+        const val WAITING_NOTE = DownloadNotes.WAITING_PARTS
     }
 }

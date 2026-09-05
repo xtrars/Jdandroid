@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <!-- Hoster layer without a context (ddownload, Rapidgator, 1fichier) via Texts.t; every key mirrors core/texts/HosterTexts.kt. Keys: hoster_<meaning>. -->
+
+    <!-- General -->
+    <string name="hoster_free_status">Free</string>
+    <string name="hoster_free_status_unsupported">Free (downloads not possible)</string>
+    <string name="hoster_free_unsupported">Free mode is not supported by this hoster</string>
+    <string name="hoster_no_check_possible">Cannot be checked</string>
+    <string name="hoster_file_offline">File is offline</string>
+    <string name="hoster_file_not_found">File not found</string>
+    <string name="hoster_unknown_error">Unknown error</string>
+    <string name="hoster_unexpected_response">Unexpected response</string>
+    <string name="hoster_empty_server_response">Empty response from server</string>
+    <string name="hoster_api_no_response">No response from the API</string>
+    <string name="hoster_http_status">HTTP %1$d</string>
+    <string name="hoster_status_code">Status %1$d</string>
+    <string name="hoster_http_status_unknown">HTTP %1$d – status unknown</string>
+    <string name="hoster_cloudflare_check_unknown">Cloudflare check – status unknown</string>
+    <string name="hoster_no_username">No username stored</string>
+    <string name="hoster_no_password">No password stored</string>
+    <string name="hoster_no_api_key">No API key stored</string>
+    <string name="hoster_too_many_requests">Too many requests (HTTP %1$d)</string>
+    <string name="hoster_not_authenticated">Not authenticated (HTTP %1$d)</string>
+    <string name="hoster_access_blocked">Access blocked (HTTP 403)</string>
+    <string name="hoster_status_quota_unreadable">%1$s · quota not readable</string>
+    <string name="hoster_status_cdn_credit">%1$s · CDN credit %2$.1f GB</string>
+    <string name="hoster_duration_hours">%1$d h</string>
+    <string name="hoster_duration_minutes">%1$d min</string>
+    <string name="hoster_duration_seconds">%1$d s</string>
+
+    <!-- ddownload -->
+    <string name="hoster_ddownload_account_hint">Recommended: API key from your ddownload account (my.ddownload.com → API). Alternatively use \"Sign in via browser\" below for username/password – the login requires a CAPTCHA and only works in the browser.</string>
+    <string name="hoster_ddownload_invalid_link">Invalid ddownload link</string>
+    <string name="hoster_ddownload_cloudflare_blocked">ddownload: access blocked by Cloudflare (HTTP %1$d). Please try again later or open the page once in the browser.</string>
+    <string name="hoster_ddownload_no_login">ddownload: no login stored. Either enter an API key or use \"Sign in via browser\" (the login requires a CAPTCHA).</string>
+    <string name="hoster_ddownload_account_page_unreachable">ddownload: account page not reachable (HTTP %1$d)</string>
+    <string name="hoster_ddownload_session_expired">ddownload: browser session expired. Please use \"Sign in via browser\" again under Accounts.</string>
+    <string name="hoster_ddownload_unexpected_api_response">ddownload: unexpected API response</string>
+    <string name="hoster_ddownload_api_not_json">ddownload API: no JSON response (HTTP %1$d)</string>
+    <string name="hoster_ddownload_api_error">ddownload: %1$s</string>
+    <string name="hoster_ddownload_premium_required">ddownload requires a premium account (add one under Accounts).</string>
+    <string name="hoster_ddownload_no_direct_link_hint">ddownload: no direct link received (HTTP %1$d, %2$s).</string>
+    <string name="hoster_ddownload_no_direct_link">ddownload: no direct link received (HTTP %1$d)</string>
+    <string name="hoster_hint_limit_reached">daily limit reached or blocked – will retry later</string>
+    <string name="hoster_hint_premium_only">file is available for premium only</string>
+    <string name="hoster_hint_free_wait">server demands a wait time (free mode)</string>
+    <string name="hoster_hint_redirect_without_file">redirect without a file</string>
+    <string name="hoster_hint_unexpected_response">unexpected response</string>
+    <string name="hoster_ddownload_file_page_unreachable">ddownload: file page not reachable (HTTP %1$d)</string>
+    <string name="hoster_ddownload_captcha_browser">ddownload: captcha (%1$s) – can only be solved in the browser</string>
+    <string name="hoster_ddownload_image_captcha">ddownload: image captcha – can only be solved in the browser</string>
+    <string name="hoster_ddownload_captcha_rejected">ddownload: captcha rejected – please solve it in the browser</string>
+    <string name="hoster_ddownload_download_session_expired">ddownload: download session expired – will retry</string>
+    <string name="hoster_ddownload_countdown_skipped">ddownload: countdown not respected</string>
+    <string name="hoster_ddownload_free_countdown">ddownload: countdown before the free download</string>
+    <string name="hoster_ddownload_free_locked">ddownload: blocked until the next free download</string>
+    <string name="hoster_ddownload_maintenance">ddownload: server under maintenance – try again later</string>
+    <string name="hoster_ddownload_free_size_limit">ddownload: free downloads only up to %1$s – this file requires a premium account</string>
+    <string name="hoster_ddownload_premium_only">ddownload: file can only be downloaded with a premium account</string>
+    <string name="hoster_ddownload_limit_reached_hour">ddownload: download limit reached – retrying in one hour</string>
+    <string name="hoster_ddownload_no_download_url">ddownload did not return a download URL</string>
+    <string name="hoster_ddownload_no_download_url_premium">ddownload did not return a download URL (premium required?)</string>
+
+    <!-- Rapidgator -->
+    <string name="hoster_rapidgator_account_hint">E-mail and password of your Rapidgator account (premium required).</string>
+    <string name="hoster_rapidgator_invalid_link">Invalid Rapidgator link</string>
+    <string name="hoster_rapidgator_restart_flow">Rapidgator: restarting the flow</string>
+    <string name="hoster_rapidgator_unlock_rejected">unlock rejected: %1$s</string>
+    <string name="hoster_rapidgator_captcha_page_redirect">captcha page not reachable (redirect)</string>
+    <string name="hoster_rapidgator_flow_not_accepted">Rapidgator: the server does not accept the free flow (%1$s)</string>
+    <string name="hoster_rapidgator_download_not_possible">Rapidgator: downloading is not possible at the moment</string>
+    <string name="hoster_rapidgator_captcha_page_unreachable">Rapidgator: captcha page not reachable (HTTP %1$d)</string>
+    <string name="hoster_rapidgator_captcha_browser">Rapidgator: captcha (Turnstile) – can only be solved in the browser</string>
+    <string name="hoster_rapidgator_no_direct_link">Rapidgator: no direct link received (HTTP %1$d)</string>
+    <string name="hoster_rapidgator_file_page_unreachable">Rapidgator: file page not reachable (HTTP %1$d)</string>
+    <string name="hoster_rapidgator_no_free_offer">Rapidgator: page does not offer a free download</string>
+    <string name="hoster_rapidgator_free_unavailable">Rapidgator: free download not possible at the moment (%1$s)</string>
+    <string name="hoster_rapidgator_http_response">Rapidgator: response HTTP %1$d</string>
+    <string name="hoster_rapidgator_unexpected_response">Rapidgator: unexpected response</string>
+    <string name="hoster_rapidgator_free_wait">Rapidgator: wait time before the free download</string>
+    <string name="hoster_rapidgator_api_error">Rapidgator: %1$s</string>
+    <string name="hoster_rapidgator_login_failed">Rapidgator login failed</string>
+    <string name="hoster_rapidgator_check_needs_account">Check requires a Rapidgator account</string>
+    <string name="hoster_rapidgator_premium_required">Rapidgator requires a premium account (add one under Accounts).</string>
+    <string name="hoster_rapidgator_no_download_url">Rapidgator did not return a download URL</string>
+    <string name="hoster_rapidgator_free_size_limit">Rapidgator: file too large for free mode (up to %1$s) – premium required</string>
+    <string name="hoster_rapidgator_premium_only">Rapidgator: file can only be downloaded with a premium account</string>
+    <string name="hoster_rapidgator_subscribers_only">Rapidgator: file can only be downloaded by subscribers of this publisher</string>
+    <string name="hoster_rapidgator_next_free_in">Rapidgator: next free download in %1$s</string>
+    <string name="hoster_rapidgator_locked_retry_in">Rapidgator: blocked, retrying in %1$s</string>
+    <string name="hoster_rapidgator_daily_limit">Rapidgator: daily limit in free mode reached</string>
+    <string name="hoster_rapidgator_hourly_limit">Rapidgator: hourly limit in free mode reached</string>
+    <string name="hoster_rapidgator_one_at_a_time">Rapidgator: only one download at a time in free mode</string>
+    <string name="hoster_rapidgator_temporarily_unavailable">Rapidgator: file temporarily unavailable</string>
+
+    <!-- 1fichier -->
+    <string name="hoster_onefichier_account_hint">API key from your 1fichier account settings (section \"API\"), Premium/Access required.</string>
+    <string name="hoster_onefichier_invalid_link">Invalid 1fichier link</string>
+    <string name="hoster_onefichier_maintenance">1fichier: maintenance – retrying in 20 minutes</string>
+    <string name="hoster_onefichier_temporarily_blocked">1fichier: access temporarily blocked (HTTP %1$d) – retrying in 15 minutes</string>
+    <string name="hoster_onefichier_file_page_unreachable">1fichier: file page not reachable (HTTP %1$d)</string>
+    <string name="hoster_onefichier_form_missing">1fichier: download form missing</string>
+    <string name="hoster_onefichier_confirm_in_browser">1fichier: confirmation in the browser required</string>
+    <string name="hoster_onefichier_no_direct_link">1fichier: no direct link received (HTTP %1$d)</string>
+    <string name="hoster_onefichier_no_free_offer">1fichier: page does not offer a free download</string>
+    <string name="hoster_onefichier_password_in_browser">1fichier: file is password protected – enter the password in the browser</string>
+    <string name="hoster_onefichier_free_countdown">1fichier: countdown before the free download</string>
+    <string name="hoster_onefichier_empty_response">Empty response from 1fichier</string>
+    <string name="hoster_onefichier_api_error">1fichier: %1$s</string>
+    <string name="hoster_onefichier_unexpected_response">1fichier: unexpected response (HTTP %1$d)</string>
+    <string name="hoster_onefichier_check_no_response">No response from the link check</string>
+    <string name="hoster_onefichier_api_key_required">1fichier requires an API key (add one under Accounts).</string>
+    <string name="hoster_onefichier_no_download_url">1fichier did not return a download URL</string>
+    <string name="hoster_onefichier_account_required">1fichier: file requires an account (owner disabled free downloads)</string>
+    <string name="hoster_onefichier_access_restricted">1fichier: access to the file is restricted by its owner</string>
+    <string name="hoster_onefichier_bad_password">1fichier: wrong password</string>
+    <string name="hoster_onefichier_next_free_in">1fichier: next free download in %1$s</string>
+    <string name="hoster_onefichier_ip_locked">1fichier: IP address locked – unlocked in one hour</string>
+    <string name="hoster_onefichier_one_at_a_time">1fichier: only one download at a time per address in free mode</string>
+    <string name="hoster_onefichier_no_free_slots">1fichier: no free download slots at the moment</string>
+    <string name="hoster_onefichier_too_fast">1fichier: requests too fast – short pause</string>
+    <string name="hoster_onefichier_server_error">1fichier: server error – retrying in five minutes</string>
+    <string name="hoster_onefichier_free_overuse">1fichier: free use temporarily blocked (too many downloads)</string>
+    <string name="hoster_onefichier_vpn_blocked">1fichier: free downloads from server/VPN addresses are blocked – disable the VPN or add an account</string>
+</resources>

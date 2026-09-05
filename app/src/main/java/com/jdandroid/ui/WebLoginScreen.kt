@@ -32,9 +32,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
+import com.jdandroid.R
 import java.io.ByteArrayInputStream
 
 /**
@@ -93,6 +96,7 @@ fun WebLoginScreen(
     // Referenz auf die aktuelle WebView fuer die Zurueck-Taste (zuerst in der
     // Seitenhistorie zurueck, erst dann den Login abbrechen).
     var webView by remember { mutableStateOf<WebView?>(null) }
+    val context = LocalContext.current
 
     // Abbrechen: Browser-Session verwerfen, sonst bleiben die Hoster-Cookies
     // im globalen CookieManager liegen.
@@ -130,21 +134,22 @@ fun WebLoginScreen(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
-                title = { Text("Im Browser anmelden") },
+                title = { Text(stringResource(R.string.linkgrabber_login_title)) },
                 navigationIcon = {
                     IconButton(onClick = { cancel() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Abbrechen")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_cancel))
                     }
                 },
                 actions = {
+                    val noSession = stringResource(R.string.linkgrabber_login_no_session)
                     TextButton(onClick = {
                         val c = detectedCookies ?: cookiesFor(loginUrl)
                         if (c.isNullOrBlank()) {
-                            onStatusChange("Noch keine Session gefunden – bitte zuerst anmelden.")
+                            onStatusChange(noSession)
                         } else {
                             accept(c)
                         }
-                    }) { Text("Übernehmen") }
+                    }) { Text(stringResource(R.string.linkgrabber_login_accept)) }
                 }
             )
         }
@@ -174,8 +179,11 @@ fun WebLoginScreen(
                                 val host = request?.url?.host
                                 if (allowed(host)) return false
                                 onStatusChange(
-                                    "Blockiert: ${host ?: "unbekannte Adresse"} " +
-                                        "(nur $loginHost ist erlaubt)."
+                                    context.getString(
+                                        R.string.linkgrabber_login_blocked,
+                                        host ?: context.getString(R.string.linkgrabber_unknown_address),
+                                        loginHost
+                                    )
                                 )
                                 return true
                             }
@@ -198,7 +206,7 @@ fun WebLoginScreen(
                                 val c = cookiesFor(url ?: loginUrl)
                                 if (looksLoggedIn(c)) {
                                     onCookiesDetected(c!!)
-                                    onStatusChange("Anmeldung erkannt – oben auf \"Übernehmen\" tippen.")
+                                    onStatusChange(context.getString(R.string.linkgrabber_login_detected))
                                 }
                             }
                         }

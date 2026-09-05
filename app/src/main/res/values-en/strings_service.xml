@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Download service and notifications (DownloadService, JdApp channels, BootReceiver),
+         background helpers (AccountRefresher, LinkChecker) and containers (Click'n'Load, DLC,
+         via ContainerTexts). Keys: service_<meaning>. -->
+
+    <!-- Background errors: area and message -->
+    <string name="service_scope_download_service">Download service</string>
+    <string name="service_scope_background">Background</string>
+    <string name="service_background_error">%1$s: %2$s</string>
+    <string name="service_error_unknown">unknown</string>
+
+    <!-- Notification channels -->
+    <string name="service_channel_downloads">Downloads</string>
+    <string name="service_channel_events">Notices</string>
+    <string name="service_channel_events_description">New links via Click\'n\'Load, pending downloads after a restart</string>
+
+    <!-- Persistent notification of the download service -->
+    <string name="service_preparing">Preparing downloads …</string>
+    <string name="service_status_cnl_active">Click\'n\'Load active (port %1$d)</string>
+    <plurals name="service_status_active">
+        <item quantity="one">%1$d active</item>
+        <item quantity="other">%1$d active</item>
+    </plurals>
+    <plurals name="service_status_active_queued">
+        <item quantity="one">%1$d active, %2$d waiting</item>
+        <item quantity="other">%1$d active, %2$d waiting</item>
+    </plurals>
+    <string name="service_status_speed">%1$s/s</string>
+    <string name="service_status_cnl_on">CnL on</string>
+    <string name="service_action_pause_all">Pause all</string>
+
+    <!-- Time limit for background services (Android 15) -->
+    <string name="service_timeout_paused_title">Downloads paused</string>
+    <string name="service_timeout_paused_text">Android only allows background downloads for 6 hours at a time. Tap to resume.</string>
+    <string name="service_timeout_cnl_title">Click\'n\'Load stopped</string>
+    <string name="service_timeout_cnl_text">Android stopped the background service after 6 hours. Open the app to start Click\'n\'Load again.</string>
+
+    <!-- Click'n'Load: notification about received links -->
+    <string name="service_cnl_title">Click\'n\'Load</string>
+    <string name="service_cnl_origin_website">a website</string>
+    <plurals name="service_cnl_links_added">
+        <item quantity="one">%1$d link from %2$s added</item>
+        <item quantity="other">%1$d links from %2$s added</item>
+    </plurals>
+    <string name="service_cnl_nothing_added">Links from %1$s already present or not supported</string>
+    <string name="service_cnl_port_in_use" tools:ignore="PluralsCandidate">Port %1$d is in use – is another download manager running on this device?</string>
+
+    <!-- After a restart: reminder about pending downloads -->
+    <plurals name="service_boot_pending_downloads">
+        <item quantity="one">%1$d download is waiting – tap to resume</item>
+        <item quantity="other">%1$d downloads are waiting – tap to resume</item>
+    </plurals>
+
+    <!-- Account check -->
+    <string name="service_account_check_failed">Check failed</string>
+    <string name="service_account_status_temporary">%1$s (temporary)</string>
+
+    <!-- Link check in the Link Grabber -->
+    <string name="service_link_offline">File offline</string>
+    <string name="service_link_check_unavailable">Check not possible</string>
+
+    <!-- Click'n'Load server: status line of the last request (ContainerTexts) -->
+    <string name="service_cnl_last_request_line" tools:ignore="UnusedResources">%1$s %2$s %3$s → %4$s</string>
+    <string name="service_cnl_result_ok" tools:ignore="UnusedResources">OK</string>
+    <string name="service_cnl_result_preflight" tools:ignore="UnusedResources">preflight answered</string>
+    <string name="service_cnl_result_unknown_path" tools:ignore="UnusedResources">unknown path</string>
+    <string name="service_cnl_result_rejected" tools:ignore="UnusedResources">rejected: %1$s</string>
+    <string name="service_cnl_result_error" tools:ignore="UnusedResources">error: %1$s</string>
+    <string name="service_cnl_result_too_large" tools:ignore="UnusedResources">request too large</string>
+    <string name="service_cnl_result_no_links_in_form" tools:ignore="UnusedResources">no links in the form (fields: %1$s)</string>
+    <string name="service_cnl_result_no_fields" tools:ignore="UnusedResources">none</string>
+    <string name="service_cnl_result_nothing_decrypted" tools:ignore="UnusedResources">no links decrypted</string>
+    <string name="service_cnl_result_links_taken_one" tools:ignore="UnusedResources,PluralsCandidate">%1$d link accepted</string>
+    <string name="service_cnl_result_links_taken_other" tools:ignore="UnusedResources,PluralsCandidate">%1$d links accepted</string>
+
+    <!-- Click'n'Load self-test from the settings -->
+    <string name="service_cnl_selftest_ok" tools:ignore="UnusedResources">Server responds (HTTP %1$d).</string>
+    <string name="service_cnl_selftest_http" tools:ignore="UnusedResources">Server responds with HTTP %1$d.</string>
+    <string name="service_cnl_selftest_unreachable" tools:ignore="UnusedResources">Server not reachable: %1$s</string>
+
+    <!-- Decrypting containers (DLC, Click'n'Load 2) -->
+    <string name="service_dlc_service_unreachable" tools:ignore="UnusedResources">DLC service not reachable: %1$s</string>
+    <string name="service_dlc_service_no_key" tools:ignore="UnusedResources">The DLC could not be decrypted – the JDownloader DLC service did not return a key (the service may have been shut down).</string>
+    <string name="service_dlc_service_invalid_reply" tools:ignore="UnusedResources">DLC service returned an invalid response</string>
+    <string name="service_dlc_too_short" tools:ignore="UnusedResources">DLC file too short or invalid</string>
+    <string name="service_dlc_corrupt" tools:ignore="UnusedResources">DLC file corrupted</string>
+    <string name="service_dlc_no_links" tools:ignore="UnusedResources">DLC contained no readable links</string>
+    <string name="service_cnl_key_missing" tools:ignore="UnusedResources">Click\'n\'Load: no key found (jk cannot be evaluated)</string>
+    <string name="service_cnl_key_invalid_length" tools:ignore="UnusedResources,PluralsCandidate">Click\'n\'Load: key has an invalid length (%1$d bytes)</string>
+    <string name="service_cnl_data_corrupt" tools:ignore="UnusedResources">Click\'n\'Load: data corrupted (length %1$d)</string>
+
+    <!-- Reading a container file -->
+    <string name="service_dlc_file_too_large" tools:ignore="UnusedResources">File is too large for a DLC container (%1$d KiB, allowed are %2$d KiB)</string>
+    <string name="service_dlc_file_unreadable" tools:ignore="UnusedResources">File not readable</string>
+</resources>

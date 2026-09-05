@@ -1,5 +1,6 @@
 package com.jdandroid
 
+import com.jdandroid.core.Texts
 import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.Http
@@ -159,7 +160,7 @@ class OneFichierFreeTest {
         assertEquals(3600 + 1, wait("> IP Locked"))
         assertEquals(3600 + 1, wait("> Will be unlocked within 1h."))
         val text = (OneFichierFreePage.classify("You must wait 5 minutes") as OneFichierBlock.Wait).text
-        assertTrue(text, text.contains("5 Minuten"))
+        assertEquals(Texts.t("hoster_onefichier_next_free_in", Texts.t("hoster_duration_minutes", 5)), text)
     }
 
     @Test
@@ -201,14 +202,14 @@ class OneFichierFreeTest {
     }
 
     @Test
-    fun endgueltigeGruendeMitDeutscherMeldung() {
+    fun endgueltigeGruendeMitMeldung() {
         fun perm(text: String): String = (OneFichierFreePage.classify(text) as OneFichierBlock.Permanent).text
-        assertTrue(perm("The download is not possible to free unregistered users").contains("Konto"))
-        assertTrue(perm("This file need a subscription").contains("Konto"))
-        assertTrue(perm("> Access to this file is protected").contains("eingeschränkt"))
-        assertTrue(perm("> This file is protected").contains("eingeschränkt"))
-        assertTrue(perm("Bad password").contains("Passwort"))
-        assertEquals("Datei ist offline", perm("> File not found"))
+        assertEquals(Texts.t("hoster_onefichier_account_required"), perm("The download is not possible to free unregistered users"))
+        assertEquals(Texts.t("hoster_onefichier_account_required"), perm("This file need a subscription"))
+        assertEquals(Texts.t("hoster_onefichier_access_restricted"), perm("> Access to this file is protected"))
+        assertEquals(Texts.t("hoster_onefichier_access_restricted"), perm("> This file is protected"))
+        assertEquals(Texts.t("hoster_onefichier_bad_password"), perm("Bad password"))
+        assertEquals(Texts.t("hoster_file_offline"), perm("> File not found"))
     }
 
     @Test

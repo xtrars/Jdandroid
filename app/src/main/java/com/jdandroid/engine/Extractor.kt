@@ -1,6 +1,7 @@
 package com.jdandroid.engine
 
 import com.jdandroid.core.ArchiveNames
+import com.jdandroid.core.Texts
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.sf.sevenzipjbinding.ExtractOperationResult
@@ -46,10 +47,7 @@ object Extractor {
             SevenZip.initLoadedLibraries()
             sevenZipReady = true
         } catch (e: Throwable) {
-            throw IOException(
-                "Native 7-Zip-Bibliothek konnte nicht geladen werden " +
-                    "(RAR-Entpacken nicht moeglich): ${e.message}"
-            )
+            throw IOException(Texts.t("engine_seven_zip_unavailable", e.message ?: e.javaClass.simpleName))
         }
     }
 
@@ -143,7 +141,7 @@ object Extractor {
                         lower.endsWith(".7z") || Regex("""\.7z\.\d+$""").containsMatchIn(lower) ->
                             extractSevenZip(archive, workDir, password, excludes, progress, flat)
                         lower.endsWith(".rar") -> extractRar(archive, workDir, password, excludes, progress, flat)
-                        else -> throw IOException("Unbekanntes Archivformat: ${archive.name}")
+                        else -> throw IOException(Texts.t("engine_unknown_archive_format", archive.name))
                     }
                     workDir.listFiles()?.forEach { moveInto(it, File(destDir, it.name)) }
                     return password
@@ -156,7 +154,7 @@ object Extractor {
             workDir.deleteRecursively()
         }
         throw IOException(
-            "Entpacken fehlgeschlagen (Passwort nicht in der Liste?): ${lastError?.message}"
+            Texts.t("engine_extract_failed", lastError?.message ?: lastError?.javaClass?.simpleName ?: "")
         )
     }
 
@@ -173,7 +171,7 @@ object Extractor {
         if (dst.exists()) dst.deleteRecursively()
         if (!src.renameTo(dst)) {
             if (!src.copyRecursively(dst, overwrite = true)) {
-                throw IOException("Konnte ${src.name} nicht nach ${dst.parent} verschieben")
+                throw IOException(Texts.t("engine_move_failed", src.name, dst.parent ?: ""))
             }
             src.deleteRecursively()
         }
@@ -185,11 +183,11 @@ object Extractor {
     ) {
         val zip = ZipFile(archive)
         if (zip.isEncrypted) {
-            if (password == null) throw ZipException("Passwort erforderlich")
+            if (password == null) throw ZipException(Texts.t("engine_password_required"))
             zip.setPassword(password.toCharArray())
         } else if (password != null) {
             // unverschluesselt wurde bereits im ersten Durchlauf probiert
-            throw ZipException("Kein Passwort nötig")
+            throw ZipException(Texts.t("engine_no_password_needed"))
         }
         // Datei fuer Datei statt extractAll: so greifen Ausschlussmuster und
         // der Fortschritt laesst sich melden
@@ -315,7 +313,7 @@ object Extractor {
                         else item.extractSlow(sink)
                     }
                     if (result != ExtractOperationResult.OK) {
-                        throw IOException("RAR-Extraktion: $result")
+                        throw IOException(Texts.t("engine_rar_extraction_result", result.toString()))
                     }
                 }
                 progress?.onProgress(done, total)
@@ -394,7 +392,7 @@ object Extractor {
     private fun safeChild(destDir: File, name: String): File {
         val target = File(destDir, name)
         if (!target.canonicalPath.startsWith(destDir.canonicalPath + File.separator)) {
-            throw IOException("Ungültiger Pfad im Archiv: $name")
+            throw IOException(Texts.t("engine_invalid_archive_path", name))
         }
         return target
     }

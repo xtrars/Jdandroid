@@ -1,6 +1,7 @@
 package com.jdandroid
 
 import com.jdandroid.data.Account
+import com.jdandroid.core.Texts
 import com.jdandroid.hoster.AccountInfo
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.DirectLinks
@@ -73,8 +74,8 @@ class DirectLinksTest {
         val error = runCatching { runBlocking { hoster.resolveFree("https://example.com/abc", FreeHints()) } }
             .exceptionOrNull() as HosterException
         assertTrue(error.permanent)
-        assertEquals("Free-Download wird von diesem Hoster nicht unterstützt", error.message)
+        assertEquals(Texts.t("hoster_free_unsupported"), error.message)
         assertFalse(hoster.supportsFree)
-        assertEquals("Free (Downloads nicht möglich)", hoster.freeStatusText)
+        assertEquals(Texts.t("hoster_free_status_unsupported"), hoster.freeStatusText)
     }
 }

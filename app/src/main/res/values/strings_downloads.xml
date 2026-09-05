@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Download-Liste (DownloadsScreen, Paket-/Eintragszeilen, Statusanzeigen, Meldungen). Schluessel: downloads_<bedeutung>. -->
+
+    <!-- Titelleiste, Suche, Filter -->
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_search_open">Suchen</string>
+    <string name="downloads_search_close">Suche schließen</string>
+    <string name="downloads_search_placeholder">Dateiname oder Paket suchen</string>
+    <string name="downloads_start_all">Alle starten</string>
+    <string name="downloads_filter_all">Alle</string>
+    <string name="downloads_filter_active">Läuft</string>
+    <string name="downloads_filter_waiting">Wartend</string>
+    <string name="downloads_filter_done">Fertig</string>
+    <string name="downloads_filter_failed">Fehler</string>
+    <string name="downloads_empty_hint">Noch keine Downloads.\n\nLinks werden im Linksammler hinzugefügt (Plus-Knopf, Teilen aus dem Browser, DLC, Click\'n\'Load) und von dort gestartet.</string>
+    <string name="downloads_empty_filter">Keine Einträge für diesen Filter.</string>
+
+    <!-- Paketkopf -->
+    <string name="downloads_expand">Aufklappen</string>
+    <string name="downloads_collapse">Zuklappen</string>
+    <plurals name="downloads_file_count">
+        <item quantity="one">%1$d Datei</item>
+        <item quantity="other">%1$d Dateien</item>
+    </plurals>
+    <plurals name="downloads_summary_finished">
+        <item quantity="one">%1$d fertig</item>
+        <item quantity="other">%1$d fertig</item>
+    </plurals>
+    <plurals name="downloads_summary_failed">
+        <item quantity="one">%1$d fehlerhaft</item>
+        <item quantity="other">%1$d fehlerhaft</item>
+    </plurals>
+    <string name="downloads_bytes_of_total">%1$s / %2$s</string>
+    <string name="downloads_speed">%1$s/s</string>
+    <string name="downloads_summary_extracting">wird entpackt</string>
+    <string name="downloads_summary_extracting_percent">wird entpackt %1$d %%</string>
+    <string name="downloads_summary_source">von %1$s</string>
+    <string name="downloads_pause_package">Paket pausieren</string>
+    <string name="downloads_start_package">Paket starten</string>
+    <string name="downloads_package_actions">Paketaktionen</string>
+    <string name="downloads_menu_rename">Umbenennen</string>
+    <string name="downloads_menu_extract_archives">Archive entpacken</string>
+    <string name="downloads_menu_delete_package">Paket löschen</string>
+    <string name="downloads_delete_package_title">Paket löschen?</string>
+    <plurals name="downloads_delete_package_text">
+        <item quantity="one">\"%1$s\" mit %2$d Download wird entfernt. Bereits geladene Teildateien werden gelöscht.</item>
+        <item quantity="other">\"%1$s\" mit %2$d Downloads wird entfernt. Bereits geladene Teildateien werden gelöscht.</item>
+    </plurals>
+    <string name="downloads_rename_title">Paket umbenennen</string>
+    <string name="downloads_save">Speichern</string>
+
+    <!-- Eintragszeile -->
+    <string name="downloads_delete_item_title">Download löschen?</string>
+    <string name="downloads_delete_item_completed">%1$s\n\nDie fertige Datei bleibt erhalten.</string>
+    <string name="downloads_delete_item_partial">%1$s\n\nBereits geladene Daten gehen verloren.</string>
+    <string name="downloads_status_running">Lädt</string>
+    <string name="downloads_status_queued">Wartend</string>
+    <string name="downloads_status_collected">Linksammler</string>
+    <string name="downloads_status_paused">Pausiert</string>
+    <string name="downloads_status_extracting">Entpacken</string>
+    <string name="downloads_status_completed">Fertig</string>
+    <string name="downloads_status_failed">Fehler</string>
+    <string name="downloads_status_offline">Offline</string>
+    <string name="downloads_item_actions">Aktionen</string>
+    <string name="downloads_menu_solve_captcha">Captcha lösen</string>
+    <string name="downloads_menu_retry">Erneut versuchen</string>
+    <string name="downloads_menu_redownload">Erneut laden</string>
+    <string name="downloads_free_wait">Wartezeit im Free-Modus: %1$s</string>
+    <string name="downloads_free_wait_reason">Wartezeit im Free-Modus: %1$s – %2$s</string>
+    <string name="downloads_in_queue">in der Warteschlange</string>
+    <string name="downloads_not_started">noch nicht gestartet</string>
+    <string name="downloads_loaded_bytes">%1$s geladen</string>
+    <string name="downloads_extracting_archive">Archiv wird entpackt …</string>
+    <string name="downloads_extracting_archive_percent">Archiv wird entpackt … %1$d %%</string>
+    <string name="downloads_completed_note">%1$s (%2$s)</string>
+    <string name="downloads_waiting_for_parts">Warte auf weitere Archiv-Teile</string>
+    <string name="downloads_waiting_for_wifi">Wartet auf WLAN</string>
+    <string name="downloads_unknown_error">unbekannter Fehler</string>
+    <string name="downloads_file_offline">Datei beim Hoster nicht mehr vorhanden</string>
+    <string name="downloads_hoster_status">%1$s · %2$s</string>
+</resources>

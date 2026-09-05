@@ -1,11 +1,12 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 /**
  * Einordnung eines Hinweistexts der Rapidgator-Website im Free-Modus
  * (Dateiseite oder "code" der Ajax-Antworten).
  */
 internal sealed class RapidgatorBlock {
-    /** Wartezeit in Sekunden (inklusive Reserve) mit deutscher Meldung. */
+    /** Wartezeit in Sekunden (inklusive Reserve) mit uebersetzter Meldung (Texts.t). */
     data class Wait(val seconds: Int, val text: String) : RapidgatorBlock()
 
     /** Ohne Premium nicht ladbar - erneuter Versuch ist sinnlos. */
@@ -129,20 +130,18 @@ internal object RapidgatorFreePage {
     fun classify(text: String): RapidgatorBlock? {
         val t = text.replace('`', '\'').replace("&#039;", "'")
         Regex("""You can download files up to\s*([\d.,]+\s*[KMGT]?B)""", ic).find(t)?.let {
-            return RapidgatorBlock.Permanent(
-                "Rapidgator: Datei zu groß für den Free-Modus (bis ${it.groupValues[1].trim()}) – Premium nötig"
-            )
+            return RapidgatorBlock.Permanent(Texts.t("hoster_rapidgator_free_size_limit", it.groupValues[1].trim()))
         }
         if (Regex("""can be downloaded by premium only""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Permanent("Rapidgator: Datei nur mit Premium-Konto ladbar")
+            return RapidgatorBlock.Permanent(Texts.t("hoster_rapidgator_premium_only"))
         }
         if (Regex("""can be downloaded only by subscribers""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Permanent("Rapidgator: Datei nur für Abonnenten dieses Anbieters ladbar")
+            return RapidgatorBlock.Permanent(Texts.t("hoster_rapidgator_subscribers_only"))
         }
         if (Regex("""didn'?t wait specified time""", ic).containsMatchIn(t)) return RapidgatorBlock.Restart
         Regex("""Delay between downloads must be not less than\s*(\d+)\s*min""", ic).find(t)?.let {
             val minutes = it.groupValues[1].toInt()
-            return RapidgatorBlock.Wait(minutes * 60 + 1, "Rapidgator: nächster Free-Download erst in $minutes Minuten")
+            return RapidgatorBlock.Wait(minutes * 60 + 1, Texts.t("hoster_rapidgator_next_free_in", HosterDurations.text(minutes * 60)))
         }
         Regex("""Try again in\s*(\d+)\s*(second|sec|minute|min|hour)s?""", ic).find(t)?.let {
             val n = it.groupValues[1].toInt()
@@ -151,22 +150,22 @@ internal object RapidgatorFreePage {
                 'm' -> n * 60
                 else -> n
             }
-            return RapidgatorBlock.Wait(secs + 1, "Rapidgator: Sperre, erneuter Versuch in ${it.groupValues[1]} ${it.groupValues[2]}")
+            return RapidgatorBlock.Wait(secs + 1, Texts.t("hoster_rapidgator_locked_retry_in", HosterDurations.text(secs)))
         }
         if (Regex("""reached your daily (?:downloads )?limit""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Wait(3 * 3600, "Rapidgator: Tageslimit im Free-Modus erreicht")
+            return RapidgatorBlock.Wait(3 * 3600, Texts.t("hoster_rapidgator_daily_limit"))
         }
         if (Regex("""reached your hourly (?:downloads )?limit""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Wait(3600, "Rapidgator: Stundenlimit im Free-Modus erreicht")
+            return RapidgatorBlock.Wait(3600, Texts.t("hoster_rapidgator_hourly_limit"))
         }
         if (Regex("""download (?:not )?more than 1 file at a time|File is already downloading""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Wait(60, "Rapidgator: im Free-Modus nur ein Download gleichzeitig")
+            return RapidgatorBlock.Wait(60, Texts.t("hoster_rapidgator_one_at_a_time"))
         }
         if (Regex("""File is temporarily (?:not |un)?available""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Wait(5 * 60, "Rapidgator: Datei vorübergehend nicht verfügbar")
+            return RapidgatorBlock.Wait(5 * 60, Texts.t("hoster_rapidgator_temporarily_unavailable"))
         }
         if (Regex("""Downloading is not possible at the moment""", ic).containsMatchIn(t)) {
-            return RapidgatorBlock.Wait(30 * 60, "Rapidgator: Download derzeit nicht möglich")
+            return RapidgatorBlock.Wait(30 * 60, Texts.t("hoster_rapidgator_download_not_possible"))
         }
         return null
     }

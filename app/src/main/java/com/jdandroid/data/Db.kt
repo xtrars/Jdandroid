@@ -251,7 +251,10 @@ interface DownloadDao {
     suspend fun pauseIfActive(id: Long)
 
     /** "Nur WLAN": laufenden Download zurueck in die Warteschlange (startet bei WLAN automatisch). */
-    @Query("UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, errorMessage = 'Wartet auf WLAN' WHERE id = :id AND status = 'RUNNING'")
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
+            "errorMessage = '${DownloadNotes.WAITING_WIFI}' WHERE id = :id AND status = 'RUNNING'"
+    )
     suspend fun requeueIfRunning(id: Long)
 
     /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
@@ -488,6 +491,11 @@ abstract class AppDatabase : RoomDatabase() {
          * daher Tabellen-Neuaufbau (Daten kopieren, alte Tabelle ersetzen);
          * dabei kommen Indizes auf status und packageId hinzu. Die CREATE-
          * Anweisungen muessen exakt dem exportierten Schema 11 entsprechen.
+         *
+         * Anschliessend werden gespeicherte Vermerke als Code statt als
+         * deutscher Text abgelegt: die Engine sucht wartende Archiv-Teile per
+         * SQL-Gleichheit, die Oberflaeche uebersetzt den Code bei der Anzeige
+         * (siehe [DownloadNotes]).
          */
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -510,6 +518,15 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_archiveKey` ON `downloads` (`archiveKey`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_status` ON `downloads` (`status`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_packageId` ON `downloads` (`packageId`)")
+                // Deutsche Vermerke aus aelteren Versionen in Codes wandeln
+                db.execSQL(
+                    "UPDATE downloads SET errorMessage = ? WHERE errorMessage = ?",
+                    arrayOf<Any>(DownloadNotes.WAITING_PARTS, DownloadNotes.LEGACY_WAITING_PARTS)
+                )
+                db.execSQL(
+                    "UPDATE downloads SET errorMessage = ? WHERE errorMessage = ?",
+                    arrayOf<Any>(DownloadNotes.WAITING_WIFI, DownloadNotes.LEGACY_WAITING_WIFI)
+                )
             }
         }
 

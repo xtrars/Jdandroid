@@ -108,6 +108,12 @@ android {
         // aktualisiert, nicht bei jedem Lint-Lauf.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
     }
+    androidResources {
+        // Nur die eigenen Sprachen einpacken (AndroidX-Uebersetzungen anderer
+        // Sprachen bleiben draussen); der Release-Lint prueft, dass jeder
+        // Schluessel in values/ und values-en/ steht.
+        localeFilters += listOf("de", "en")
+    }
 
     // Release-APK nach Version benennen (statt app-release.apk)
     applicationVariants.all {

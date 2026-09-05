@@ -40,11 +40,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toDrawable
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
+import com.jdandroid.R
 import com.jdandroid.container.ContainerFiles
 import com.jdandroid.core.AppMessages
 import com.jdandroid.engine.DownloadService
@@ -179,7 +183,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     AppMessages.error(
                         result.exceptionOrNull()?.message
-                            ?: "Die geöffnete Datei ist kein DLC-Container."
+                            ?: getString(R.string.accounts_not_dlc_opened)
                     )
                 }
             }
@@ -187,8 +191,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String) {
-    Downloads("Downloads"), Collector("Linksammler"), Accounts("Konten"), Settings("Einstellungen")
+/** Tabs der unteren Leiste; [labelRes] ist die uebersetzte Beschriftung. */
+private enum class Tab(val labelRes: Int) {
+    Downloads(R.string.accounts_tab_downloads),
+    Collector(R.string.accounts_tab_collector),
+    Accounts(R.string.accounts_title),
+    Settings(R.string.accounts_tab_settings)
 }
 
 @Composable
@@ -202,6 +210,7 @@ fun MainScreen(
     // damit direkt im Bundle sicherbar)
     var tab by rememberSaveable { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
+    val resources = LocalResources.current
     val settings = (context.applicationContext as JdApp).settings
     val downloadVm: DownloadViewModel = viewModel()
     val accountVm: AccountViewModel = viewModel()
@@ -303,16 +312,17 @@ fun MainScreen(
             when (tab) {
                 Tab.Collector -> FloatingActionButton(
                     onClick = { addLinksPrefill = ""; showAddLinks = true }
-                ) { Icon(Icons.Default.Add, contentDescription = "Links hinzufügen") }
+                ) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.accounts_add_links)) }
                 Tab.Accounts -> FloatingActionButton(
                     onClick = { showAddAccount = true }
-                ) { Icon(Icons.Default.Add, contentDescription = "Konto hinzufügen") }
+                ) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.accounts_add_title)) }
                 else -> {}
             }
         },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->
+                    val label = stringResource(t.labelRes)
                     NavigationBarItem(
                         selected = tab == t,
                         onClick = { tab = t },
@@ -324,10 +334,10 @@ fun MainScreen(
                                     Tab.Accounts -> Icons.Default.Person
                                     Tab.Settings -> Icons.Default.Settings
                                 },
-                                contentDescription = t.label
+                                contentDescription = label
                             )
                         },
-                        label = { Text(t.label) }
+                        label = { Text(label) }
                     )
                 }
             }
@@ -359,15 +369,20 @@ fun MainScreen(
                 initialText = addLinksPrefill,
                 onDismiss = { showAddLinks = false },
                 onAdd = { text, pkg ->
+                    // Meldungen ueber die Ressourcen aufloesen: der Rueckruf
+                    // laeuft ausserhalb der Komposition
                     downloadVm.addLinks(text, pkg) { added, toCollector ->
                         if (added > 0) {
                             AppMessages.success(
-                                if (toCollector) "$added Link(s) in den Linksammler übernommen"
-                                else "$added Link(s) gestartet"
+                                resources.getQuantityString(
+                                    if (toCollector) R.plurals.accounts_links_collected
+                                    else R.plurals.accounts_links_started,
+                                    added, added
+                                )
                             )
                             if (!toCollector) tab = Tab.Downloads
                         } else {
-                            AppMessages.info("Keine neuen Links – alle bereits vorhanden")
+                            AppMessages.info(resources.getString(R.string.accounts_no_new_links))
                         }
                     }
                 }

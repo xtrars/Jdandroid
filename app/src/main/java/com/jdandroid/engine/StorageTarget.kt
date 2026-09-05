@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.core.FileNames
+import com.jdandroid.core.Texts
 import com.jdandroid.data.SettingsRepository
 import java.io.File
 
@@ -59,7 +60,7 @@ internal class StorageTarget(
             context.contentResolver.openOutputStream(target.uri)?.use { out ->
                 file.inputStream().use { it.copyTo(out) }
             } ?: run { target.delete(); return null }
-            "${dir.name ?: "Zielordner"}/${target.name ?: candidate}"
+            "${dir.name ?: Texts.t("engine_target_folder")}/${target.name ?: candidate}"
         } catch (e: Exception) {
             target.delete()
             null
@@ -133,7 +134,7 @@ internal class StorageTarget(
             }
             return if (allOk) {
                 dir.deleteRecursively()
-                "${root.name ?: "Zielordner"}/$base"
+                "${root.name ?: Texts.t("engine_target_folder")}/$base"
             } else dir.absolutePath
         }
         // Direkter SDK_INT-Vergleich statt Hilfsvariable: Lint (AGP 8.13) erkennt

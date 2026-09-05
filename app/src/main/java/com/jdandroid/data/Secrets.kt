@@ -1,5 +1,6 @@
 package com.jdandroid.data
 
+import com.jdandroid.core.Texts
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
@@ -65,12 +66,7 @@ object Secrets {
             val encrypted = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
             PREFIX + Base64.getEncoder().encodeToString(cipher.iv + encrypted)
         } catch (e: Exception) {
-            throw SecretsException(
-                "Zugangsdaten konnten nicht verschlüsselt werden " +
-                    "(Android-Keystore nicht verfügbar: ${e.message ?: e.javaClass.simpleName}). " +
-                    "Bitte Gerät entsperren und erneut versuchen.",
-                e
-            )
+            throw SecretsException(Texts.t("engine_secrets_encrypt_failed", e.message ?: e.javaClass.simpleName), e)
         }
     }
 
@@ -88,16 +84,12 @@ object Secrets {
         if (!value.startsWith(PREFIX)) return value
         return try {
             val raw = Base64.getDecoder().decode(value.removePrefix(PREFIX))
-            val key = existingKey() ?: throw IllegalStateException("Schlüssel fehlt im Keystore")
+            val key = existingKey() ?: throw IllegalStateException(Texts.t("engine_secrets_key_missing"))
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, raw, 0, IV_LENGTH))
             String(cipher.doFinal(raw, IV_LENGTH, raw.size - IV_LENGTH), Charsets.UTF_8)
         } catch (e: Exception) {
-            throw SecretsException(
-                "Zugangsdaten nicht lesbar (Android-Keystore: ${e.message ?: e.javaClass.simpleName}). " +
-                    "Bitte das Konto löschen und neu anlegen.",
-                e
-            )
+            throw SecretsException(Texts.t("engine_secrets_decrypt_failed", e.message ?: e.javaClass.simpleName), e)
         }
     }
 }

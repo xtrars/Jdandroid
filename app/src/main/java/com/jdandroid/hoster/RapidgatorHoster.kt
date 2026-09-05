@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,8 @@ class RapidgatorHoster : Hoster {
     override val id = "rapidgator"
     override val displayName = "Rapidgator"
     override val accountType = AccountType.USERNAME_PASSWORD
-    override val accountHint = "E-Mail und Passwort des Rapidgator-Kontos (Premium erforderlich)."
+    override val accountHint: String
+        get() = Texts.t("hoster_rapidgator_account_hint")
 
     private val base = "https://rapidgator.net/api/v2"
     private val pattern = Regex("""https?://(?:www\.)?(?:rapidgator\.net|rg\.to)/file/\S+""")
@@ -149,7 +151,7 @@ class RapidgatorHoster : Hoster {
     private fun waitFor(block: RapidgatorBlock): Nothing = when (block) {
         is RapidgatorBlock.Wait -> throw WaitException(block.seconds, block.text)
         is RapidgatorBlock.Permanent -> throw HosterException(block.text, permanent = true)
-        RapidgatorBlock.Restart -> throw HosterException("Rapidgator: Ablauf neu starten", permanent = false)
+        RapidgatorBlock.Restart -> throw HosterException(Texts.t("hoster_rapidgator_restart_flow"), permanent = false)
     }
 
     /**
@@ -171,7 +173,7 @@ class RapidgatorHoster : Hoster {
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
         withContext(Dispatchers.IO) {
             val (id, nameSegment) = RapidgatorFreePage.fileIdAndName(url)
-                ?: throw HosterException("Ungültiger Rapidgator-Link", true)
+                ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
             val pageUrl = "$siteBase/file/$id" + (nameSegment?.let { "/$it" } ?: "")
 
             hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
@@ -193,7 +195,7 @@ class RapidgatorHoster : Hoster {
                 // Timer laeuft noch: lange Reste an die Engine, kurze im Prozess abwarten
                 val remaining = session.readyAt - System.currentTimeMillis()
                 if (remaining > MAX_INLINE_WAIT_MS) {
-                    throw WaitException(((remaining + 999) / 1000).toInt() + 1, WAIT_TEXT)
+                    throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_rapidgator_free_wait"))
                 }
                 if (remaining > 0) delay(remaining + 500)
 
@@ -205,7 +207,7 @@ class RapidgatorHoster : Hoster {
                             val block = reply.code?.let { RapidgatorFreePage.classify(it) }
                             if (block != null && block !is RapidgatorBlock.Restart) waitFor(block)
                             // Timer nicht anerkannt (zu frueh, Zustand weg): von vorn
-                            restart(id, "Freischaltung abgelehnt: ${reply.code ?: reply.state}")
+                            restart(id, Texts.t("hoster_rapidgator_unlock_rejected", reply.code ?: reply.state))
                             continue
                         }
                     }
@@ -215,13 +217,13 @@ class RapidgatorHoster : Hoster {
                 // leitet sie auf die Dateiseite zurueck - dann von vorn
                 val page = session.fetch(resolveUrl(session.vars.captchaUrl), referer = pageUrl, followRedirects = false)
                 when {
-                    page.code == 500 -> throw WaitException(30 * 60, "Rapidgator: Download derzeit nicht möglich")
+                    page.code == 500 -> throw WaitException(30 * 60, Texts.t("hoster_rapidgator_download_not_possible"))
                     page.code in 300..399 -> {
-                        restart(id, "Captcha-Seite nicht erreichbar (Weiterleitung)")
+                        restart(id, Texts.t("hoster_rapidgator_captcha_page_redirect"))
                         continue
                     }
                     page.code !in 200..299 -> throw HosterException(
-                        "Rapidgator: Captcha-Seite nicht erreichbar (HTTP ${page.code})", permanent = false
+                        Texts.t("hoster_rapidgator_captcha_page_unreachable", page.code), permanent = false
                     )
                 }
                 RapidgatorFreePage.directLink(page.body)?.let { direct ->
@@ -236,12 +238,12 @@ class RapidgatorHoster : Hoster {
                 if (RapidgatorFreePage.hasCaptchaForm(page.body)) {
                     // Session-Cookies gehen mit: die Captcha-Ansicht setzt sie beim Oeffnen
                     throw CaptchaRequiredException(
-                        captchaPageUrl, "Rapidgator: Captcha (Turnstile) – nur im Browser lösbar",
+                        captchaPageUrl, Texts.t("hoster_rapidgator_captcha_browser"),
                         cookieUrl = siteBase, cookies = session.cookiesForBrowser()
                     )
                 }
                 RapidgatorFreePage.pageBlock(page.body)?.let { waitFor(it) }
-                throw HosterException("Rapidgator: kein Direktlink erhalten (HTTP ${page.code})", permanent = false)
+                throw HosterException(Texts.t("hoster_rapidgator_no_direct_link", page.code), permanent = false)
             }
             @Suppress("UNREACHABLE_CODE")
             throw IllegalStateException()
@@ -262,14 +264,14 @@ class RapidgatorHoster : Hoster {
         if (page.code == 404 || !page.finalUrl.contains("/file/$id", ignoreCase = true) ||
             RapidgatorFreePage.isOffline(page.body)
         ) {
-            throw HosterException("Datei ist offline", true)
+            throw FileOfflineException()
         }
         if (page.code !in 200..299) {
-            throw HosterException("Rapidgator: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+            throw HosterException(Texts.t("hoster_rapidgator_file_page_unreachable", page.code), permanent = false)
         }
         RapidgatorFreePage.pageBlock(page.body)?.let { waitFor(it) }
         val vars = RapidgatorFreePage.freeVars(page.body)
-            ?: throw HosterException("Rapidgator: Seite bietet keinen Free-Download an", permanent = false)
+            ?: throw HosterException(Texts.t("hoster_rapidgator_no_free_offer"), permanent = false)
         session.vars = vars
         session.fileName = RapidgatorFreePage.fileName(page.body)
         session.fileSize = RapidgatorFreePage.fileSize(page.body)
@@ -279,13 +281,13 @@ class RapidgatorHoster : Hoster {
         if (reply.state != "started" || reply.sid.isNullOrBlank()) {
             reply.code?.let { RapidgatorFreePage.classify(it) }?.let { waitFor(it) }
             throw HosterException(
-                "Rapidgator: Free-Download derzeit nicht möglich (${reply.code ?: reply.state})", permanent = false
+                Texts.t("hoster_rapidgator_free_unavailable", reply.code ?: reply.state), permanent = false
             )
         }
         session.sid = reply.sid
         session.readyAt = System.currentTimeMillis() + vars.secs * 1000L
         freeSessions[id] = session
-        throw WaitException(vars.secs + 1, WAIT_TEXT)
+        throw WaitException(vars.secs + 1, Texts.t("hoster_rapidgator_free_wait"))
     }
 
     private fun ajax(session: FreeSession, path: String, param: Pair<String, String>): RapidgatorFreePage.AjaxReply {
@@ -293,10 +295,10 @@ class RapidgatorHoster : Hoster {
             .setQueryParameter(param.first, param.second).build().toString()
         val resp = session.fetch(url, referer = session.pageUrl, ajax = true)
         if (resp.code !in 200..299) {
-            throw HosterException("Rapidgator: Antwort HTTP ${resp.code}", permanent = false)
+            throw HosterException(Texts.t("hoster_rapidgator_http_response", resp.code), permanent = false)
         }
         return RapidgatorFreePage.ajaxReply(resp.body)
-            ?: throw HosterException("Rapidgator: unerwartete Antwort", permanent = false)
+            ?: throw HosterException(Texts.t("hoster_rapidgator_unexpected_response"), permanent = false)
     }
 
     /** Zustand verwerfen und von vorn beginnen; nach zu vielen Anlaeufen vorerst aufgeben. */
@@ -305,7 +307,7 @@ class RapidgatorHoster : Hoster {
         val count = restarts.merge(id, 1) { a, b -> a + b } ?: 1
         if (count > MAX_RESTARTS) {
             restarts.remove(id)
-            throw HosterException("Rapidgator: Free-Ablauf wird vom Server nicht anerkannt ($reason)", permanent = false)
+            throw HosterException(Texts.t("hoster_rapidgator_flow_not_accepted", reason), permanent = false)
         }
     }
 
@@ -341,13 +343,12 @@ class RapidgatorHoster : Hoster {
         const val MAX_INLINE_WAIT_MS = 5_000L
         const val SESSION_MAX_AGE_MS = 2L * 60 * 60 * 1000
         const val MAX_RESTARTS = 3
-        const val WAIT_TEXT = "Rapidgator: Wartezeit vor dem Free-Download"
     }
 
     /** file_id (Hash) aus der Rapidgator-URL: .../file/<id>[/name.html] */
     private fun fileId(url: String): String =
         Regex("""/file/([A-Za-z0-9]+)""").find(url)?.groupValues?.get(1)
-            ?: throw HosterException("Ungültiger Rapidgator-Link", true)
+            ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
 
     /**
      * API-Aufruf per POST mit Formular-Body: Zugangsdaten und Token gehoeren
@@ -369,7 +370,7 @@ class RapidgatorHoster : Hoster {
     private fun callRaw(path: String, params: Map<String, String>): JSONObject {
         val text = post("$base/$path", params)
         return runCatching { JSONObject(text) }
-            .getOrElse { throw HosterException("Rapidgator: unerwartete Antwort") }
+            .getOrElse { throw HosterException(Texts.t("hoster_rapidgator_unexpected_response")) }
     }
 
     /**
@@ -392,8 +393,8 @@ class RapidgatorHoster : Hoster {
 
     /** Einordnung eines API-Fehlers; getrennt von JSON, damit sie auf der JVM testbar ist. */
     internal fun failure(status: Int, details: String, loginCall: Boolean): HosterException {
-        val text = details.ifBlank { "HTTP $status" }
-        if (status == 401 && !loginCall) return TokenExpired("Rapidgator: $text")
+        val text = details.ifBlank { Texts.t("hoster_http_status", status) }
+        if (status == 401 && !loginCall) return TokenExpired(Texts.t("hoster_rapidgator_api_error", text))
         // Rapidgator meldet unter 403 auch Tageslimit, IP-Sperre und
         // Parallel-Limit - alles voruebergehend. Dauerhaft sind nur falsche
         // Zugangsdaten (401 beim Login), fehlende Datei (404) und fehlendes
@@ -404,7 +405,7 @@ class RapidgatorHoster : Hoster {
             text.contains("Session", true) ||
             status in 500..599
         val permanent = !transient && (status in listOf(402, 404) || (loginCall && status == 401))
-        return HosterException("Rapidgator: $text", permanent = permanent)
+        return HosterException(Texts.t("hoster_rapidgator_api_error", text), permanent = permanent)
     }
 
     /** Logins pro Konto serialisieren: parallele Downloads sollen eine Session teilen. */
@@ -418,11 +419,11 @@ class RapidgatorHoster : Hoster {
 
     /** Login; liefert Token und das "user"-Objekt der Login-Antwort. */
     private fun login(account: Account): Pair<String, JSONObject> {
-        val user = account.username ?: throw HosterException("Kein Benutzername hinterlegt", true)
-        val pass = account.plainPassword ?: throw HosterException("Kein Passwort hinterlegt", true)
+        val user = account.username ?: throw HosterException(Texts.t("hoster_no_username"), true)
+        val pass = account.plainPassword ?: throw HosterException(Texts.t("hoster_no_password"), true)
         val resp = call("user/login", mapOf("login" to user, "password" to pass), loginCall = true)
         val token = resp.optString("token")
-        if (token.isBlank()) throw HosterException("Rapidgator-Login fehlgeschlagen", true)
+        if (token.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_login_failed"), true)
         tokens[account.id] = token
         return token to (resp.optJSONObject("user") ?: JSONObject())
     }
@@ -472,18 +473,18 @@ class RapidgatorHoster : Hoster {
         withContext(Dispatchers.IO) {
             // Die API verlangt auch fuer file/info eine Session
             if (account == null) {
-                return@withContext LinkInfo(online = null, note = "Prüfung erst mit Rapidgator-Konto")
+                return@withContext LinkInfo(online = null, note = Texts.t("hoster_rapidgator_check_needs_account"))
             }
             val id = fileId(url)
             // Login getrennt behandeln: ein Kontoproblem ist kein "Datei offline"
             val token = try {
                 tokenFor(account)
             } catch (e: Exception) {
-                return@withContext LinkInfo(online = null, note = e.message ?: "Rapidgator-Login fehlgeschlagen")
+                return@withContext LinkInfo(online = null, note = e.message ?: Texts.t("hoster_rapidgator_login_failed"))
             }
             val query: (String) -> LinkInfo = { t ->
                 val file = call("file/info", mapOf("file_id" to id, "token" to t)).optJSONObject("file")
-                if (file == null) LinkInfo(online = false, note = "Datei nicht gefunden")
+                if (file == null) LinkInfo(online = false, note = Texts.t("hoster_file_not_found"))
                 else LinkInfo(
                     online = true,
                     fileName = file.optString("name").ifBlank { null },
@@ -509,16 +510,13 @@ class RapidgatorHoster : Hoster {
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
             if (account == null) {
-                throw HosterException(
-                    "Rapidgator benötigt einen Premium-Account (unter Konten hinzufügen).",
-                    permanent = true
-                )
+                throw HosterException(Texts.t("hoster_rapidgator_premium_required"), permanent = true)
             }
             val id = fileId(url)
             val attempt: (String) -> ResolvedLink = { token ->
                 val resp = call("file/download", mapOf("file_id" to id, "token" to token))
                 val direct = resp.optString("download_url")
-                if (direct.isBlank()) throw HosterException("Rapidgator lieferte keine Download-URL", true)
+                if (direct.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_no_download_url"), true)
                 // Name, Groesse und MD5 fuer die Integritaetspruefung; optional,
                 // ein Fehler hier darf den Download nicht verhindern.
                 val info = runCatching {

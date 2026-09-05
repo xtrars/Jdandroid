@@ -63,7 +63,7 @@ class ClickNLoadServer(
     /** Bindet den Socket und startet Akzeptor und Pool; wirft bei belegtem Port. */
     @Synchronized
     fun start() {
-        check(serverSocket == null) { "Server läuft bereits" }
+        check(serverSocket == null) { "server already running" }
         val socket = ServerSocket()
         socket.reuseAddress = true
         socket.bind(InetSocketAddress(hostname, port), BACKLOG)
@@ -124,13 +124,13 @@ class ClickNLoadServer(
     }
 
     private fun serve(request: Request, input: InputStream): Response {
-        var outcome = "ok"
+        var outcome = ContainerTexts.t("service_cnl_result_ok")
         val response = try {
             when {
                 // CORS-Preflight: neuere Chrome-Versionen (Local Network Access)
                 // fragen vor fetch/XHR an localhost per OPTIONS nach.
                 request.method == "OPTIONS" -> {
-                    outcome = "Preflight beantwortet"
+                    outcome = ContainerTexts.t("service_cnl_result_preflight")
                     Response(Status.NO_CONTENT, MIME_PLAINTEXT, "")
                 }
                 request.path == "/jdcheck.js" -> Response(
@@ -153,17 +153,17 @@ class ClickNLoadServer(
                 // Wurzel als Lebenszeichen (wie bisher), alles andere ist unbekannt
                 request.path == "/" -> Response(Status.OK, MIME_HTML, "JDAndroid")
                 else -> {
-                    outcome = "unbekannter Pfad"
+                    outcome = ContainerTexts.t("service_cnl_result_unknown_path")
                     Response(Status.NOT_FOUND, MIME_PLAINTEXT, "not found\r\n")
                 }
             }
         } catch (e: ContainerDecrypter.ContainerException) {
             AppLog.w(TAG, "Abgelehnt bei ${request.path}: ${e.message}")
-            outcome = "abgelehnt: ${e.message}"
+            outcome = ContainerTexts.t("service_cnl_result_rejected", e.message.orEmpty())
             Response(Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n")
         } catch (e: Exception) {
             AppLog.w(TAG, "Fehler bei ${request.path}: ${e.message}")
-            outcome = "Fehler: ${e.message ?: e.javaClass.simpleName}"
+            outcome = ContainerTexts.t("service_cnl_result_error", e.message ?: e.javaClass.simpleName)
             Response(Status.INTERNAL_ERROR, MIME_PLAINTEXT, "failed\r\n")
         }
         CnlStatus.record(request.method, request.path, outcome)
@@ -195,7 +195,7 @@ class ClickNLoadServer(
         val length = request.headers["content-length"]?.trim()?.toLongOrNull()
         if (length != null && length > MAX_BODY_BYTES) {
             return Response(Status.PAYLOAD_TOO_LARGE, MIME_PLAINTEXT, "failed\r\n") to
-                "Anfrage zu gross"
+                ContainerTexts.t("service_cnl_result_too_large")
         }
         val params = LinkedHashMap(request.query)
         if (request.method == "POST" || request.method == "PUT") {
@@ -227,8 +227,10 @@ class ClickNLoadServer(
             // Wie JDownloader: die Seite zeigt dann "fehlgeschlagen" statt
             // faelschlich Erfolg zu melden.
             val note = if (crypted.isNullOrBlank() && plainUrls.isNullOrBlank()) {
-                "keine Links im Formular (Felder: ${params.keys.joinToString(",").ifBlank { "keine" }})"
-            } else "keine Links entschlüsselt"
+                val fields = params.keys.joinToString(",")
+                    .ifBlank { ContainerTexts.t("service_cnl_result_no_fields") }
+                ContainerTexts.t("service_cnl_result_no_links_in_form", fields)
+            } else ContainerTexts.t("service_cnl_result_nothing_decrypted")
             return Response(Status.BAD_REQUEST, MIME_PLAINTEXT, "failed\r\n") to note
         }
 
@@ -249,7 +251,9 @@ class ClickNLoadServer(
                     ?: request.headers["referer"]?.takeIf { it.isNotBlank() }
             )
         )
-        return Response(Status.OK, MIME_HTML, "success\r\n") to "${links.size} Link(s) übernommen"
+        return Response(Status.OK, MIME_HTML, "success\r\n") to ContainerTexts.quantity(
+            "service_cnl_result_links_taken_one", "service_cnl_result_links_taken_other", links.size
+        )
     }
 
     /** Liest genau [length] Bytes (ohne Content-Length: nichts); bricht bei kurzem Strom ab. */
@@ -409,10 +413,11 @@ class ClickNLoadServer(
             connection.readTimeout = 3000
             try {
                 val code = connection.responseCode
-                if (code in 200..299) "Server antwortet (HTTP $code)." else "Server antwortet mit HTTP $code."
+                if (code in 200..299) ContainerTexts.t("service_cnl_selftest_ok", code)
+                else ContainerTexts.t("service_cnl_selftest_http", code)
             } finally {
                 connection.disconnect()
             }
-        }.getOrElse { "Server nicht erreichbar: ${it.message}" }
+        }.getOrElse { ContainerTexts.t("service_cnl_selftest_unreachable", it.message ?: it.javaClass.simpleName) }
     }
 }

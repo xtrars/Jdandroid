@@ -54,11 +54,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.JdApp
+import com.jdandroid.R
 import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
@@ -123,7 +127,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { TopAppBar(title = { Text("Einstellungen") }, colors = jdTopBarColors()) }
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, colors = jdTopBarColors()) }
     ) { padding ->
         Column(
             Modifier
@@ -135,11 +139,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            SectionTitle("Darstellung")
+            SectionTitle(stringResource(R.string.settings_section_appearance))
             SettingsGroup {
                 val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
                 Spacer(Modifier.height(6.dp))
-                Text("Hell / Dunkel", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.settings_theme_label), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(6.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     ThemeMode.entries.forEachIndexed { index, m ->
@@ -147,14 +151,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             selected = themeKey == m.key,
                             onClick = { scope.launch { settings.setThemeMode(m.key) } },
                             shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
-                        ) { Text(m.label) }
+                        ) { Text(stringResource(m.labelRes())) }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
             }
 
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Downloads")
+            SectionTitle(stringResource(R.string.settings_section_downloads))
             Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = maxConcurrentText,
@@ -164,7 +168,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         if (loaded && n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
                     }
                 },
-                label = { Text("Gleichzeitige Downloads (1–99)") },
+                label = { Text(stringResource(R.string.settings_max_concurrent_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -186,13 +190,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         if (loaded) scope.launch { settings.setSpeedLimitMbit(n) }
                     }
                 },
-                label = { Text("Geschwindigkeitslimit (Mbit/s, 0 = unbegrenzt)") },
+                label = { Text(stringResource(R.string.settings_speed_limit_label)) },
                 supportingText = {
                     val bytes = parseMbit(speedLimitText)
                         ?.let { com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
                     Text(
-                        if (bytes > 0) "Gilt gemeinsam für alle laufenden Downloads, entspricht ${formatBytes(bytes)}/s"
-                        else "Gilt gemeinsam für alle laufenden Downloads"
+                        if (bytes > 0) stringResource(R.string.settings_speed_limit_hint_bytes, formatBytes(bytes))
+                        else stringResource(R.string.settings_speed_limit_hint)
                     )
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -201,45 +205,50 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
-                title = "Neue Links sofort starten",
-                subtitle = "Aus: Links landen zuerst im Linksammler, werden online geprüft " +
-                    "und starten erst auf \"Starten\"",
+                title = stringResource(R.string.settings_auto_start_title),
+                subtitle = stringResource(R.string.settings_auto_start_subtitle),
                 checked = autoStart,
                 onChange = { v -> scope.launch { settings.setAutoStartLinks(v) } }
             )
             SettingSwitch(
-                title = "Nur über WLAN laden",
-                subtitle = "Downloads pausieren bei mobiler Verbindung und starten " +
-                    "automatisch, sobald WLAN verfügbar ist",
+                title = stringResource(R.string.settings_wifi_only_title),
+                subtitle = stringResource(R.string.settings_wifi_only_subtitle),
                 checked = wifiOnly,
                 onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
             )
             SettingSwitch(
-                title = "Free-Modus",
-                subtitle = "Ohne Konto laden: mit Wartezeiten und ggf. Captcha",
+                title = stringResource(R.string.settings_free_mode_title),
+                subtitle = stringResource(R.string.settings_free_mode_subtitle),
                 checked = freeMode,
                 onChange = { v -> scope.launch { settings.setFreeMode(v) } }
             )
 
             Spacer(Modifier.height(12.dp))
-            Text("Zielordner", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.settings_target_folder), style = MaterialTheme.typography.titleSmall)
             Text(
-                treeUri?.let { "Gewählt: ${displayTree(it)}" }
-                    ?: if (export) "Standard: Downloads/JDAndroid" else "Standard: App-Ordner (nicht öffentlich)",
+                treeUri?.let {
+                    stringResource(
+                        R.string.settings_target_folder_chosen,
+                        displayTree(it).ifBlank { stringResource(R.string.settings_target_folder_main_storage) }
+                    )
+                } ?: stringResource(
+                    if (export) R.string.settings_target_folder_default_public
+                    else R.string.settings_target_folder_default_private
+                ),
                 style = MaterialTheme.typography.bodySmall
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { folderPicker.launch(null) }) { Text("Ordner wählen …") }
+                TextButton(onClick = { folderPicker.launch(null) }) { Text(stringResource(R.string.settings_choose_folder)) }
                 if (treeUri != null) {
                     TextButton(onClick = { scope.launch { settings.setDownloadTreeUri(null) } }) {
-                        Text("Zurücksetzen")
+                        Text(stringResource(R.string.settings_reset))
                     }
                 }
             }
             if (treeUri == null) {
                 SettingSwitch(
-                    title = "In öffentlichen Download-Ordner",
-                    subtitle = "Fertige Dateien nach Downloads/JDAndroid verschieben",
+                    title = stringResource(R.string.settings_export_title),
+                    subtitle = stringResource(R.string.settings_export_subtitle),
                     checked = export,
                     onChange = { v -> scope.launch { settings.setExportToDownloads(v) } }
                 )
@@ -249,59 +258,58 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            SectionTitle("Entpacken")
+            SectionTitle(stringResource(R.string.common_extract))
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
-                title = "Archive automatisch entpacken",
-                subtitle = "ZIP, 7z und RAR nach dem Download entpacken, auch mehrteilige Archive",
+                title = stringResource(R.string.settings_auto_extract_title),
+                subtitle = stringResource(R.string.settings_auto_extract_subtitle),
                 checked = autoExtract,
                 onChange = { v -> scope.launch { settings.setAutoExtract(v) } }
             )
             SettingSwitch(
-                title = "Flach entpacken",
-                subtitle = "Ordner im Archiv werden ignoriert, alle Dateien landen direkt im " +
-                    "Paketordner; gleiche Namen erhalten (2), (3) …",
+                title = stringResource(R.string.settings_flat_extract_title),
+                subtitle = stringResource(R.string.settings_flat_extract_subtitle),
                 checked = flatExtract,
                 onChange = { v -> scope.launch { settings.setFlatExtract(v) } }
             )
             SettingSwitch(
-                title = "Archiv nach dem Entpacken löschen",
-                subtitle = "Spart Speicherplatz, Original-Archiv wird entfernt",
+                title = stringResource(R.string.settings_delete_archive_title),
+                subtitle = stringResource(R.string.settings_delete_archive_subtitle),
                 checked = deleteArchive,
                 onChange = { v -> scope.launch { settings.setDeleteArchiveAfterExtract(v) } }
             )
             SettingSwitch(
-                title = "Einträge nach dem Entpacken entfernen",
-                subtitle = "Alle Teile des Archivs verschwinden aus der Download-Liste, " +
-                    "sobald es erfolgreich entpackt wurde",
+                title = stringResource(R.string.settings_remove_entries_title),
+                subtitle = stringResource(R.string.settings_remove_entries_subtitle),
                 checked = removeLinks,
                 onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
             )
             Spacer(Modifier.height(12.dp))
             StringListEditor(
-                title = "Passwortliste",
-                description = "Beim Entpacken werden alle Passwörter der Reihe nach ausprobiert. " +
-                    "Passwörter aus Click'n'Load werden automatisch ergänzt.",
-                emptyText = "Noch keine Passwörter.",
-                fieldLabel = "Neues Passwort",
-                importTitle = "Passwörter einfügen",
-                importPlaceholder = "Ein Passwort pro Zeile",
-                removeDescription = "Passwort entfernen",
+                title = stringResource(R.string.settings_passwords_title),
+                description = stringResource(R.string.settings_passwords_description),
+                emptyText = stringResource(R.string.settings_passwords_empty),
+                fieldLabel = stringResource(R.string.settings_passwords_field_label),
+                importTitle = stringResource(R.string.settings_passwords_import_title),
+                importPlaceholder = stringResource(R.string.settings_passwords_import_placeholder),
+                removeDescription = stringResource(R.string.settings_passwords_remove),
                 items = passwords,
                 onAdd = { list -> scope.launch { settings.addPasswords(list) } },
                 onRemove = { pw -> scope.launch { settings.removePassword(pw) } }
             )
             Spacer(Modifier.height(16.dp))
             StringListEditor(
-                title = "Vom Entpacken ausschließen",
-                description = "Dateien im Archiv, die zu diesen Mustern passen, werden nicht " +
-                    "entpackt. * steht für beliebige Zeichen, ? für eines, " +
-                    "z.B. *.nfo, *.sfv, *sample*, proof/*",
-                emptyText = "Keine Ausschlüsse – alles wird entpackt.",
-                fieldLabel = "Neues Muster",
-                importTitle = "Muster einfügen",
-                importPlaceholder = "Ein Muster pro Zeile",
-                removeDescription = "Muster entfernen",
+                title = stringResource(R.string.settings_excludes_title),
+                description = stringResource(
+                    R.string.settings_excludes_description,
+                    // Beispielmuster als Liste, damit die Uebersetzung sie nicht abtippen muss
+                    stringArrayResource(R.array.settings_exclude_examples).joinToString(", ")
+                ),
+                emptyText = stringResource(R.string.settings_excludes_empty),
+                fieldLabel = stringResource(R.string.settings_excludes_field_label),
+                importTitle = stringResource(R.string.settings_excludes_import_title),
+                importPlaceholder = stringResource(R.string.settings_excludes_import_placeholder),
+                removeDescription = stringResource(R.string.settings_excludes_remove),
                 items = excludes,
                 onAdd = { list -> scope.launch { settings.addExtractExcludes(list) } },
                 onRemove = { pattern -> scope.launch { settings.removeExtractExclude(pattern) } }
@@ -311,12 +319,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            SectionTitle("Container & Click'n'Load")
+            SectionTitle(stringResource(R.string.settings_section_cnl))
             Spacer(Modifier.height(8.dp))
             SettingSwitch(
-                title = "Click'n'Load aktivieren",
-                subtitle = "Lokaler Server auf Port ${ClickNLoadServer.PORT}. " +
-                    "Browser auf diesem Gerät können Links direkt hierher senden.",
+                title = stringResource(R.string.settings_cnl_title),
+                subtitle = stringResource(R.string.settings_cnl_subtitle, ClickNLoadServer.PORT),
                 checked = cnlEnabled,
                 onChange = { v ->
                     scope.launch {
@@ -334,12 +341,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             var cnlTest by remember { mutableStateOf<String?>(null) }
             Text(
                 when {
-                    cnlRunning -> "Status: Server läuft auf Port " +
-                        "${ClickNLoadServer.PORT} (${cnlBoundTo.orEmpty()}) " +
-                        "und nimmt Links entgegen."
-                    cnlError != null -> "Status: Start fehlgeschlagen – $cnlError"
-                    cnlEnabled -> "Status: Server wird gestartet …"
-                    else -> "Status: ausgeschaltet."
+                    cnlRunning -> stringResource(
+                        R.string.settings_cnl_status_running, ClickNLoadServer.PORT, cnlBoundTo.orEmpty()
+                    )
+                    cnlError != null -> stringResource(R.string.settings_cnl_status_failed, cnlError.orEmpty())
+                    cnlEnabled -> stringResource(R.string.settings_cnl_status_starting)
+                    else -> stringResource(R.string.settings_cnl_status_off)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = when {
@@ -350,65 +357,74 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
             if (cnlRunning) {
                 Text(
-                    cnlLast?.let { "Letzte Anfrage: $it" }
-                        ?: "Noch keine Anfrage eines Browsers eingegangen.",
+                    cnlLast?.let { stringResource(R.string.settings_cnl_last_request, it) }
+                        ?: stringResource(R.string.settings_cnl_no_request),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val testingText = stringResource(R.string.settings_cnl_testing)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = {
-                        cnlTest = "Teste …"
+                        cnlTest = testingText
                         scope.launch {
                             cnlTest = withContext(Dispatchers.IO) { ClickNLoadServer.selfTest() }
                         }
-                    }) { Text("Verbindung testen") }
+                    }) { Text(stringResource(R.string.settings_cnl_test)) }
                     cnlTest?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     }
                 }
                 Text(
-                    "Hinweis: Chrome fragt beim ersten Click'n'Load, ob die Seite auf " +
-                        "das lokale Netzwerk zugreifen darf – das muss erlaubt werden. " +
-                        "Erscheint hier nach dem Klick keine Anfrage, hat der Browser die " +
-                        "Verbindung zu 127.0.0.1 blockiert.",
+                    stringResource(R.string.settings_cnl_chrome_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "DLC-Dateien lassen sich über \"Öffnen mit\" bzw. Teilen importieren. " +
-                    "Die Entschlüsselung nutzt den JDownloader-DLC-Dienst.",
+                stringResource(R.string.settings_dlc_hint),
                 style = MaterialTheme.typography.bodySmall
             )
 
 
             Spacer(Modifier.height(24.dp))
             Text(
-                "Unterstützte Hoster: Rapidgator, 1fichier, ddownload.\n" +
-                    "Downloads laufen über die offiziellen APIs der Hoster und benötigen " +
-                    "einen Premium-Account bzw. API-Key (Tab \"Konten\").",
+                stringResource(R.string.settings_hosters_hint),
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(12.dp))
             // Installierte Version, damit bei Rueckfragen klar ist, welche APK laeuft
-            val version = remember {
-                runCatching {
-                    val info = context.packageManager.getPackageInfo(context.packageName, 0)
-                    "JDAndroid ${info.versionName} (${androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info)})"
-                }.getOrDefault("JDAndroid")
+            val packageInfo = remember {
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
             }
+            val version = packageInfo?.let {
+                stringResource(
+                    R.string.settings_version,
+                    it.versionName ?: "",
+                    androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(it)
+                )
+            } ?: "JDAndroid"
             Text(version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-/** Lesbarer Name eines SAF-Ordners: "primary:Download/JD" -> "Download/JD". */
+/** Anzeigetext der Hell/Dunkel-Auswahl in der Gerätesprache. */
+private fun ThemeMode.labelRes(): Int = when (this) {
+    ThemeMode.SYSTEM -> R.string.settings_theme_system
+    ThemeMode.LIGHT -> R.string.settings_theme_light
+    ThemeMode.DARK -> R.string.settings_theme_dark
+}
+
+/**
+ * Lesbarer Name eines SAF-Ordners: "primary:Download/JD" -> "Download/JD".
+ * Leer, wenn der Hauptspeicher selbst gewaehlt ist (Aufrufer setzt den Text).
+ */
 private fun displayTree(uri: String): String {
     val decoded = runCatching { Uri.decode(uri) }.getOrDefault(uri)
     val tree = decoded.substringAfter("/tree/", decoded)
-    return tree.substringAfter(':', tree).ifBlank { "Hauptspeicher" }
+    return tree.substringAfter(':', tree)
 }
 
 /**
@@ -445,18 +461,15 @@ private fun StringListEditor(
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(
-                when (passwords.size) {
-                    0 -> "keine Einträge"
-                    1 -> "1 Eintrag"
-                    else -> "${passwords.size} Einträge"
-                },
+                if (passwords.isEmpty()) stringResource(R.string.settings_list_empty)
+                else pluralStringResource(R.plurals.settings_list_count, passwords.size, passwords.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Icon(
             if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = if (expanded) "Zuklappen" else "Aufklappen"
+            contentDescription = stringResource(if (expanded) R.string.settings_collapse else R.string.settings_expand)
         )
     }
     if (!expanded) return
@@ -508,9 +521,9 @@ private fun StringListEditor(
         TextButton(
             enabled = newPassword.isNotBlank(),
             onClick = { onAdd(listOf(newPassword.trim())); newPassword = "" }
-        ) { Text("Hinzufügen") }
+        ) { Text(stringResource(R.string.settings_add)) }
     }
-    TextButton(onClick = { importOpen = true }) { Text("Mehrere einfügen …") }
+    TextButton(onClick = { importOpen = true }) { Text(stringResource(R.string.settings_import_multiple)) }
 
     if (importOpen) {
         var text by rememberSaveable { mutableStateOf("") }
@@ -536,9 +549,9 @@ private fun StringListEditor(
                         onAdd(text.lines().map { it.trim() }.filter { it.isNotEmpty() })
                         importOpen = false
                     }
-                ) { Text("Übernehmen") }
+                ) { Text(stringResource(R.string.settings_apply)) }
             },
-            dismissButton = { TextButton(onClick = { importOpen = false }) { Text("Abbrechen") } }
+            dismissButton = { TextButton(onClick = { importOpen = false }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 }

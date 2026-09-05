@@ -13,7 +13,8 @@ and 1fichier, a link grabber with online availability check, Click'n'Load 2
 and DLC container import, and automatic extraction of RAR, ZIP and 7z
 archives (including multi-part and password-protected ones). The app is
 written in Kotlin with Jetpack Compose and Room. The user interface is
-German only.
+available in English and German (it follows the device language; German is
+the default).
 
 **Features.** Package-based queue with pause/resume (HTTP range), 1-99
 parallel downloads, global speed limit, Wi-Fi-only mode, checksum
@@ -183,6 +184,11 @@ oder fest wählbar. Alle Schaltflächen bleiben auch bei eingeblendeter
 Tastatur sichtbar; pro Zeile gibt es ein Drei-Punkte-Aktionsmenü, am Paket
 zusätzlich Start/Pause. Fehler erscheinen als eine klare Meldung, ein
 Absturzbericht steht in den Einstellungen unter „Letzter Absturz“.
+
+Die Oberfläche gibt es auf **Deutsch und Englisch**; sie folgt der
+Gerätesprache (Deutsch ist die Standardsprache). Alle Texte – auch die
+Meldungen aus Engine und Hostern – liegen als String-Ressourcen vor, siehe
+[`docs/I18N.md`](docs/I18N.md).
 
 ## Installation
 

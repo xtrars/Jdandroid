@@ -1,5 +1,6 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.Texts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -45,9 +46,6 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     /** Countdowns bis hierhin laufen im Prozess ab; laengere werden zur Wartezeit der Engine. */
     private val MAX_INLINE_COUNTDOWN = 180
 
-    /** Grund der Wartezeit vor dem Free-Download (der Countdown steht in der Engine-Meldung). */
-    private val WAIT_TEXT = "ddownload: Countdown vor dem Free-Download"
-
     /** Mindestwartezeit nach einer Sperre ohne konkrete Zeitangabe (Sekunden). */
     private val MIN_RETRY_WAIT = 60
 
@@ -55,7 +53,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     private val LIMIT_FALLBACK_WAIT = 60 * 60
 
     /** Grund einer Sperre; die Restzeit zaehlt die Engine-Meldung selbst herunter. */
-    private val SPERRE_TEXT = "ddownload: Sperre bis zum nächsten Free-Download"
+    private fun waitText(@Suppress("UNUSED_PARAMETER") seconds: Int): String =
+        Texts.t("hoster_ddownload_free_locked")
 
     /**
      * Ablauf ohne Nutzer: Dateiseite holen, Offline, Wartung, Premium-Grenzen
@@ -96,10 +95,10 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             val page = with(hoster) { client.fetch(pageUrl, referer = siteBase) }
             hoster.checkBlocked(page)
             if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
-                throw HosterException("Datei ist offline", true)
+                throw FileOfflineException()
             }
             if (page.code !in 200..299) {
-                throw HosterException("ddownload: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
+                throw HosterException(Texts.t("hoster_ddownload_file_page_unreachable", page.code), permanent = false)
             }
             checkFreeBlockers(page.body)
             fileName = hoster.pageFileName(page.body)
@@ -109,10 +108,10 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
                 is FreeCaptcha.Span -> mapOf("code" to captcha.code)
                 FreeCaptcha.None -> emptyMap()
                 is FreeCaptcha.Browser -> throw CaptchaRequiredException(
-                    pageUrl, "ddownload: Captcha (${captcha.kind}) – nur im Browser lösbar"
+                    pageUrl, Texts.t("hoster_ddownload_captcha_browser", captcha.kind)
                 )
                 is FreeCaptcha.Image -> throw CaptchaRequiredException(
-                    pageUrl, "ddownload: Bild-Captcha – nur im Browser lösbar"
+                    pageUrl, Texts.t("hoster_ddownload_image_captcha")
                 )
             }
             form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
@@ -129,7 +128,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         // Zeiten als Wartezeit an die Engine zurueckgeben (Formular bleibt
         // in [freeSessions])
         if (countdown > MAX_INLINE_COUNTDOWN) {
-            throw WaitException(countdown + 1, WAIT_TEXT)
+            throw WaitException(countdown + 1, Texts.t("hoster_ddownload_free_countdown"))
         }
         if (countdown > 0) delay((countdown + 1) * 1000L)
 
@@ -157,18 +156,18 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             val body = resp.body
             when {
                 DdownloadFreePage.isWrongCaptcha(body) -> throw CaptchaRequiredException(
-                    pageUrl, "ddownload: Captcha abgelehnt – bitte im Browser lösen"
+                    pageUrl, Texts.t("hoster_ddownload_captcha_rejected")
                 )
                 DdownloadFreePage.isExpiredSession(body) -> throw HosterException(
-                    "ddownload: Download-Sitzung abgelaufen – wird erneut versucht", permanent = false
+                    Texts.t("hoster_ddownload_download_session_expired"), permanent = false
                 )
                 DdownloadFreePage.isSkippedCountdown(body) -> throw WaitException(
-                    countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, "ddownload: Countdown nicht eingehalten"
+                    countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, Texts.t("hoster_ddownload_countdown_skipped")
                 )
             }
             checkFreeBlockers(body)
             // Unbekannte Antwort: ein neuer Versuch kostet nichts, daher nie endgueltig
-            throw HosterException("ddownload: kein Direktlink erhalten (HTTP ${resp.code})", permanent = false)
+            throw HosterException(Texts.t("hoster_ddownload_no_direct_link", resp.code), permanent = false)
         }
         ResolvedLink(
             direct,
@@ -185,13 +184,13 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      */
     private fun checkFreeBlockers(html: String) {
         if (DdownloadFreePage.isMaintenance(html)) {
-            throw HosterException("ddownload: Server in Wartung – später erneut", permanent = false)
+            throw HosterException(Texts.t("hoster_ddownload_maintenance"), permanent = false)
         }
-        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException("ddownload: $it", true) }
+        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException(it, true) }
         val wait = DdownloadFreePage.waitSeconds(html)
-        if (wait > 0) throw WaitException(wait + 1, SPERRE_TEXT)
+        if (wait > 0) throw WaitException(wait + 1, waitText(wait + 1))
         if (DdownloadFreePage.isLimitWithoutTime(html)) {
-            throw WaitException(LIMIT_FALLBACK_WAIT, "ddownload: Download-Limit erreicht – in einer Stunde erneut")
+            throw WaitException(LIMIT_FALLBACK_WAIT, Texts.t("hoster_ddownload_limit_reached_hour"))
         }
     }
 

@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 class DownloadService : Service() {
 
     private val scope = CoroutineScope(
-        SupervisorJob() + Dispatchers.IO + JdApp.backgroundErrors("Download-Dienst")
+        SupervisorJob() + Dispatchers.IO + JdApp.backgroundErrors(this, R.string.service_scope_download_service)
     )
 
     /** Letzte startId fuer stopSelfResult: kein Stopp, wenn gerade ein neuer Befehl eintraf. */
@@ -94,7 +94,7 @@ class DownloadService : Service() {
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
-        startForegroundCompat(buildNotification("Downloads werden vorbereitet …"))
+        startForegroundCompat(buildNotification(getString(R.string.service_preparing)))
         scope.launch {
             try {
                 if (foregroundRefused) return@launch
@@ -167,17 +167,15 @@ class DownloadService : Service() {
             if (wasActive) {
                 notifyEvent(
                     NOTIFICATION_TIMEOUT,
-                    "Downloads pausiert",
-                    "Android erlaubt Hintergrund-Downloads nur 6 Stunden am Stück. " +
-                        "Antippen, um fortzusetzen.",
+                    getString(R.string.service_timeout_paused_title),
+                    getString(R.string.service_timeout_paused_text),
                     resumeAction = true
                 )
             } else if (cnlWanted) {
                 notifyEvent(
                     NOTIFICATION_TIMEOUT,
-                    "Click'n'Load beendet",
-                    "Android hat den Hintergrunddienst nach 6 Stunden beendet. " +
-                        "App öffnen, um Click'n'Load wieder zu starten."
+                    getString(R.string.service_timeout_cnl_title),
+                    getString(R.string.service_timeout_cnl_text)
                 )
             }
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -209,12 +207,16 @@ class DownloadService : Service() {
                 )
                 // Sichtbar machen, woher die Links kamen - eine Webseite kann den
                 // Server sonst unbemerkt fuettern.
-                val origin = request.source?.let { LinkSink.displaySource(it) } ?: "einer Webseite"
+                val origin = request.source?.let { LinkSink.displaySource(it) }
+                    ?: getString(R.string.service_cnl_origin_website)
                 notifyEvent(
                     NOTIFICATION_CNL,
-                    "Click'n'Load",
-                    if (added > 0) "$added Link(s) von $origin hinzugefügt"
-                    else "Links von $origin bereits vorhanden oder nicht unterstützt"
+                    getString(R.string.service_cnl_title),
+                    if (added > 0) {
+                        resources.getQuantityString(R.plurals.service_cnl_links_added, added, added, origin)
+                    } else {
+                        getString(R.string.service_cnl_nothing_added, origin)
+                    }
                 )
             }
         }
@@ -233,9 +235,11 @@ class DownloadService : Service() {
                 lastError = e
             }
         }
-        val raw = lastError?.message ?: lastError?.javaClass?.simpleName ?: "unbekannt"
+        val raw = lastError?.message ?: lastError?.javaClass?.simpleName
+            ?: getString(R.string.service_error_unknown)
+        // Systemtext des Sockets (nicht von uns uebersetzt), daher Textsuche
         val reason = if (raw.contains("in use", true) || raw.contains("EADDRINUSE", true)) {
-            "Port ${ClickNLoadServer.PORT} ist belegt – läuft ein anderer Download-Manager auf dem Gerät?"
+            getString(R.string.service_cnl_port_in_use, ClickNLoadServer.PORT)
         } else raw
         CnlStatus.failed(reason)
         AppLog.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
@@ -258,16 +262,18 @@ class DownloadService : Service() {
             return
         }
         ensureForegroundType(active > 0)
-        val text = buildString {
-            if (active == 0 && queued == 0 && cnlActive) {
-                append("Click'n'Load aktiv (Port ${ClickNLoadServer.PORT})")
-            } else {
-                append("$active aktiv")
-                if (queued > 0) append(", $queued wartend")
-                val speed = engine.totalSpeedBps
-                if (speed > 0) append(" · ${formatBytes(speed)}/s")
-                if (cnlActive) append(" · CnL an")
-            }
+        val text = if (active == 0 && queued == 0 && cnlActive) {
+            getString(R.string.service_status_cnl_active, ClickNLoadServer.PORT)
+        } else {
+            // Teile als ganze Formatstrings, mit " · " verbunden
+            val parts = mutableListOf(
+                if (queued > 0) resources.getQuantityString(R.plurals.service_status_active_queued, active, active, queued)
+                else resources.getQuantityString(R.plurals.service_status_active, active, active)
+            )
+            val speed = engine.totalSpeedBps
+            if (speed > 0) parts += getString(R.string.service_status_speed, formatBytes(speed))
+            if (cnlActive) parts += getString(R.string.service_status_cnl_on)
+            parts.joinToString(" · ")
         }
         val done = engine.openDownloadedBytes()
         val total = dao.openTotalBytes()
@@ -291,7 +297,7 @@ class DownloadService : Service() {
         else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         if (wanted == foregroundType) return
         try {
-            startForeground(NOTIFICATION_ID, buildNotification("Downloads werden vorbereitet …"), wanted)
+            startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.service_preparing)), wanted)
             foregroundType = wanted
         } catch (e: Exception) {
             android.util.Log.w("DownloadService", "Typwechsel abgelehnt: ${e.message}")
@@ -335,12 +341,12 @@ class DownloadService : Service() {
         if (progress >= 0) builder.setProgress(100, progress, false)
         if (showPause) {
             builder.addAction(
-                0, "Alle pausieren", servicePendingIntent(ACTION_PAUSE_ALL, 1)
+                0, getString(R.string.service_action_pause_all), servicePendingIntent(ACTION_PAUSE_ALL, 1)
             )
         }
         if (showResume) {
             builder.addAction(
-                0, "Fortsetzen", servicePendingIntent(ACTION_RESUME_ALL, 2)
+                0, getString(R.string.common_resume), servicePendingIntent(ACTION_RESUME_ALL, 2)
             )
         }
         return builder.build()
@@ -366,7 +372,7 @@ class DownloadService : Service() {
             .setContentIntent(open)
             .setAutoCancel(true)
         if (resumeAction) {
-            builder.addAction(0, "Fortsetzen", open)
+            builder.addAction(0, getString(R.string.common_resume), open)
         }
         runCatching {
             getSystemService(NotificationManager::class.java)?.notify(id, builder.build())
