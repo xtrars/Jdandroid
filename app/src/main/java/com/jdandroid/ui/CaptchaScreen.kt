@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -107,7 +108,7 @@ fun CaptchaScreen(
     var status by remember {
         mutableStateOf("Captcha lösen und den Download starten – die Datei lädt danach die App.")
     }
-    val pageHost = remember(pageUrl) { android.net.Uri.parse(pageUrl).host }
+    val pageHost = remember(pageUrl) { pageUrl.toUri().host }
     // Nur einmal uebernehmen: Weiterleitung und DownloadListener koennen
     // dieselbe Adresse mehrfach melden
     val captured = remember { AtomicBoolean(false) }

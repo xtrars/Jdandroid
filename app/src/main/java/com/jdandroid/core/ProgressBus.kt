@@ -38,9 +38,10 @@ object ProgressBus {
     /**
      * Wert veroeffentlichen, sofern seit der letzten Veroeffentlichung dieses
      * Eintrags mindestens [MIN_INTERVAL_MS] vergangen sind. Liefert true, wenn
-     * der Wert uebernommen wurde. [now] ist fuer Tests ueberschreibbar.
+     * der Wert uebernommen wurde. [now] ist monotone Zeit in Millisekunden
+     * ([Clock]) und fuer Tests ueberschreibbar.
      */
-    fun update(id: Long, progress: LiveProgress, now: Long = System.currentTimeMillis()): Boolean {
+    fun update(id: Long, progress: LiveProgress, now: Long = Clock.SYSTEM.nowMillis()): Boolean {
         synchronized(lock) {
             val last = lastPublished[id]
             if (last != null && now - last < MIN_INTERVAL_MS) return false

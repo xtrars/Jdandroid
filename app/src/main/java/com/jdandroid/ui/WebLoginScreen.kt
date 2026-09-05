@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import java.io.ByteArrayInputStream
 
 /**
@@ -105,7 +106,7 @@ fun WebLoginScreen(
         if (view != null && view.canGoBack()) view.goBack() else cancel()
     }
 
-    val loginHost = remember(loginUrl) { android.net.Uri.parse(loginUrl).host.orEmpty() }
+    val loginHost = remember(loginUrl) { loginUrl.toUri().host.orEmpty() }
 
     fun cookiesFor(url: String): String? =
         CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }

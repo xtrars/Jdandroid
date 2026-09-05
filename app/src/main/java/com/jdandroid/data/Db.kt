@@ -41,7 +41,11 @@ data class DownloadPackage(
 
 @Entity(
     tableName = "downloads",
-    indices = [Index(value = ["url"], unique = true), Index(value = ["archiveKey"])]
+    indices = [
+        Index(value = ["url"], unique = true), Index(value = ["archiveKey"]),
+        // Warteschlange und Zaehler filtern nach status, Pakete nach packageId
+        Index(value = ["status"]), Index(value = ["packageId"])
+    ]
 )
 data class DownloadItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -67,13 +71,6 @@ data class DownloadItem(
     val retryAt: Long = 0,
     /** Online-Pruefung (siehe [OnlineState]); Hinweis dazu in [errorMessage]. */
     val online: Int = OnlineState.UNKNOWN,
-    /**
-     * Fortschritt des Entpackens in Prozent, -1 = unbekannt. Bleibt aus
-     * Kompatibilitaet bestehen und wird nur noch bei Entpack-Start (0) und
-     * -Ende (-1) geschrieben; der laufende Wert kommt aus dem
-     * [com.jdandroid.core.ProgressBus].
-     */
-    val extractProgress: Int = -1,
     val addedAt: Long = System.currentTimeMillis()
 )
 
@@ -223,21 +220,21 @@ interface DownloadDao {
 
     /** Nach Prozess-Ende: laufende und entpackende Eintraege wieder einreihen. */
     @Query(
-        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0, extractProgress = -1 " +
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 " +
             "WHERE status IN ('RUNNING', 'EXTRACTING')"
     )
     suspend fun requeueRunning()
 
     /** Wie [requeueRunning], aber ohne Eintraege, die im Prozess gerade noch entpackt werden. */
     @Query(
-        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0, extractProgress = -1 " +
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, speedBps = 0 " +
             "WHERE status IN ('RUNNING', 'EXTRACTING') AND id NOT IN (:except)"
     )
     suspend fun requeueRunningExcept(except: List<Long>)
 
     /** Alle Teile eines Archiv-Sets auf "wird entpackt" setzen (auch den gerade fertigen). */
     @Query(
-        "UPDATE downloads SET status = 'EXTRACTING', extractProgress = 0, errorMessage = NULL, speedBps = 0 " +
+        "UPDATE downloads SET status = 'EXTRACTING', errorMessage = NULL, speedBps = 0 " +
             "WHERE id IN (:ids) AND status IN ('COMPLETED', 'EXTRACTING', 'RUNNING')"
     )
     suspend fun setExtractingSet(ids: List<Long>)
@@ -245,7 +242,7 @@ interface DownloadDao {
     /** Entpacken beendet: alle Teile des Sets zurueck auf fertig, mit Zielpfad bzw. Fehlerhinweis. */
     @Query(
         "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
-            "extractProgress = -1, attempts = 0, retryAt = 0 WHERE id IN (:ids) AND status = 'EXTRACTING'"
+            "attempts = 0, retryAt = 0 WHERE id IN (:ids) AND status = 'EXTRACTING'"
     )
     suspend fun completeExtractingSet(ids: List<Long>, path: String?, note: String?)
 
@@ -260,7 +257,7 @@ interface DownloadDao {
     /** Abschluss nur, wenn der Eintrag nicht zwischenzeitlich pausiert/geloescht wurde. */
     @Query(
         "UPDATE downloads SET status = 'COMPLETED', localPath = :path, errorMessage = :note, " +
-            "speedBps = 0, attempts = 0, retryAt = 0, extractProgress = -1 " +
+            "speedBps = 0, attempts = 0, retryAt = 0 " +
             "WHERE id = :id AND status IN ('RUNNING', 'EXTRACTING')"
     )
     suspend fun completeIfActive(id: Long, path: String?, note: String?): Int
@@ -417,7 +414,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -427,40 +424,12 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /**
-         * Echte Migrationen statt destruktivem Neuaufbau: bei einem Update
-         * bleiben Konten und Downloadliste erhalten.
+         * Datenbanken der Versionen 1 bis 4 (fruehe Entwicklungsstaende) werden
+         * nicht mehr migriert, sondern neu aufgebaut
+         * (fallbackToDestructiveMigrationFrom in [com.jdandroid.JdApp]).
+         * Ab Version 5 bleiben Konten und Downloadliste bei Updates erhalten.
          */
-        val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE accounts ADD COLUMN cookies TEXT")
-            }
-        }
-
-        val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE downloads ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE downloads ADD COLUMN retryAt INTEGER NOT NULL DEFAULT 0")
-            }
-        }
-
-        val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS packages (" +
-                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
-                        "name TEXT NOT NULL, " +
-                        "autoNamed INTEGER NOT NULL DEFAULT 1, " +
-                        "addedAt INTEGER NOT NULL)"
-                )
-                db.execSQL("ALTER TABLE downloads ADD COLUMN packageId INTEGER")
-            }
-        }
-
-        val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE packages ADD COLUMN source TEXT")
-            }
-        }
+        val DESTRUCTIVE_FROM = intArrayOf(1, 2, 3, 4)
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -513,9 +482,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Spalte extractProgress entfernen: der Entpack-Stand lebt nur noch im
+         * [com.jdandroid.core.ProgressBus]. SQLite kann keine Spalte loeschen,
+         * daher Tabellen-Neuaufbau (Daten kopieren, alte Tabelle ersetzen);
+         * dabei kommen Indizes auf status und packageId hinzu. Die CREATE-
+         * Anweisungen muessen exakt dem exportierten Schema 11 entsprechen.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `downloads_neu` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `url` TEXT NOT NULL, " +
+                        "`hosterId` TEXT NOT NULL, `packageId` INTEGER, `fileName` TEXT, `archiveKey` TEXT, " +
+                        "`fileSize` INTEGER NOT NULL, `downloadedBytes` INTEGER NOT NULL, " +
+                        "`speedBps` INTEGER NOT NULL, `status` TEXT NOT NULL, `errorMessage` TEXT, " +
+                        "`localPath` TEXT, `attempts` INTEGER NOT NULL, `retryAt` INTEGER NOT NULL, " +
+                        "`online` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL)"
+                )
+                val spalten = "`id`, `url`, `hosterId`, `packageId`, `fileName`, `archiveKey`, `fileSize`, " +
+                    "`downloadedBytes`, `speedBps`, `status`, `errorMessage`, `localPath`, `attempts`, " +
+                    "`retryAt`, `online`, `addedAt`"
+                db.execSQL("INSERT INTO `downloads_neu` ($spalten) SELECT $spalten FROM `downloads`")
+                db.execSQL("DROP TABLE `downloads`")
+                db.execSQL("ALTER TABLE `downloads_neu` RENAME TO `downloads`")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_downloads_url` ON `downloads` (`url`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_archiveKey` ON `downloads` (`archiveKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_status` ON `downloads` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_downloads_packageId` ON `downloads` (`packageId`)")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
-            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-            MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
+            MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
         )
     }
 }

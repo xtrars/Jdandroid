@@ -50,6 +50,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -233,7 +234,7 @@ fun DownloadsScreen(
                     }
                     if (!isCollapsed) {
                         items(group.items, key = { it.id }) { item ->
-                            DownloadRow(item, vm, Modifier.padding(start = 10.dp))
+                            DownloadRow(item, group.extractPercent(item), vm, Modifier.padding(start = 10.dp))
                         }
                     }
                     item(key = "gap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
@@ -382,13 +383,15 @@ private fun PackageHeader(
 @Composable
 private fun DownloadRow(
     item: DownloadItem,
+    /** Entpack-Stand in Prozent (live), -1 = unbekannt. */
+    extractPercent: Int,
     vm: DownloadViewModel,
     modifier: Modifier = Modifier
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     // Free-Modus: Wartezeit live herunterzaehlen, Captcha-Eintrag erkennen
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val freeWaiting = item.status == DownloadStatus.QUEUED && FreeMode.isWaitMessage(item.errorMessage)
     val captchaHold = item.status == DownloadStatus.QUEUED &&
         FreeMode.isCaptchaHold(item.errorMessage, item.retryAt, now)
@@ -496,7 +499,7 @@ private fun DownloadRow(
                 DownloadStatus.COLLECTED -> "noch nicht gestartet"
                 DownloadStatus.PAUSED -> "${formatBytes(item.downloadedBytes)} geladen"
                 DownloadStatus.EXTRACTING ->
-                    if (item.extractProgress >= 0) "Archiv wird entpackt … ${item.extractProgress} %"
+                    if (extractPercent >= 0) "Archiv wird entpackt … $extractPercent %"
                     else "Archiv wird entpackt …"
                 DownloadStatus.COMPLETED ->
                     (item.localPath ?: "") + (item.errorMessage?.let { " ($it)" } ?: "")
@@ -520,7 +523,7 @@ private fun DownloadRow(
             if (item.status == DownloadStatus.EXTRACTING) {
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(
-                    if (item.extractProgress >= 0) item.extractProgress / 100f else null,
+                    if (extractPercent >= 0) extractPercent / 100f else null,
                     Modifier.padding(end = 8.dp)
                 )
             }

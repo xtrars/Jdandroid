@@ -1,7 +1,9 @@
 package com.jdandroid
 
+import com.jdandroid.core.LiveProgress
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadPackage
+import com.jdandroid.data.DownloadStatus
 import com.jdandroid.ui.groupDownloads
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -46,5 +48,27 @@ class DownloadGroupingTest {
         assertEquals(listOf("A", "Ohne Paket"), groups.map { it.pkg.name })
         assertEquals(setOf(11L, 12L), groups[1].items.map { it.id }.toSet())
         assertTrue(groups.flatMap { it.items }.map { it.id }.containsAll(listOf(10L, 11L, 12L)))
+    }
+
+    @Test
+    fun entpackStandKommtAusDenLiveWertenAnDieGruppe() {
+        val packages = listOf(DownloadPackage(id = 1, name = "A"))
+        val extracting = item(10, 1).copy(status = DownloadStatus.EXTRACTING)
+        val other = item(11, 1).copy(status = DownloadStatus.EXTRACTING)
+        val done = item(12, 1).copy(status = DownloadStatus.COMPLETED)
+        val live = mapOf(10L to LiveProgress(extractPercent = 42), 12L to LiveProgress(extractPercent = 99))
+        val group = groupDownloads(listOf(extracting, other, done), packages, live).single()
+        assertEquals(42, group.extractPercent(extracting))
+        assertEquals(-1, group.extractPercent(other))
+        // Paketwert: hoechster Stand der gerade entpackenden Eintraege
+        assertEquals(42, group.extractPercent)
+    }
+
+    @Test
+    fun ohneLiveWerteIstDerEntpackStandUnbekannt() {
+        val extracting = item(10, 1).copy(status = DownloadStatus.EXTRACTING)
+        val group = groupDownloads(listOf(extracting), listOf(DownloadPackage(id = 1, name = "A"))).single()
+        assertEquals(-1, group.extractPercent)
+        assertEquals(-1, group.extractPercent(extracting))
     }
 }

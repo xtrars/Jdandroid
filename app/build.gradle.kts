@@ -75,6 +75,12 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        // Versionshinweise absichtlich aus: Abhaengigkeiten werden gezielt
+        // aktualisiert, nicht bei jedem Lint-Lauf.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+    }
+
     // Release-APK nach Version benennen (statt app-release.apk)
     applicationVariants.all {
         if (buildType.name == "release") {

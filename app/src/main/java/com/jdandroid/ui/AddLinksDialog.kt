@@ -20,7 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.jdandroid.data.PackageNaming
@@ -45,7 +44,7 @@ fun AddLinksDialog(
     // Inhaltshoehe an die Bildschirmhoehe koppeln: bei langen Linklisten und
     // offener Tastatur bleiben Paketname, Erkennungshinweis und die Knoepfe
     // sichtbar; der Inhalt scrollt, das Linkfeld scrollt zusaetzlich intern.
-    val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.45f).dp
+    val maxContentHeight = windowHeightDp() * 0.45f
 
     AlertDialog(
         onDismissRequest = onDismiss,

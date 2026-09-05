@@ -13,7 +13,7 @@ class ProgressOverlayTest {
 
     private fun item(id: Long, status: DownloadStatus = DownloadStatus.RUNNING) = DownloadItem(
         id = id, url = "https://example.test/$id", hosterId = "test", status = status,
-        fileSize = 1_000, downloadedBytes = 100, speedBps = 0, extractProgress = -1
+        fileSize = 1_000, downloadedBytes = 100, speedBps = 0
     )
 
     @Test
@@ -22,7 +22,6 @@ class ProgressOverlayTest {
         assertEquals(750L, result[0].downloadedBytes)
         assertEquals(5_000L, result[0].speedBps)
         // Nicht gelieferte Werte bleiben aus der Datenbank
-        assertEquals(-1, result[0].extractProgress)
         assertEquals(1_000L, result[0].fileSize)
         assertEquals(DownloadStatus.RUNNING, result[0].status)
     }
@@ -41,10 +40,9 @@ class ProgressOverlayTest {
     }
 
     @Test
-    fun entpackProzentUeberlagertNurDenEntpackStand() {
+    fun entpackProzentAendertBytestandUndGeschwindigkeitNicht() {
         val extracting = item(3, DownloadStatus.EXTRACTING).copy(downloadedBytes = 1_000)
         val result = overlayProgress(listOf(extracting), mapOf(3L to LiveProgress(extractPercent = 42)))
-        assertEquals(42, result[0].extractProgress)
         // Bytestand (-1 = kein Live-Wert) bleibt der Datenbankwert
         assertEquals(1_000L, result[0].downloadedBytes)
         assertEquals(0L, result[0].speedBps)

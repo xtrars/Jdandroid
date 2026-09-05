@@ -13,20 +13,19 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
  * ddownload.com – XFileSharing-Hoster. Login über Benutzername/Passwort
  * (Session-Cookie), Premium-Direktdownload über die zweistufige
- * Download-Form. Free-Downloads laufen über [resolveFree]: Sperren und
+ * Download-Form. Free-Downloads laufen über [DdownloadFree]: Sperren und
  * Wartezeiten liest die App selbst von der Seite, das Cloudflare-Turnstile
- * im Download-Formular ist nur im eingebetteten Browser lösbar.
+ * im Download-Formular ist nur im eingebetteten Browser lösbar. Die
+ * Kontoseite wertet [DdownloadAccountPage] aus.
  */
 class DdownloadHoster internal constructor(
     /** Adresse der Website; Tests ersetzen sie durch einen lokalen Server. */
-    private val siteBase: String
+    internal val siteBase: String
 ) : Hoster {
 
     constructor() : this("https://ddownload.com")
@@ -48,45 +47,6 @@ class DdownloadHoster internal constructor(
 
     private val apiBase = "https://api-v2.ddownload.com/api"
 
-    /** Tageskontingent von ddownload Premium laut Anbieter (200 GB). */
-    private val DAILY_QUOTA = 200L shl 30
-
-    /** Ablaufdatum der API tolerant lesen: mehrere Formate oder Unix-Zeit; 0 = unbekannt. */
-    internal fun parseExpire(raw: String?): Long {
-        val value = raw?.trim().orEmpty()
-        if (value.isEmpty() || value.equals("null", true)) return 0L
-        value.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000 }
-        val formats = listOf(
-            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd",
-            "dd MMMM yyyy", "dd MMM yyyy", "dd.MM.yyyy", "MM/dd/yyyy"
-        )
-        for (fmt in formats) {
-            for (locale in listOf(Locale.US, Locale.GERMAN)) {
-                runCatching { SimpleDateFormat(fmt, locale).parse(value)?.time }.getOrNull()?.let { return it }
-            }
-        }
-        return 0L
-    }
-
-    /** premium_traffic_left liefert die API in Megabyte (Doku: 102400 = 100 GB). */
-    internal fun quotaToBytes(raw: Double): Long = (raw * (1L shl 20)).toLong()
-
-    /**
-     * Oberhalb dieser Grenze ist ein Kontingent sicher falsch beschriftet: die
-     * Kontoseite zeigt bei einem 200-GB-Tageskontingent "197040 GB", meint
-     * aber MB. Erst ab 16 TiB eingreifen, damit dazugekaufter Traffic
-     * (z.B. 1 TB) unangetastet bleibt.
-     */
-    private val MAX_PLAUSIBLE_QUOTA = 16L shl 40
-
-    /** Falsch beschriftete Einheit korrigieren: durch 1024 teilen, bis der Wert plausibel ist. */
-    internal fun plausibleQuota(bytes: Long): Long {
-        var v = bytes
-        var guard = 0
-        while (v > MAX_PLAUSIBLE_QUOTA && guard++ < 4) v /= 1024
-        return v
-    }
-
     /**
      * Dateicodes sind genau 12 Zeichen [a-z0-9]; der Lookahead verhindert,
      * dass laengere Pfade (z.B. /register.html) als Code gelesen werden.
@@ -105,7 +65,7 @@ class DdownloadHoster internal constructor(
     override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
     /** Browsertypischer User-Agent: XFileSharing/Cloudflare mögen keine Bot-Kennungen. */
-    private val browserUa: String
+    internal val browserUa: String
         get() = Http.browserUserAgent
             ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/122.0.0.0 Mobile Safari/537.36"
@@ -116,11 +76,11 @@ class DdownloadHoster internal constructor(
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
 
-    private fun fileCode(url: String): String =
+    internal fun fileCode(url: String): String =
         pattern.find(url)?.groupValues?.get(1)
             ?: throw HosterException("Ungültiger ddownload-Link", true)
 
-    private data class Resp(
+    internal data class Resp(
         val code: Int,
         val body: String,
         val location: String? = null,
@@ -135,9 +95,7 @@ class DdownloadHoster internal constructor(
                 (!contentType.isNullOrBlank() && !isTextualType(contentType))
     }
 
-
-
-    private fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
+    internal fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
         // OkHttp ruft den CookieJar aus mehreren Threads auf (parallele
         // Downloads desselben Kontos) - Zugriffe daher synchronisieren.
         val store = cookieStores.getOrPut(accountId) { mutableListOf() }
@@ -163,7 +121,7 @@ class DdownloadHoster internal constructor(
             .build()
     }
 
-    private fun OkHttpClient.fetch(
+    internal fun OkHttpClient.fetch(
         url: String,
         form: Map<String, String>? = null,
         referer: String? = null,
@@ -204,7 +162,7 @@ class DdownloadHoster internal constructor(
         contentType.isNullOrBlank() || isTextualType(contentType)
 
     /** Erkennt Cloudflare-/WAF-Blockaden, damit die Meldung nicht "falsches Passwort" lautet. */
-    private fun checkBlocked(resp: Resp) {
+    internal fun checkBlocked(resp: Resp) {
         val blocked = resp.code == 403 || resp.code == 503 ||
             resp.body.contains("Just a moment", true) ||
             resp.body.contains("cf-browser-verification", true) ||
@@ -311,23 +269,13 @@ class DdownloadHoster internal constructor(
         if (key != null) return@withContext checkViaApi(key)
 
         val (_, html) = sessionAndAccountPage(account)
-        val pageText = visibleText(html)
-        val expire = pageExpire(pageText)
-        // "Ultimate" nur als Kontostatus zaehlen - als Werbung ("Ultimate Key
-        // aktivieren") steht das Wort auch auf Free-Konten
-        val ultimate = Regex("""(?i)Account[- ]?(?:type|status)\s*:?\s*Ultimate\b|Ultimate Premium account""")
-            .containsMatchIn(pageText)
-        val freeAccount = Regex("""(?i)Account[- ]?(?:type|status)\s*:?\s*Free\b""").containsMatchIn(pageText)
-        val premiumWord = !freeAccount &&
-            (ultimate || Regex("""(?i)\bPremium\b""").containsMatchIn(pageText))
-        val premium = expire > System.currentTimeMillis() || (expire == 0L && premiumWord)
-        val tier = if (ultimate) "Ultimate" else "Premium"
+        val (expire, premium, tier) = DdownloadAccountPage.status(DdownloadAccountPage.visibleText(html))
 
         // Steht auf der Kontoseite ein API-Key, liefert die API das Kontingent
         // zuverlaessiger als die HTML-Seite (premium_traffic_left). Premium gilt,
         // wenn Seite ODER API es sagen - die Seite ist bei unklarem Datumsformat
         // der API die verlaesslichere Quelle.
-        apiKeyFromPage(html)?.let { key ->
+        DdownloadAccountPage.apiKeyFromPage(html)?.let { key ->
             runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
                 if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) {
                     val apiPremium = viaApi.statusText.startsWith("Premium")
@@ -341,15 +289,11 @@ class DdownloadHoster internal constructor(
             }
         }
 
-        val parsed = parseTraffic(html)
-        val traffic = parsed.copy(
-            left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
-            total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
-        )
+        val traffic = DdownloadAccountPage.plausibleTraffic(DdownloadAccountPage.parseTraffic(html))
         val trafficTotal = when {
             traffic.unlimited -> -1L
             traffic.total > 0 -> traffic.total
-            premium && traffic.left >= 0 -> maxOf(DAILY_QUOTA, traffic.left)
+            premium && traffic.left >= 0 -> maxOf(DdownloadAccountPage.DAILY_QUOTA, traffic.left)
             else -> -1L
         }
 
@@ -366,91 +310,12 @@ class DdownloadHoster internal constructor(
         )
     }
 
-    /**
-     * Ablaufdatum von der Kontoseite: "Premium expire: 2 December 2026",
-     * "Aktiv bis 2 December 2026", "Active until 02 Dec 2026"; 0 = unbekannt.
-     */
-    internal fun pageExpire(text: String): Long =
-        Regex("""(?i)(?:expires?|aktiv bis|active until|g[üu]ltig bis|valid until)\s*:?\s*([0-9]{1,2}\s+[A-Za-zÄÖÜäöü]+\s+[0-9]{4})""")
-            .findAll(text)
-            .map { parseExpire(it.groupValues[1]) }
-            .firstOrNull { it > 0 } ?: 0L
-
-    /** Ergebnis der Kontingent-Suche auf der Kontoseite. */
-    internal data class TrafficParse(
-        val left: Long,
-        val total: Long,
-        val unlimited: Boolean,
-        val snippet: String
-    )
-
-    /** Sichtbaren Text der Seite gewinnen: Tags raus, Whitespace buendeln. */
-    internal fun visibleText(html: String): String =
-        html.replace(Regex("""<script\b[^>]*>[\s\S]*?</script>""", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("""<style\b[^>]*>[\s\S]*?</style>""", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("""<[^>]+>"""), " ")
-            .replace("&nbsp;", " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
-
-    /**
-     * Kontingent aus der Kontoseite lesen, tolerant gegen verschiedene Layouts:
-     * "Traffic available: 120.5 GB", "Premium traffic left 120,5 GB / 200 GB",
-     * "120.5 GB of 200 GB traffic", "Verfügbarer Traffic 120 GB",
-     * "Verfügbare Daten 197040 GB" (Ultimate), "unlimited".
-     */
-    internal fun parseTraffic(html: String): TrafficParse {
-        val text = visibleText(html)
-        val size = """(\d+(?:[.,]\d+)?)\s*(TB|GB|MB|KB)\b"""
-        val unit = { v: String, u: String -> toBytes(v.replace(',', '.'), u) }
-
-        // Ausschnitte rund um jedes "traffic" fuer die Diagnose
-        val snippet = Regex("""(?i)traffic""").findAll(text).take(8).joinToString(" | ") { m ->
-            text.substring((m.range.first - 100).coerceAtLeast(0), (m.range.last + 160).coerceAtMost(text.length))
-        }.ifBlank { "Kein Wort \"traffic\" auf der Seite gefunden. Anfang: " + text.take(600) }
-
-        var left = -1L
-        var total = -1L
-        var unlimited = false
-
-        // Kaufangebote und Werbung ("200 GB + Daten €15.99", "200 GB traffic per
-        // day") duerfen nie als Restmenge gelten
-        val offerLike = Regex("""(?i)^\s*(?:\+|per\s+day|pro\s+tag|/\s*(?:day|tag)|€|\$|&euro;)""")
-        fun isOffer(m: MatchResult) = offerLike.containsMatchIn(text.substring(m.range.last + 1).take(14))
-        // 0) Eindeutige Beschriftung direkt vor der Zahl
-        val labelled = Regex(
-            """(?i)(?:verf[üu]gbare?r?\s+(?:daten|traffic)|available\s+(?:data|traffic)|traffic\s+(?:available|left)|premium\s+traffic\s+left)\s*:?\s*$size"""
-        ).findAll(text).firstOrNull { !isOffer(it) }
-        // 1) Wort vor Zahl: "Traffic available: 120.5 GB", "Premium traffic left 120 GB"
-        val after = Regex("""(?i)(?:traffic|verf[üu]gbare?r?\s+daten|available\s+data)[^0-9]{0,60}?$size""")
-            .findAll(text).firstOrNull { !isOffer(it) }
-        // 2) Zahl vor Wort: "120.5 GB traffic left"
-        val before = Regex("""(?i)$size[^0-9]{0,40}?traffic""").findAll(text).firstOrNull { !isOffer(it) }
-        val hit = labelled ?: listOfNotNull(after, before).minByOrNull { it.range.first }
-        if (hit != null) {
-            val (v, u) = hit.destructured
-            left = unit(v, u)
-            // Gesamt direkt dahinter: "/ 200 GB", "of 200 GB", "von 200 GB"
-            Regex("""(?i)^\s*(?:/|of|von)\s*$size""").find(text.substring(hit.range.last + 1))
-                ?.let { t -> total = unit(t.groupValues[1], t.groupValues[2]) }
-        } else if (Regex("""(?i)traffic[^.]{0,60}?(unlimited|unbegrenzt)|(unlimited|unbegrenzt)[^.]{0,40}?traffic""")
-                .containsMatchIn(text)
-        ) {
-            unlimited = true
-        }
-        return TrafficParse(left, total, unlimited, snippet)
-    }
-
-    /** API-Key von der Kontoseite (XFS zeigt ihn unter "API"), nur mit klarer Form. */
-    internal fun apiKeyFromPage(html: String): String? =
-        Regex("""(?i)api[\s_-]*key[\s\S]{0,300}?value=["']([a-z0-9]{16,64})["']""").find(html)?.groupValues?.get(1)
-
     /** Kontopruefung ueber die offizielle API (ohne CAPTCHA). */
     private fun checkViaApi(key: String): AccountInfo {
         val json = apiCall("account/info", mapOf("key" to key))
         val result = json.optJSONObject("result")
             ?: throw HosterException("ddownload: unerwartete API-Antwort", true)
-        val expire = parseExpire(result.opt("premium_expire")?.toString())
+        val expire = DdownloadAccountPage.parseExpire(result.opt("premium_expire")?.toString())
         // Laut API-Doku: "premium_traffic_left" (in MB, z.B. 102400 = 100 GB) ist
         // das verbleibende Premium-Tageskontingent; "traffic_left"/"traffic_used"
         // betreffen den Free-Traffic und sind fuer Premium irrelevant.
@@ -464,16 +329,17 @@ class DdownloadHoster internal constructor(
             (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
         val left = when {
             unlimited -> -1L
-            premiumLeft != null && premiumLeft >= 0 -> plausibleQuota(quotaToBytes(premiumLeft))
+            premiumLeft != null && premiumLeft >= 0 ->
+                DdownloadAccountPage.plausibleQuota(DdownloadAccountPage.quotaToBytes(premiumLeft))
             else -> {
                 // Aeltere API ohne premium_traffic_left: traffic_left als Notnagel
                 result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
-                    ?.let { quotaToBytes(it) } ?: -1L
+                    ?.let { DdownloadAccountPage.quotaToBytes(it) } ?: -1L
             }
         }
         val total = when {
             unlimited -> -1L
-            premium && left >= 0 -> maxOf(DAILY_QUOTA, left)
+            premium && left >= 0 -> maxOf(DdownloadAccountPage.DAILY_QUOTA, left)
             else -> -1L
         }
         return AccountInfo(
@@ -524,7 +390,7 @@ class DdownloadHoster internal constructor(
             val (client, accountHtml) = sessionAndAccountPage(account)
             // Steht auf der Kontoseite ein API-Key, ist die API der sicherste Weg
             // zum Direktlink (kein Formular, keine Weiterleitungskette)
-            apiKeyFromPage(accountHtml)?.let { key ->
+            DdownloadAccountPage.apiKeyFromPage(accountHtml)?.let { key ->
                 runCatching { resolveViaApi(key, code) }
                     .onFailure { if (it is HosterException && it.permanent && it.message?.contains("offline") == true) throw it }
                     .getOrNull()?.let { return@withContext it }
@@ -577,7 +443,7 @@ class DdownloadHoster internal constructor(
                 if (direct == null && page.code !in 300..399) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
-                val text = visibleText(page.body)
+                val text = DdownloadAccountPage.visibleText(page.body)
                 val limitReached = Regex("""(?i)download limit|reached the|limit reached|too many|try again later""")
                     .containsMatchIn(text)
                 val freeMode = page.body.contains("countdown", true) ||
@@ -600,226 +466,13 @@ class DdownloadHoster internal constructor(
             ResolvedLink(direct, fileName)
         }
 
-    /**
-     * Free-Modus ohne Konto. Ablauf ohne Nutzer: Dateiseite holen, Offline,
-     * Wartung, Premium-Grenzen und Sperren (data-wait-seconds bzw. "You have
-     * to wait …") auswerten. Dann die Captcha-Art: ein XFS-Span-Captcha loest
-     * die App selbst und schickt nach dem Countdown das Free-Formular ab;
-     * Turnstile, reCAPTCHA, hCaptcha und Bild-Captchas gehen nur im Browser
-     * ([CaptchaRequiredException] mit der Dateiseite). Kommt aus dem Browser
-     * ein abgefangener Direktlink ([FreeHints.direktUrlAusBrowser]), wird er
-     * samt Cookies und Browser-Kennung uebernommen: cf_clearance ist an die
-     * Kennung gebunden, mit der es ausgestellt wurde.
-     */
-    override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink =
-        withContext(Dispatchers.IO) {
-            val code = fileCode(url)
-            val pageUrl = "$siteBase/$code"
-            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
-                return@withContext ResolvedLink(
-                    direct,
-                    fileNameFromUrl(direct),
-                    headers = freeHeaders(pageUrl, hints.cookies)
-                )
-            }
+    /** Free-Ablauf (Sperren, Countdown, Turnstile) - siehe [DdownloadFree]. */
+    internal val free = DdownloadFree(this)
 
-            val client = clientFor(0L)
-            // Formular aus einem frueheren Versuch (langer Countdown): Seite
-            // nicht neu laden, sonst begaenne der Countdown von vorn
-            val session = freeSessions[code]?.takeUnless { it.expired }
-            val form: Map<String, String>
-            val fileName: String?
-            val fileSize: Long
-            val countdown: Int
-            if (session != null) {
-                form = session.form
-                fileName = session.fileName
-                fileSize = session.fileSize
-                countdown = ((session.readyAt - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
-            } else {
-                val page = client.fetch(pageUrl, referer = siteBase)
-                checkBlocked(page)
-                if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
-                    throw HosterException("Datei ist offline", true)
-                }
-                if (page.code !in 200..299) {
-                    throw HosterException("ddownload: Dateiseite nicht erreichbar (HTTP ${page.code})", permanent = false)
-                }
-                checkFreeBlockers(page.body)
-                fileName = pageFileName(page.body)
-                fileSize = pageFileSize(page.body)
-
-                val captchaFields = when (val captcha = DdownloadFreePage.captcha(page.body)) {
-                    is FreeCaptcha.Span -> mapOf("code" to captcha.code)
-                    FreeCaptcha.None -> emptyMap()
-                    is FreeCaptcha.Browser -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Captcha (${captcha.kind}) – nur im Browser lösbar"
-                    )
-                    is FreeCaptcha.Image -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Bild-Captcha – nur im Browser lösbar"
-                    )
-                }
-                form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
-                countdown = DdownloadFreePage.countdownSeconds(page.body)
-                if (countdown > MAX_INLINE_COUNTDOWN) {
-                    // Formular samt Startzeitpunkt merken; der naechste Versuch schickt es ab
-                    freeSessions[code] = FreeSession(
-                        form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
-                    )
-                }
-            }
-
-            // Countdown vor dem Download: kurz im Prozess abwarten, lange
-            // Zeiten als Wartezeit an die Engine zurueckgeben (Formular bleibt
-            // in [freeSessions])
-            if (countdown > MAX_INLINE_COUNTDOWN) {
-                throw WaitException(countdown + 1, WAIT_TEXT)
-            }
-            if (countdown > 0) kotlinx.coroutines.delay((countdown + 1) * 1000L)
-
-            // Formular ist verbraucht: ein weiterer Versuch laedt die Seite neu
-            freeSessions.remove(code)
-            var resp = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
-            checkBlocked(resp)
-            var direct: String? = null
-            var currentUrl = pageUrl
-            var hops = 0
-            while (direct == null && hops++ < 6) {
-                if (resp.code in 200..299 && resp.isFile) { direct = resp.finalUrl; break }
-                if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
-                    val target = resolveLocation(currentUrl, resp.location!!)
-                    if (isFileServerUrl(target)) { direct = target; break }
-                    resp = client.fetch(target, referer = currentUrl, followRedirects = false)
-                    currentUrl = target
-                    checkBlocked(resp)
-                    continue
-                }
-                direct = extractDirectLink(resp.body)
-                break
-            }
-            if (direct.isNullOrBlank()) {
-                val body = resp.body
-                when {
-                    DdownloadFreePage.isWrongCaptcha(body) -> throw CaptchaRequiredException(
-                        pageUrl, "ddownload: Captcha abgelehnt – bitte im Browser lösen"
-                    )
-                    DdownloadFreePage.isExpiredSession(body) -> throw HosterException(
-                        "ddownload: Download-Sitzung abgelaufen – wird erneut versucht", permanent = false
-                    )
-                    DdownloadFreePage.isSkippedCountdown(body) -> throw WaitException(
-                        countdown.coerceAtLeast(MIN_RETRY_WAIT) + 1, "ddownload: Countdown nicht eingehalten"
-                    )
-                }
-                checkFreeBlockers(body)
-                // Unbekannte Antwort: ein neuer Versuch kostet nichts, daher nie endgueltig
-                throw HosterException("ddownload: kein Direktlink erhalten (HTTP ${resp.code})", permanent = false)
-            }
-            ResolvedLink(
-                direct,
-                fileName ?: fileNameFromUrl(direct),
-                fileSize,
-                headers = freeHeaders(pageUrl, cookieHeader(0L, direct))
-            )
-        }
-
-    /**
-     * Zwischenstand eines Free-Ablaufs je Dateicode bei langem Countdown: das
-     * gelesene Formular (Kennung "rand", geloestes Span-Captcha), Name und
-     * Groesse sowie der Zeitpunkt, ab dem das Formular abgeschickt werden
-     * darf. Die Cookies liegen im Speicher des Free-Clients (clientFor(0)).
-     * Ohne diesen Zwischenstand luede jeder Folgeversuch die Seite neu, der
-     * Countdown stuende wieder auf demselben Wert und der Eintrag kreiste
-     * ohne Fortschritt (die Versuche zaehlt eine Wartezeit nicht).
-     */
-    private class FreeSession(
-        val form: Map<String, String>,
-        val fileName: String?,
-        val fileSize: Long,
-        val readyAt: Long
-    ) {
-        /** Lange nach dem Startzeitpunkt nicht abgeschickt: Kennung vermutlich ungueltig, neu laden. */
-        val expired: Boolean get() = System.currentTimeMillis() > readyAt + GRACE_MS
-
-        private companion object {
-            /** So lange nach dem Startzeitpunkt gilt ein gemerktes Formular noch. */
-            const val GRACE_MS = 10L * 60 * 1000
-        }
-    }
-
-    private val freeSessions = java.util.concurrent.ConcurrentHashMap<String, FreeSession>()
-
-    /** Countdowns bis hierhin laufen im Prozess ab; laengere werden zur Wartezeit der Engine. */
-    private val MAX_INLINE_COUNTDOWN = 180
-
-    /** Grund der Wartezeit vor dem Free-Download (der Countdown steht in der Engine-Meldung). */
-    private val WAIT_TEXT = "ddownload: Countdown vor dem Free-Download"
-
-    /** Mindestwartezeit nach einer Sperre ohne konkrete Zeitangabe (Sekunden). */
-    private val MIN_RETRY_WAIT = 60
-
-    /** Sperre ohne genaue Zeit ("daily limit", "too many"): eine Stunde. */
-    private val LIMIT_FALLBACK_WAIT = 60 * 60
-
-    /** Grund einer Sperre; die Restzeit zaehlt die Engine-Meldung selbst herunter. */
-    private fun waitText(@Suppress("UNUSED_PARAMETER") seconds: Int): String =
-        "ddownload: Sperre bis zum nächsten Free-Download"
-
-    /**
-     * Dauerhafte und zeitliche Sperren der Free-Seite: Wartung (vorübergehend),
-     * nur Premium (dauerhaft), Wartezeit aus der Seite (+1 s Reserve) oder
-     * Limit ohne Zeitangabe (eine Stunde).
-     */
-    private fun checkFreeBlockers(html: String) {
-        if (DdownloadFreePage.isMaintenance(html)) {
-            throw HosterException("ddownload: Server in Wartung – später erneut", permanent = false)
-        }
-        DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException("ddownload: $it", true) }
-        val wait = DdownloadFreePage.waitSeconds(html)
-        if (wait > 0) throw WaitException(wait + 1, waitText(wait + 1))
-        if (DdownloadFreePage.isLimitWithoutTime(html)) {
-            throw WaitException(LIMIT_FALLBACK_WAIT, "ddownload: Download-Limit erreicht – in einer Stunde erneut")
-        }
-    }
-
-    /**
-     * Felder des Free-Formulars (op=download2, method_free="Free Download",
-     * referer = Dateiseite) plus Captcha-Felder; die Kennung "rand" kommt
-     * von der Seite.
-     */
-    internal fun freeDownloadForm(
-        html: String,
-        code: String,
-        pageUrl: String,
-        captchaFields: Map<String, String> = emptyMap()
-    ): Map<String, String> {
-        val block = formBlock(html) ?: html
-        val inputs = hiddenInputs(block).toMutableMap()
-        inputs["op"] = "download2"
-        inputs["id"] = inputs["id"]?.ifBlank { code } ?: code
-        inputs.putIfAbsent("rand", "")
-        inputs["referer"] = pageUrl
-        inputs["method_free"] = "Free Download"
-        inputs["method_premium"] = ""
-        inputs.remove("adblock_detected")?.let { inputs["adblock_detected"] = "0" }
-        inputs.putAll(captchaFields)
-        return inputs
-    }
-
-    /**
-     * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung (cf_clearance
-     * ist daran gebunden), Referer der Dateiseite und die Cookies, falls der
-     * Fileserver sie verlangt.
-     */
-    internal fun freeHeaders(pageUrl: String, cookies: String?): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        headers["User-Agent"] = browserUa
-        headers["Referer"] = pageUrl
-        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
-        return headers
-    }
+    override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink = free.resolve(url, hints)
 
     /** Cookie-Header aus dem OkHttp-Speicher fuer [url]; null ohne passende Cookies. */
-    private fun cookieHeader(accountId: Long, url: String): String? {
+    internal fun cookieHeader(accountId: Long, url: String): String? {
         val http = url.toHttpUrlOrNull() ?: return null
         val store = cookieStores[accountId] ?: return null
         val now = System.currentTimeMillis()
@@ -828,11 +481,6 @@ class DdownloadHoster internal constructor(
                 .joinToString("; ") { "${it.name}=${it.value}" }
         }.ifBlank { null }
     }
-
-    /** Dateiname aus dem letzten Pfadteil einer Fileserver-Adresse (nur mit Endung). */
-    internal fun fileNameFromUrl(url: String): String? =
-        url.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.trim()
-            ?.takeIf { it.isNotEmpty() && Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it) }
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
@@ -910,11 +558,11 @@ class DdownloadHoster internal constructor(
     internal fun pageFileSize(html: String): Long {
         // Nur sichtbarer Text, und erst ab dem Dateinamen: davor stehen
         // Werbung und Kontingent-Angaben ("200 GB traffic per day")
-        val text = visibleText(html)
+        val text = DdownloadAccountPage.visibleText(html)
         val start = pageFileName(html)?.let { text.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val m = Regex("""(\d+(?:[.,]\d+)?)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(text, start)
             ?: return -1
-        return toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
+        return DdownloadAccountPage.toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
     }
 
     /** Direktlink ueber die API (Premium erforderlich, kein CAPTCHA). */
@@ -995,7 +643,7 @@ class DdownloadHoster internal constructor(
     override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
 
     /** Location-Header (auch relativ) gegen die Seitenadresse aufloesen. */
-    private fun resolveLocation(base: String, location: String): String =
+    internal fun resolveLocation(base: String, location: String): String =
         base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
     /**
@@ -1016,18 +664,6 @@ class DdownloadHoster internal constructor(
      */
     internal fun resolveFailurePermanent(code: Int, limitReached: Boolean): Boolean =
         !limitReached && code !in 500..599 && code != 429
-
-    private fun toBytes(value: String, unit: String): Long {
-        val n = value.toDoubleOrNull() ?: return -1
-        val factor = when (unit.uppercase()) {
-            "TB" -> 1L shl 40
-            "GB" -> 1L shl 30
-            "MB" -> 1L shl 20
-            "KB" -> 1L shl 10
-            else -> 1L
-        }
-        return (n * factor).toLong()
-    }
 
     private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
 }
