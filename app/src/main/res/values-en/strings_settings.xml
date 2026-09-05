@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Settings (SettingsScreen, Click'n'Load status, extraction, network) and crash dialog. Keys: settings_<meaning>. -->
     <string name="settings_title">Settings</string>
 
@@ -115,7 +115,7 @@
     <string name="settings_nfs_enabled_subtitle">Move finished files to the NAS via NFS</string>
     <string name="settings_nfs_server">Server (hostname or IP)</string>
     <string name="settings_nfs_export">Export path</string>
-    <string name="settings_nfs_export_placeholder">/volume1/downloads</string>
+    <string name="settings_nfs_export_placeholder" tools:ignore="Typos">/volume1/downloads</string>
     <string name="settings_nfs_subdir">Subfolder (optional)</string>
     <string name="settings_nfs_uid">uid</string>
     <string name="settings_nfs_gid">gid</string>
