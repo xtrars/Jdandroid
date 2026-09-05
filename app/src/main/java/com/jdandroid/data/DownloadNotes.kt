@@ -12,6 +12,9 @@ object DownloadNotes {
     /** Download re-queued because of the "Wi-Fi only" setting. */
     const val WAITING_WIFI = "WAITING_WIFI"
 
+    /** Finished locally, upload to the NFS target still pending (retried on network change and pump). */
+    const val EXPORT_PENDING = "EXPORT_PENDING"
+
     /** German wording used before database version 11 (migration only). */
     const val LEGACY_WAITING_PARTS = "Warte auf weitere Archiv-Teile"
 

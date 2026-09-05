@@ -47,6 +47,12 @@ class SettingsRepository(private val context: Context) {
     private val keyFreeMode = booleanPreferencesKey("free_mode")
     private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
+    private val keyNfsEnabled = booleanPreferencesKey("nfs_enabled")
+    private val keyNfsServer = stringPreferencesKey("nfs_server")
+    private val keyNfsExport = stringPreferencesKey("nfs_export")
+    private val keyNfsUid = intPreferencesKey("nfs_uid")
+    private val keyNfsGid = intPreferencesKey("nfs_gid")
+    private val keyNfsSubDir = stringPreferencesKey("nfs_subdir")
 
     val maxConcurrent: Flow<Int> =
         prefs.map { it[keyMaxConcurrent] ?: 2 }
@@ -131,6 +137,31 @@ class SettingsRepository(private val context: Context) {
     }
 
     /** Target folder chosen via Storage Access Framework (tree URI), null = Downloads/JDAndroid. */
+    /** NFS target; enabled only when server and export path are set. */
+    val nfs: Flow<NfsSettings> = prefs.map {
+        NfsSettings(
+            enabled = it[keyNfsEnabled] ?: false,
+            server = it[keyNfsServer].orEmpty().trim(),
+            export = it[keyNfsExport].orEmpty().trim(),
+            uid = it[keyNfsUid] ?: NfsSettings.DEFAULT_UID,
+            gid = it[keyNfsGid] ?: NfsSettings.DEFAULT_GID,
+            subDir = it[keyNfsSubDir].orEmpty().trim()
+        )
+    }
+
+    suspend fun currentNfs(): NfsSettings = nfs.first()
+
+    suspend fun setNfs(value: NfsSettings) {
+        context.dataStore.edit {
+            it[keyNfsEnabled] = value.enabled
+            it[keyNfsServer] = value.server.trim()
+            it[keyNfsExport] = value.export.trim()
+            it[keyNfsUid] = value.uid
+            it[keyNfsGid] = value.gid
+            it[keyNfsSubDir] = value.subDir.trim()
+        }
+    }
+
     val downloadTreeUri: Flow<String?> =
         prefs.map { it[keyDownloadTree]?.ifBlank { null } }
 
