@@ -58,11 +58,6 @@ object ArchiveSets {
     const val COMPLETED_ARCHIVES =
         "SELECT * FROM downloads WHERE packageId = :packageId AND status = 'COMPLETED' AND archiveKey IS NOT NULL ORDER BY addedAt"
 
-    /** Referenziert noch irgendein Eintrag (paketuebergreifend) die Archivdateien von :key? */
-    const val COUNT_KEY = "SELECT COUNT(*) FROM downloads WHERE archiveKey = :key"
-
-    /** Gleichnamige fertige/entpackende Datei in einem anderen Paket (liegt flach im App-Ordner). */
-    const val SAME_NAME_ELSEWHERE =
-        "SELECT COUNT(*) FROM downloads WHERE fileName = :fileName AND packageId IS NOT :packageId " +
-            "AND status IN ('COMPLETED', 'EXTRACTING')"
+    /** Referenziert noch ein Eintrag des Pakets die Archivdateien von :key (Paketordner)? */
+    const val COUNT_KEY = "SELECT COUNT(*) FROM downloads WHERE packageId IS :packageId AND archiveKey = :key"
 }

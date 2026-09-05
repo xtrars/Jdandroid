@@ -28,13 +28,13 @@ object EngineTexts {
         "engine_part_size_mismatch" to "Teildatei passt nicht zur Dateigröße – Neustart",
         "engine_http_error" to "Server antwortete mit HTTP %1\$d",
         "engine_html_instead_of_file" to "Server lieferte eine HTML-Seite statt der Datei (%1\$s) – Link wird neu aufgelöst",
-        "engine_empty_response" to "Leere Antwort beim Download",
+        "engine_empty_response" to "Leere Antwort beim Download – Link wird neu aufgelöst",
+        "engine_size_mismatch" to "Server meldet %1\$s statt %2\$s – Link wird neu aufgelöst",
         "engine_not_enough_space" to "Zu wenig Speicherplatz: %1\$s benötigt, %2\$s frei",
         "engine_download_incomplete" to "Download unvollständig (%1\$s von %2\$s)",
         "engine_hash_mismatch" to "Prüfsumme (%1\$s) stimmt nicht – Datei wird erneut geladen",
 
         // Archive und Entpacken (DownloadEngine)
-        "engine_archive_name_clash" to "Gleichnamiges Archiv eines anderen Pakets vorhanden, nicht entpackt",
         "engine_first_volume_missing_not_extracted" to "Erstes Archiv-Teil fehlt, nicht entpackt",
         "engine_first_volume_missing" to "Erstes Archiv-Teil fehlt",
         "engine_entry_not_found" to "Eintrag nicht gefunden",

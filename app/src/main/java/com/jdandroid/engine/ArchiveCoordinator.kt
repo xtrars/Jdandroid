@@ -15,6 +15,7 @@ import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.SettingsRepository
 import com.jdandroid.data.renameFile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -59,7 +60,18 @@ internal class ArchiveCoordinator(
     val activeCount: Int get() = extracting.get()
 
     /** Ein Archiv-Set: ausloesender Eintrag, sein Paket und der Archivschluessel. */
-    private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String)
+    private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String) {
+        /** Registry key: same base in different packages are different sets. */
+        val key get() = "${packageId ?: 0}/$base"
+    }
+
+    /**
+     * Archive volumes are kept per package so that same-named sets of two
+     * packages never mix; ".archives" can never collide with a package folder
+     * ([FileNames.clean] strips leading dots).
+     */
+    fun archiveDir(packageId: Long?): File =
+        File(storage.downloadDir(), ".archives/${packageId ?: 0}").apply { mkdirs() }
 
     /**
      * Abschluss eines Downloads: Archive werden (wenn aktiviert) automatisch
@@ -97,43 +109,42 @@ internal class ArchiveCoordinator(
             // Netzwechsel warten so, statt den Eintrag mit bereits verschobener
             // Teildatei auf PAUSED/QUEUED zu setzen (Neudownload plus Duplikat)
             val packageId = completionMutex.withLock {
+                // Paused or requeued while the transfer was finishing: keep the
+                // .part file, resuming picks it up
+                val row = dao.byId(id) ?: return@withLock null
+                if (row.status != DownloadStatus.RUNNING) return@withLock null
                 val path = storage.finish(temp, fileName)
                 markCompleted(id, path, null)
-                dao.byId(id)?.packageId
+                row.packageId
             }
             // Ein wartendes Archiv-Set desselben Pakets kann jetzt vollstaendig sein
             retryWaitingSets(packageId)
             return@withContext
         }
 
-        val archiveFile = File(storage.downloadDir(), fileName)
         // Entscheidung unter der Sperre: zwei gleichzeitig fertige Teile duerfen
         // sich nicht gegenseitig als "noch ausstehend" sehen.
-        val shouldExtract = completionMutex.withLock {
-            val packageId = dao.byId(id)?.packageId
-            // Gleichnamiges Archiv eines anderen Pakets liegt bereits flach im
-            // App-Ordner: nicht ueberschreiben, sondern als normale Datei ablegen
-            val clash = archiveFile.isFile && temp.path != archiveFile.path &&
-                dao.countSameNameElsewhere(fileName, packageId) > 0
-            if (clash) {
-                markCompleted(id, storage.finish(temp, fileName), Texts.t("engine_archive_name_clash"))
-                return@withLock null
-            }
-            // Archiv-Volume unter echtem Namen im App-Ordner ablegen, damit
+        val (shouldExtract, archiveFile) = completionMutex.withLock {
+            val row = dao.byId(id) ?: return@withContext
+            if (row.status != DownloadStatus.RUNNING) return@withContext
+            val packageId = row.packageId
+            val archiveFile = File(archiveDir(packageId), fileName)
+            // Archiv-Volume unter echtem Namen im Paketordner ablegen, damit
             // Multipart-Teile zueinander finden
             if (temp.path != archiveFile.path) {
                 archiveFile.delete()
                 temp.renameTo(archiveFile)
             }
-            val pending = dao.pendingActiveParts(packageId, base!!, id) > 0
-            if (pending || ExtractionRegistry.isActive(base!!)) {
+            val set = ArchiveSet(id, packageId, base!!)
+            val pending = dao.pendingActiveParts(packageId, set.base, id) > 0
+            if (pending || ExtractionRegistry.isActive(set.key)) {
                 markCompleted(id, archiveFile.absolutePath, WAITING_NOTE)
-                null
+                null to archiveFile
             } else {
                 // Alle Teile des Sets zeigen "wird entpackt", nicht nur der zuletzt
                 // fertige - sonst wirkt der Zustand willkuerlich verteilt
-                dao.setExtractingSet(dao.archiveSetIds(packageId, base!!, id))
-                ArchiveSet(id, packageId, base!!)
+                dao.setExtractingSet(dao.archiveSetIds(packageId, set.base, id))
+                set to archiveFile
             }
         }
         if (shouldExtract == null) return@withContext
@@ -147,7 +158,7 @@ internal class ArchiveCoordinator(
      * den ausloesenden, sonst bleiben die uebrigen dauerhaft EXTRACTING.
      */
     private suspend fun startExtraction(set: ArchiveSet, archiveFile: File) {
-        val primary = Extractor.findPrimaryVolume(storage.downloadDir(), set.base)
+        val primary = Extractor.findPrimaryVolume(archiveDir(set.packageId), set.base)
         if (primary == null) {
             dao.byId(set.id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
             dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, Texts.t("engine_first_volume_missing_not_extracted"))
@@ -169,11 +180,12 @@ internal class ArchiveCoordinator(
             dao.waitingParts(packageId, WAITING_NOTE).groupBy { it.archiveKey!! }
                 .mapNotNull { (base, parts) ->
                     val self = parts.first()
-                    if (dao.pendingActiveParts(packageId, base, self.id) > 0 || ExtractionRegistry.isActive(base)) {
+                    val set = ArchiveSet(self.id, packageId, base)
+                    if (dao.pendingActiveParts(packageId, base, self.id) > 0 || ExtractionRegistry.isActive(set.key)) {
                         return@mapNotNull null
                     }
                     dao.setExtractingSet(dao.archiveSetIds(packageId, base, self.id))
-                    ArchiveSet(self.id, packageId, base) to File(storage.downloadDir(), self.fileName!!)
+                    set to File(archiveDir(packageId), self.fileName!!)
                 }
         }
         ready.forEach { (set, archiveFile) -> startExtraction(set, archiveFile) }
@@ -187,14 +199,16 @@ internal class ArchiveCoordinator(
         val setIds = archiveSetIds(set)
         // Laeuft dieses Archiv bereits (z.B. aus einer frueheren Dienst-Instanz),
         // nicht ein zweites Mal entpacken; die laufende Instanz schliesst das Set ab
-        if (!ExtractionRegistry.start(set.base, setIds)) return
+        if (!ExtractionRegistry.start(set.key, setIds)) return
         extracting.incrementAndGet()
         onStateChanged()
-        scope.launch {
+        // ATOMIC: on an already cancelled scope a default start never runs the
+        // body, not even finally - registry and counter would leak for good
+        scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 extractAndExport(set, setIds, primary, archiveFile)
             } finally {
-                ExtractionRegistry.finish(set.base, setIds)
+                ExtractionRegistry.finish(set.key, setIds)
                 extracting.decrementAndGet()
                 onStateChanged()
                 onExtractionFinished()
@@ -228,10 +242,10 @@ internal class ArchiveCoordinator(
         if (item.status != DownloadStatus.COMPLETED) return Texts.t("engine_only_completed_extractable")
         var name = item.fileName ?: return Texts.t("engine_file_name_unknown")
         var base = ArchiveNames.archiveBase(name)
-        val downloadDir = storage.downloadDir()
+        val downloadDir = archiveDir(item.packageId)
         if (base == null) {
             // Namen wie "name part1 rar": alle Teile des Sets umbenennen (Datei
-            // im App-Ordner bzw. aus dem Zielordner zurueckgeholt) und in der
+            // im Paketordner bzw. aus dem Zielordner zurueckgeholt) und in der
             // Datenbank korrigieren. archiveKey ist bereits aus dem reparierten
             // Namen berechnet, findet also auch diese Teile.
             val repaired = ArchiveNames.repairName(name)
@@ -271,8 +285,8 @@ internal class ArchiveCoordinator(
         }
         val primary = Extractor.findPrimaryVolume(downloadDir, base)
             ?: return Texts.t("engine_first_volume_missing")
-        if (ExtractionRegistry.isActive(base)) return Texts.t("engine_already_extracting")
         val set = ArchiveSet(id, item.packageId, base)
+        if (ExtractionRegistry.isActive(set.key)) return Texts.t("engine_already_extracting")
         completionMutex.withLock {
             // Laufende Teile gehoeren nicht ins Set: sie wuerden auf EXTRACTING
             // gesetzt und nach dem Entpacken als "fertig" markiert, obwohl sie noch laden
@@ -286,7 +300,7 @@ internal class ArchiveCoordinator(
     }
 
     /**
-     * Fertige Archivdatei in den App-Ordner zurueckholen: aus dem gemerkten
+     * Fertige Archivdatei in den Paketordner zurueckholen: aus dem gemerkten
      * Pfad, dem eigenen Zielordner (SAF) oder Downloads/JDAndroid (MediaStore).
      */
     private suspend fun restoreArchive(item: DownloadItem, dest: File): Boolean {
@@ -336,7 +350,7 @@ internal class ArchiveCoordinator(
                     )
                     val exportedPath = storage.exportDirectory(extractDir, folder)
                     if (settings.currentDeleteArchive()) {
-                        storage.downloadDir().listFiles()
+                        archiveDir(packageId).listFiles()
                             ?.filter { ArchiveNames.archiveBase(it.name) == base }
                             ?.forEach { it.delete() }
                     }
