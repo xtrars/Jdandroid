@@ -29,6 +29,11 @@ on:
         description: "Tag (z. B. v0.1.0): bestehender Tag wird neu gebaut, fehlender auf dem gewaehlten Branch angelegt"
         required: true
         type: string
+      move_tag:
+        description: "Bestehenden Tag auf den Stand des gewaehlten Branches verschieben (nur wenn seine versionName nicht zum Tag passt)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,6 +48,7 @@ jobs:
     timeout-minutes: 30
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      MOVE_TAG: ${{ github.event.inputs.move_tag }}
       # Leer, wenn die Secrets nicht angelegt sind -> APK aus release/.
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -61,7 +67,21 @@ jobs:
         run: |
           set -eu
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
-            git checkout -q "refs/tags/$TAG"
+            getagged="$(git show "refs/tags/$TAG:app/build.gradle.kts" | sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p')"
+            if [ "$TAG" = "v$getagged" ]; then
+              git checkout -q "refs/tags/$TAG"
+            elif [ "$MOVE_TAG" = "true" ]; then
+              echo "Tag $TAG zeigt auf versionName $getagged; wird auf den Branch-Stand verschoben."
+              git push origin ":refs/tags/$TAG"
+              git tag -d "$TAG"
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag -a "$TAG" -m "JDAndroid ${TAG#v}"
+              git push origin "refs/tags/$TAG"
+            else
+              echo "::error::Tag $TAG zeigt auf einen Stand mit versionName $getagged. Mit move_tag=true erneut starten, um ihn auf den Branch zu verschieben."
+              exit 1
+            fi
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

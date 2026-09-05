@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.1.1](https://img.shields.io/badge/Version-0.3.0-informational.svg)
+![Version 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational.svg)
 
 ## English summary
 
