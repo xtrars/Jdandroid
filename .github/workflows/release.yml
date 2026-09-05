@@ -83,21 +83,6 @@ jobs:
             echo "VERSION=$version"
             echo "VERSION_CODE=$code"
           } >> "$GITHUB_ENV"
-      - name: Keystore pruefen
-        if: env.KEYSTORE_BASE64 != ''
-        run: |
-          set -eu
-          echo "Keystore: $(stat -c %s "$KEYSTORE_FILE") Bytes, SHA-256 $(sha256sum "$KEYSTORE_FILE" | cut -c1-16)..., Passwortlaenge ${#KEYSTORE_PASSWORD}, Alias-Laenge ${#KEY_ALIAS}"
-          if ! keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
-            if keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
-              echo "::error::Keystore-Passwort stimmt, aber der Alias '$KEY_ALIAS' fehlt im Keystore."
-            else
-              echo "::error::Keystore laesst sich mit KEYSTORE_PASSWORD nicht oeffnen: Passwort falsch oder KEYSTORE_BASE64 beschaedigt (Groesse/Pruefsumme oben mit der Originaldatei vergleichen)."
-            fi
-            exit 1
-          fi
-          echo "Keystore und Alias in Ordnung."
-
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -119,13 +104,37 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$datei"
           # Secrets ohne Zeilenumbrueche und Randleerzeichen weitergeben (ein
           # per Zwischenablage eingefuegtes Passwort endet oft auf "\n").
+          # Wurde versehentlich der ganze Inhalt von keystore.properties als
+          # Secret hinterlegt, den passenden Schluessel daraus nehmen.
+          wert() {
+            local roh="$1" schluessel="$2"
+            if printf '%s' "$roh" | grep -q "^$schluessel="; then
+              roh="$(printf '%s' "$roh" | grep "^$schluessel=" | head -n 1 | cut -d= -f2-)"
+            fi
+            printf '%s' "$roh" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+          }
           {
             echo "KEYSTORE_FILE=$datei"
-            echo "KEYSTORE_PASSWORD=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-            echo "KEY_ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-            echo "KEY_PASSWORD=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            echo "KEYSTORE_PASSWORD=$(wert "$KEYSTORE_PASSWORD" storePassword)"
+            echo "KEY_ALIAS=$(wert "$KEY_ALIAS" keyAlias)"
+            echo "KEY_PASSWORD=$(wert "$KEY_PASSWORD" keyPassword)"
           } >> "$GITHUB_ENV"
           echo "Signierung: Keystore aus Secrets (Alias $KEY_ALIAS)."
+      - name: Keystore pruefen
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          set -eu
+          echo "Keystore: $(stat -c %s "$KEYSTORE_FILE") Bytes, SHA-256 $(sha256sum "$KEYSTORE_FILE" | cut -c1-16)..., Passwortlaenge ${#KEYSTORE_PASSWORD}, Alias-Laenge ${#KEY_ALIAS}"
+          if ! keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            if keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "::error::Keystore-Passwort stimmt, aber der Alias '$KEY_ALIAS' fehlt im Keystore."
+            else
+              echo "::error::Keystore laesst sich mit KEYSTORE_PASSWORD nicht oeffnen: Passwort falsch oder KEYSTORE_BASE64 beschaedigt (Groesse/Pruefsumme oben mit der Originaldatei vergleichen)."
+            fi
+            exit 1
+          fi
+          echo "Keystore und Alias in Ordnung."
+
       # Beide Gradle-Tasks getrennt, wie in CLAUDE.md beschrieben: parallele
       # KSP-Laeufe koennen sonst ein leeres Room-Schema anlegen.
       - name: Unit-Tests
