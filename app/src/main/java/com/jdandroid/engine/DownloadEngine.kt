@@ -556,7 +556,7 @@ class DownloadEngine(
             }
             ResponseKind.Continue -> Unit
         }
-        val body = resp.body ?: throw HosterException("Leere Antwort beim Download")
+        val body = resp.body // ab OkHttp 5 nie null
         val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
 
         // Speicherplatz vorab pruefen: sonst bricht der Download erst nach

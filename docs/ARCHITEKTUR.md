@@ -394,7 +394,10 @@ in `DownloadQueriesTest` genauso geprüft.
 
 ## Click'n'Load-Server
 
-`ClickNLoadServer` ist ein NanoHTTPD-Server auf Port 9666, gestartet vom
+`ClickNLoadServer` ist ein eigener Mini-HTTP-Server auf `java.net.ServerSocket`
+(Akzeptor-Thread plus kleiner Thread-Pool, jede Antwort mit `Connection:
+close`, Request-Line und Header mit Größenlimits, Formularkörper als
+`application/x-www-form-urlencoded`) auf Port 9666, gestartet vom
 `DownloadService`, sobald die Einstellung aktiv ist (und beim App-Start
 erneut, weil er keinen Prozessneustart überlebt). Der Start ist
 synchronisiert, weil `onCreate` und `ACTION_START_CNL` früher parallel
@@ -416,6 +419,7 @@ Endpunkte:
 | `/flash/addcrypted2` | Click'n'Load 2: `crypted` (AES-128-CBC, Base64) + `jk` (JS-Funktion mit Hex-Schlüssel) – wird lokal entschlüsselt |
 | `/flash/addcrypted` | kompletter DLC-Inhalt als Formularfeld |
 | `/flash/add`, `/flashgot` | Klartext-Links (`urls`/`links`) |
+| `/` | Lebenszeichen (`JDAndroid`); alle anderen Pfade antworten 404 |
 | `OPTIONS *` | CORS-Preflight |
 
 Jede Antwort trägt CORS-Header: der `Origin` wird zurückgespiegelt (sonst

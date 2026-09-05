@@ -49,7 +49,8 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 
 - Kotlin, Jetpack Compose Material3, Room (Schema exportiert unter
   `app/schemas`, Migrationen in `Db.kt`, `MigrationTest` unter androidTest),
-  DataStore, OkHttp, NanoHTTPD (Click'n'Load auf 127.0.0.1:9666),
+  DataStore, OkHttp, eigener Mini-HTTP-Server auf `ServerSocket`
+  (Click'n'Load auf 127.0.0.1:9666, `container/ClickNLoadServer.kt`),
   7-Zip-JBinding (RAR), zip4j, commons-compress (7z).
 - R8 ist bewusst aus (`isMinifyEnabled = false`): Shrinking entfernte
   JNI-Callback-Klassen des RAR-Entpackers.

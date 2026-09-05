@@ -3,7 +3,7 @@ export const meta = {
   description: 'JDAndroid-Gesamtpruefung: Fehler, Architektur, Tests finden, adversarial verifizieren, beheben, bauen',
   whenToUse: 'Regelmaessige Gesamtpruefung des Projekts nach docs/PRUEFUNG.md (Routine oder auf Wunsch des Nutzers)',
   phases: [
-    { title: 'Finden', detail: 'sechs Blickwinkel parallel: Engine, Hoster, UI/Plattform, Architektur, Sicherheit, Tests' },
+    { title: 'Finden', detail: 'sieben Blickwinkel parallel: Engine, Hoster, Hoster live, UI/Plattform, Architektur, Sicherheit, Tests' },
     { title: 'Verifizieren', detail: 'jeder Fund von zwei Skeptikern widerlegt oder bestaetigt' },
     { title: 'Beheben', detail: 'bestaetigte Funde nacheinander im Arbeitsbaum beheben, Tests ergaenzen' },
     { title: 'Bauen', detail: 'Unit-Tests und Release-Build, Schema-Export pruefen' },
@@ -33,6 +33,10 @@ const FUNDE_SCHEMA = {
         },
         required: ['title', 'file', 'severity', 'scenario', 'fix'],
       },
+    },
+    hint: {
+      type: 'string',
+      description: 'optionaler Hinweis ohne Fund, z.B. "Seite nicht erreichbar" beim Blickwinkel live',
     },
   },
   required: ['findings'],
@@ -64,6 +68,31 @@ const BLICKWINKEL = [
       'Ablaufdaten, voruebergehend vs. dauerhaft (5xx und Sperren duerfen Konten nie abschalten), ' +
       'Weiterleitungsketten, Cookie-Handling, API-Antworten ohne JSON, Regex-Randfaelle, ' +
       "Click'n'Load (Preflight-Header, Formularfelder, Limits), DLC-Entschluesselung.",
+  },
+  {
+    // Live-Abgleich: die Hoster-Seiten aendern sich, ohne dass ein Test es merkt.
+    key: 'live',
+    prompt:
+      'Blickwinkel "Hoster live": Rufe mit curl (Proxy ist konfiguriert, nichts daran aendern; ' +
+      '-sS -L --max-time 30 -A "Mozilla/5.0 (X11; Linux x86_64) Firefox/128.0") die oeffentlichen ' +
+      'Seiten der drei Hoster ab und speichere sie im Scratchpad: ddownload.com Dateiseite ' +
+      '(https://ddownload.com/<code>) und Login-Seite (https://ddownload.com/login.html), rapidgator.net ' +
+      'Dateiseite (https://rapidgator.net/file/<id>), 1fichier.com Dateiseite (https://1fichier.com/?<id>&lg=en, ' +
+      'Cookie LG=en). Beispiel-Links: zuerst in den Tests unter app/src/test (grep nach ddownload.com, ' +
+      'rapidgator.net, 1fichier.com) suchen; gibt es dort keinen echten Link, Platzhalter-Codes nennen ' +
+      '(z.B. abcdefghijkl) - dann liefert der Hoster die Seite "Datei nicht gefunden", deren Aufbau ' +
+      'trotzdem verglichen werden kann. Vergleiche die HTML-Struktur mit den Regexen und Selektoren in ' +
+      'app/src/main/java/com/jdandroid/hoster (DdownloadFreePage, RapidgatorFreePage, OneFichierFreePage, ' +
+      'DdownloadHoster): Formularnamen und -felder (op=download1/download2, rand, id), data-wait-seconds, ' +
+      'dk-dl-alert, dk-countdown-num/countdown_str, Turnstile-Kennzeichen (cf-turnstile, data-sitekey), ' +
+      'Login-Formular; bei Rapidgator AjaxStartTimer/AjaxGetDownloadLink, var fid/secs/captchaUrl, ' +
+      '"Downloading:"/"File size:", Fehlerseite 404; bei 1fichier Formular f1 (hidden adz, save), ' +
+      '"var count", Filename/Size-Tabelle, Fehlermeldungen (File not found, IP Locked, Accès restreint). ' +
+      'Melde jede Abweichung, bei der ein Regex des Codes die Live-Seite nicht mehr trifft oder die Seite ' +
+      'ein neues Muster nutzt, als Fund mit Datei und Zeile des betroffenen Regex und dem Live-Ausschnitt ' +
+      'im Szenario. Ist eine Seite nicht erreichbar (Timeout, 403 der Cloudflare-Huerde, Proxy-Fehler, ' +
+      'Sperre wegen Server-IP), melde dafuer KEINEN Fund, sondern nur einen Hinweis im Feld hint ' +
+      '(welche Seite, welcher Status). Aendere keine Dateien.',
   },
   {
     key: 'ui',
@@ -128,6 +157,10 @@ if (vorab) {
     )
   )
   funde = gefunden.filter(Boolean).flatMap(r => r.findings)
+  // Hinweise ohne Fund (z.B. Hoster-Seite nicht erreichbar) nur protokollieren
+  gefunden.forEach((r, i) => {
+    if (r && r.hint) log(`Hinweis (${BLICKWINKEL[i].key}): ${r.hint}`)
+  })
 }
 
 // Duplikate (gleiche Datei + Zeile) zusammenfuehren, bevor teuer verifiziert wird

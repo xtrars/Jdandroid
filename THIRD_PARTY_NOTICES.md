@@ -29,7 +29,6 @@ kein RAR-kompatibler Packer gebaut werden; JDAndroid entpackt nur.
 | zip4j | `net.lingala.zip4j:zip4j:2.11.6` | Apache-2.0 | ZIP entpacken, auch AES-verschlüsselt |
 | Apache Commons Compress | `org.apache.commons:commons-compress:1.28.0` | Apache-2.0 | 7z-Archive entpacken |
 | XZ for Java | `org.tukaani:xz:1.12` | 0BSD | LZMA/XZ-Streams für Commons Compress |
-| NanoHTTPD | `org.nanohttpd:nanohttpd:2.3.1` | BSD-3-Clause | Click'n'Load-Server auf 127.0.0.1:9666 (`container/ClickNLoadServer.kt`) |
 | OkHttp | `com.squareup.okhttp3:okhttp:4.12.0` | Apache-2.0 | HTTP-Zugriff auf Hoster-APIs und Dateien (`hoster/Hoster.kt`) |
 | Okio (transitiv) | `com.squareup.okio:okio:3.9.1` (OkHttp verlangt 3.6.0, AndroidX DataStore hebt auf 3.9.1 an) | Apache-2.0 | I/O-Grundlage von OkHttp und DataStore |
 | kotlinx.coroutines | `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0` | Apache-2.0 | Nebenläufigkeit in Engine und UI |

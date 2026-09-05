@@ -32,11 +32,22 @@ android {
 
     signingConfigs {
         create("release") {
-            // Keystore fuer Eigenbedarf, liegt bewusst im Repo (kein Play-Store-Release).
-            storeFile = file("keystore/release.jks")
-            storePassword = "jdandroid"
-            keyAlias = "jdandroid"
-            keyPassword = "jdandroid"
+            // Signierung wahlweise aus Umgebungsvariablen (CI mit Secrets, siehe
+            // .github/workflows/release.yml: KEYSTORE_FILE, KEYSTORE_PASSWORD,
+            // KEY_ALIAS, KEY_PASSWORD). Fehlen sie, wird der Keystore im Repo
+            // benutzt (Eigenbedarf, liegt bewusst im Repo; kein Play-Store-Release).
+            val envStore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+            if (envStore != null) {
+                storeFile = file(envStore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            } else {
+                storeFile = file("keystore/release.jks")
+                storePassword = "jdandroid"
+                keyAlias = "jdandroid"
+                keyPassword = "jdandroid"
+            }
         }
     }
 
@@ -64,12 +75,6 @@ android {
     buildFeatures {
         compose = true
     }
-    testOptions {
-        // Noetig: ClickNLoadServerTest laeuft gegen android.util.Log (ohne
-        // Stub wirft die Methode "not mocked").
-        unitTests.isReturnDefaultValues = true
-    }
-
     // Release-APK nach Version benennen (statt app-release.apk)
     applicationVariants.all {
         if (buildType.name == "release") {
@@ -105,7 +110,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.documentfile)
     implementation(libs.okhttp)
-    implementation(libs.nanohttpd)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.zip4j)
     implementation(libs.sevenzipjbinding)
