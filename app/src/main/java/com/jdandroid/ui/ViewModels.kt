@@ -506,4 +506,5 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 /** State of the settings tab that has to outlive the composition. */
 class SettingsViewModel : ViewModel() {
     internal val nfsProbe = NfsProbeRunner(viewModelScope)
+    internal val nfsBrowser = NfsBrowserRunner(viewModelScope)
 }

@@ -42,6 +42,15 @@ internal class NfsClientShare private constructor(
         file(dir).list().filter { it != "." && it != ".." }
     }
 
+    override fun entries(dir: String): List<NfsEntry> = guard {
+        file(dir).listFiles()
+            .filter { it.name != "." && it.name != ".." }
+            .map { f ->
+                val isDir = f.isDirectory
+                NfsEntry(f.name, isDir, if (isDir) 0 else f.length())
+            }
+    }
+
     override fun exists(path: String): Boolean = guard { file(path).exists() }
 
     override fun mkdirs(dir: String) = guard {

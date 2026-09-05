@@ -127,4 +127,12 @@
         <item quantity="other">%d Einträge</item>
     </plurals>
     <string name="settings_nfs_probe_unreachable">NAS nicht erreichbar: %1$s</string>
+    <string name="settings_nfs_browse">Ordner durchsuchen</string>
+    <string name="settings_nfs_browser_title">Ordner auf dem NAS</string>
+    <string name="settings_nfs_browser_parent">Übergeordneter Ordner</string>
+    <string name="settings_nfs_browser_empty">Leerer Ordner</string>
+    <string name="settings_nfs_browser_new_folder">Neuer Ordner</string>
+    <string name="settings_nfs_browser_folder_name">Ordnername</string>
+    <string name="settings_nfs_browser_create">Anlegen</string>
+    <string name="settings_nfs_browser_choose">Diesen Ordner wählen</string>
 </resources>

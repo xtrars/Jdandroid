@@ -127,4 +127,12 @@
         <item quantity="other">%d entries</item>
     </plurals>
     <string name="settings_nfs_probe_unreachable">NAS unreachable: %1$s</string>
+    <string name="settings_nfs_browse">Browse folders</string>
+    <string name="settings_nfs_browser_title">Folder on the NAS</string>
+    <string name="settings_nfs_browser_parent">Parent folder</string>
+    <string name="settings_nfs_browser_empty">Empty folder</string>
+    <string name="settings_nfs_browser_new_folder">New folder</string>
+    <string name="settings_nfs_browser_folder_name">Folder name</string>
+    <string name="settings_nfs_browser_create">Create</string>
+    <string name="settings_nfs_browser_choose">Choose this folder</string>
 </resources>

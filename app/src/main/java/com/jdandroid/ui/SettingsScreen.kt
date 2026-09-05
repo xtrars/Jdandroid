@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.toggleable
@@ -35,6 +39,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -55,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
@@ -62,6 +68,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -447,6 +454,7 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
     val scope = rememberCoroutineScope()
     val probing by vm.nfsProbe.probing.collectAsStateWithLifecycle()
     val outcome by vm.nfsProbe.outcome.collectAsStateWithLifecycle()
+    val browser by vm.nfsBrowser.state.collectAsStateWithLifecycle()
     val nfs by settings.nfs.collectAsStateWithLifecycle(initialValue = NfsSettings())
     var expanded by rememberSaveable { mutableStateOf(false) }
     var serverText by rememberSaveable { mutableStateOf("") }
@@ -574,6 +582,10 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
             }
         ) { Text(stringResource(R.string.settings_nfs_probe)) }
         if (probing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        TextButton(
+            enabled = serverText.isNotBlank() && exportText.isNotBlank(),
+            onClick = { scope.launch { vm.nfsBrowser.open(settings.currentNfs()) } }
+        ) { Text(stringResource(R.string.settings_nfs_browse)) }
     }
     outcome?.let { result ->
         Text(
@@ -591,6 +603,164 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
             color = if (result is NfsProbeOutcome.Ok) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.error
         )
+    }
+    browser?.let { state ->
+        NfsBrowserDialog(
+            export = exportText,
+            state = state,
+            runner = vm.nfsBrowser,
+            onChoose = { path ->
+                subDirText = path
+                update { copy(subDir = path) }
+                vm.nfsBrowser.close()
+            }
+        )
+    }
+}
+
+/**
+ * Folder browser below the export: folders open on tap, files are shown
+ * greyed out with their size, the current folder can be chosen or a new one
+ * created. The list shrinks so the buttons stay visible.
+ */
+@Composable
+private fun NfsBrowserDialog(
+    export: String,
+    state: NfsBrowserState,
+    runner: NfsBrowserRunner,
+    onChoose: (String) -> Unit
+) {
+    var newFolderOpen by rememberSaveable { mutableStateOf(false) }
+    var newFolderName by rememberSaveable { mutableStateOf("") }
+    val ready = !state.loading && state.error == null
+    AlertDialog(
+        onDismissRequest = runner::close,
+        title = { Text(stringResource(R.string.settings_nfs_browser_title)) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    NfsSettings.normalizePath("$export/${state.path}"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                state.error?.let { error ->
+                    Text(
+                        if (error.unreachable) stringResource(R.string.settings_nfs_probe_unreachable, error.message)
+                        else error.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                if (state.loading) {
+                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                        if (state.path.isNotEmpty()) {
+                            item("..") {
+                                NfsBrowserRow(
+                                    icon = JdIcons.FolderOpen,
+                                    name = "..",
+                                    detail = null,
+                                    enabled = true,
+                                    contentDescription = stringResource(R.string.settings_nfs_browser_parent),
+                                    onClick = runner::up
+                                )
+                            }
+                        }
+                        if (state.entries.isEmpty() && state.error == null) {
+                            item("empty") {
+                                Text(
+                                    stringResource(R.string.settings_nfs_browser_empty),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+                        items(state.entries, key = { "e:" + it.name }) { entry ->
+                            NfsBrowserRow(
+                                icon = if (entry.isDirectory) JdIcons.Folder else JdIcons.File,
+                                name = entry.name,
+                                detail = if (entry.isDirectory) null else formatBytes(entry.size),
+                                enabled = entry.isDirectory,
+                                contentDescription = null,
+                                onClick = { runner.enter(entry.name) }
+                            )
+                        }
+                    }
+                }
+                if (newFolderOpen) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newFolderName,
+                            onValueChange = { newFolderName = it },
+                            label = { Text(stringResource(R.string.settings_nfs_browser_folder_name)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                autoCorrectEnabled = false,
+                                imeAction = ImeAction.Done
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            enabled = ready && NfsSettings.isValidName(newFolderName.trim()),
+                            onClick = {
+                                runner.createFolder(newFolderName)
+                                newFolderName = ""
+                                newFolderOpen = false
+                            }
+                        ) { Text(stringResource(R.string.settings_nfs_browser_create)) }
+                    }
+                } else {
+                    TextButton(enabled = ready, onClick = { newFolderOpen = true }) {
+                        Text(stringResource(R.string.settings_nfs_browser_new_folder))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = ready, onClick = { onChoose(state.path) }) {
+                Text(stringResource(R.string.settings_nfs_browser_choose))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = runner::close) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun NfsBrowserRow(
+    icon: ImageVector,
+    name: String,
+    detail: String?,
+    enabled: Boolean,
+    contentDescription: String?,
+    onClick: () -> Unit
+) {
+    val color = if (enabled) LocalContentColor.current else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = color)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            name,
+            modifier = Modifier.weight(1f),
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
     }
 }
 

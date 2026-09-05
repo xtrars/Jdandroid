@@ -27,6 +27,15 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.3.0] – 2026-09-05
+
+### Hinzugefügt
+
+- NFS-Ordnerbrowser in den Einstellungen: „Ordner durchsuchen“ zeigt die
+  Freigabe ab dem Export-Pfad, Unterordner zum Hineingehen, Dateien mit
+  Größe, „..“ zurück, „Neuer Ordner“, „Diesen Ordner wählen“ trägt den
+  Unterordner ein; Zustand überlebt eine Drehung.
+
 ## [0.2.1] – 2026-09-05
 
 Gesamtprüfung auf dem Stand 0.2.0 (acht Blickwinkel, 42 Funde, 33 nach
@@ -786,6 +795,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.3.0]: https://github.com/xtrars/Jdandroid/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/xtrars/Jdandroid/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/xtrars/Jdandroid/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/xtrars/Jdandroid/compare/v0.1.0...v0.1.1

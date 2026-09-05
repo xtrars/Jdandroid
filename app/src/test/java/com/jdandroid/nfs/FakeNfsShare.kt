@@ -1,6 +1,7 @@
 package com.jdandroid.nfs
 
 import com.jdandroid.data.NfsSettings
+import com.jdandroid.engine.nfs.NfsEntry
 import com.jdandroid.engine.nfs.NfsFailure
 import com.jdandroid.engine.nfs.NfsProbe
 import com.jdandroid.engine.nfs.NfsShare
@@ -44,6 +45,12 @@ class FakeNfsShare : NfsShare {
         val names = files.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.filter { '/' !in it } +
             dirs.filter { it.startsWith(prefix) && it != dir }.map { it.removePrefix(prefix) }.filter { '/' !in it }
         return names.distinct()
+    }
+
+    override fun entries(dir: String): List<NfsEntry> = list(dir).map { name ->
+        val path = if (dir.isEmpty()) name else "$dir/$name"
+        val content = files[path]
+        NfsEntry(name, isDirectory = content == null, size = content?.size?.toLong() ?: 0)
     }
 
     override fun exists(path: String): Boolean {

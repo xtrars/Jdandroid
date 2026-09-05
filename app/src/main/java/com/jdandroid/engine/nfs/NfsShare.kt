@@ -7,6 +7,9 @@ import java.io.IOException
 /** Result of a connection check: listing of the target folder and free space. */
 data class NfsProbe(val entries: List<String>, val freeBytes: Long, val totalBytes: Long)
 
+/** One directory entry of a listing; [size] is 0 for directories. */
+data class NfsEntry(val name: String, val isDirectory: Boolean, val size: Long)
+
 /**
  * Minimal view of a mounted NFS export, relative to [NfsSettings.rootPath].
  * Paths are "/"-separated and relative to the root ("film/a.mkv").
@@ -14,6 +17,10 @@ data class NfsProbe(val entries: List<String>, val freeBytes: Long, val totalByt
 interface NfsShare : AutoCloseable {
     @Throws(IOException::class)
     fun list(dir: String): List<String>
+
+    /** Like [list], with type and size of each entry. */
+    @Throws(IOException::class)
+    fun entries(dir: String): List<NfsEntry>
 
     @Throws(IOException::class)
     fun exists(path: String): Boolean
