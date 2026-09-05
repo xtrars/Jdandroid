@@ -127,8 +127,8 @@ dependencies {
     // back to the app's 1.7.3 and the migration tests fail with
     // AbstractMethodError (GeneratedSerializer).
     constraints {
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+        implementation(libs.kotlinx.serialization.core)
+        implementation(libs.kotlinx.serialization.json)
     }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
