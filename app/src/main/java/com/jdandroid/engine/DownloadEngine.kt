@@ -67,6 +67,7 @@ class DownloadEngine(
     private var lastNotify = clock.nowMillis() - NOTIFY_MS
 
     private val storage = StorageTarget(context, app.settings)
+    private val exportRetry = ExportRetry(dao, app.settings, storage, clock)
     private val freeFlow = FreeFlow(dao, accountDao, app.settings)
     private val archives = ArchiveCoordinator(
         app, dao, app.settings, storage, scope, clock, onStateChanged
@@ -91,15 +92,15 @@ class DownloadEngine(
         }
     }
 
-    /** Running downloads plus running extractions. */
-    val activeCount: Int get() = jobs.size + archives.activeCount
+    /** Running downloads plus running extractions and export retries. */
+    val activeCount: Int get() = jobs.size + archives.activeCount + exportRetry.activeCount
 
     fun markReady() { startGate.complete(Unit) }
 
     /** Nothing runs and nothing is due; under the lock so pump() cannot interleave. */
     suspend fun isIdle(): Boolean = mutex.withLock {
         // Entries held for a captcha need no running service: solving it restarts the service
-        jobs.isEmpty() && archives.activeCount == 0 &&
+        jobs.isEmpty() && archives.activeCount == 0 && exportRetry.activeCount == 0 &&
             dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
     }
 
@@ -147,6 +148,12 @@ class DownloadEngine(
         }
         armRetryTimer()
         onStateChanged()
+        retryExports(forced = false)
+    }
+
+    /** Uploads entries the NFS target left local; own job, the pass may block on the network. */
+    private fun retryExports(forced: Boolean) {
+        scope.launch { if (exportRetry.run(forced)) onStateChanged() }
     }
 
     /**
@@ -168,6 +175,7 @@ class DownloadEngine(
             onStateChanged()
         } else {
             pump()
+            retryExports(forced = true)
         }
     }
 

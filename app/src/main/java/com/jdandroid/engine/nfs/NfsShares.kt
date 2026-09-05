@@ -7,7 +7,7 @@ import kotlinx.coroutines.withContext
 /** Entry point for the engine and the settings screen; [factory] is swapped in tests. */
 object NfsShares {
     @Volatile
-    var factory: NfsShareFactory = NfsShareFactory { throw NfsFailure.Permanent("NFS client not available") }
+    var factory: NfsShareFactory = NfsClientShare.factory
 
     /** Connection check for the settings screen: mounts, lists the target folder and reads free space. */
     suspend fun probe(settings: NfsSettings): NfsProbe = withContext(Dispatchers.IO) {

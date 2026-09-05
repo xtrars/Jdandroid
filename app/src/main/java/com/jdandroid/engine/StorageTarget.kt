@@ -13,19 +13,39 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.jdandroid.core.FileNames
 import com.jdandroid.core.Texts
+import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.SettingsRepository
+import com.jdandroid.engine.nfs.NfsFailure
+import com.jdandroid.engine.nfs.NfsTarget
 import java.io.File
+
+/**
+ * Where a finished file or folder ended up. [pending]: the NFS target was
+ * unreachable, the file stays at [path] (local) until the retry; [error]: the
+ * NFS target refused it for good, also local.
+ */
+internal data class Placed(val path: String, val pending: Boolean = false, val error: String? = null) {
+    /** Note for `errorMessage`: the retry code, the error text or nothing. */
+    val note: String? get() = if (pending) DownloadNotes.EXPORT_PENDING else error
+
+    companion object {
+        fun local(path: String, failure: NfsFailure): Placed =
+            Placed(path, pending = failure is NfsFailure.Transient, error = (failure as? NfsFailure.Permanent)?.message)
+    }
+}
 
 /**
  * Storage locations for finished files: the app directory (part files,
  * archives, extraction target), the user's SAF target folder and the public
- * Downloads/JDAndroid folder (MediaStore). Targets are tried in the order
- * SAF, MediaStore, app directory; exported files can be fetched back for
- * later extraction.
+ * Downloads/JDAndroid folder (MediaStore). An enabled NFS target comes
+ * first and keeps files local when it fails; otherwise targets are tried in
+ * the order SAF, MediaStore, app directory. Exported files can be fetched
+ * back for later extraction.
  */
 internal class StorageTarget(
     private val context: Context,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val nfs: NfsTarget = NfsTarget()
 ) {
     fun downloadDir(): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
@@ -123,12 +143,19 @@ internal class StorageTarget(
         }
     }
 
-    /** Moves a finished file to its target and returns the display path. */
-    suspend fun finish(temp: File, fileName: String): String {
+    /** Moves a finished file to its target and returns where it went. */
+    suspend fun finish(temp: File, fileName: String): Placed {
+        val nfsSettings = settings.currentNfs()
+        if (nfsSettings.isUsable) {
+            return when (val outcome = nfs.finish(nfsSettings, temp, fileName)) {
+                is NfsTarget.Outcome.Done -> { temp.delete(); Placed(outcome.displayPath) }
+                is NfsTarget.Outcome.Failed -> Placed.local(storeLocally(temp, fileName), outcome.failure)
+            }
+        }
         targetTree()?.let { root ->
             copyToTree(TreeDir(root.uri, root.name), temp, fileName)?.let { path ->
                 temp.delete()
-                return path
+                return Placed(path)
             }
         }
         val export = settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
@@ -146,15 +173,20 @@ internal class StorageTarget(
                     values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                     resolver.update(uri, values, null, null)
                     temp.delete()
-                    return "Downloads/JDAndroid/$fileName"
+                    return Placed("Downloads/JDAndroid/$fileName")
                 }
             } catch (_: Exception) {
             }
         }
-        // A file already stored under its final name (re-download of an existing
-        // file) must not be renamed to "name (2)".
-        if (temp.path == File(downloadDir(), fileName).path) return temp.absolutePath
-        val dest = FileNames.uniqueFile(downloadDir(), fileName)
+        return Placed(storeLocally(temp, fileName))
+    }
+
+    /** Final place in the app folder; a file already stored there (re-download, export retry) keeps its name. */
+    private fun storeLocally(temp: File, fileName: String): String {
+        val dir = downloadDir()
+        if (temp.path == File(dir, fileName).path) return temp.absolutePath
+        if (temp.parentFile?.path == dir.path && !temp.name.endsWith(".part")) return temp.absolutePath
+        val dest = FileNames.uniqueFile(dir, fileName)
         if (temp.path != dest.path) {
             temp.renameTo(dest)
         }
@@ -166,9 +198,16 @@ internal class StorageTarget(
      * Downloads/JDAndroid/[base]/... and returns the display path; without
      * export they stay in [dir].
      */
-    suspend fun exportDirectory(dir: File, base: String): String {
+    suspend fun exportDirectory(dir: File, base: String): Placed {
+        val nfsSettings = settings.currentNfs()
+        if (nfsSettings.isUsable) {
+            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base)) {
+                is NfsTarget.Outcome.Done -> Placed(outcome.displayPath)
+                is NfsTarget.Outcome.Failed -> Placed.local(dir.absolutePath, outcome.failure)
+            }
+        }
         targetTree()?.let { root ->
-            val target = TreeDir(root.uri, root.name).subDir(base) ?: return dir.absolutePath
+            val target = TreeDir(root.uri, root.name).subDir(base) ?: return Placed(dir.absolutePath)
             var allOk = true
             FileTrees.regularFiles(dir).forEach { file ->
                 val relDir = file.parentFile!!.relativeTo(dir).path
@@ -178,11 +217,11 @@ internal class StorageTarget(
             }
             return if (allOk) {
                 FileTrees.deleteTree(dir)
-                "${root.name ?: Texts.t("engine_target_folder")}/$base"
-            } else dir.absolutePath
+                Placed("${root.name ?: Texts.t("engine_target_folder")}/$base")
+            } else Placed(dir.absolutePath)
         }
         // Lint only recognises the version guard as a direct SDK_INT comparison.
-        if (!settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return dir.absolutePath
+        if (!settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return Placed(dir.absolutePath)
         val resolver = context.contentResolver
         var allOk = true
         FileTrees.regularFiles(dir).forEach { file ->
@@ -216,9 +255,9 @@ internal class StorageTarget(
         }
         return if (allOk) {
             FileTrees.deleteTree(dir)
-            "Downloads/JDAndroid/$base"
+            Placed("Downloads/JDAndroid/$base")
         } else {
-            dir.absolutePath
+            Placed(dir.absolutePath)
         }
     }
 
@@ -240,8 +279,10 @@ internal class StorageTarget(
         }
     }
 
-    /** Copies the exported file [name] from the SAF folder or Downloads/JDAndroid back to [dest]. */
+    /** Copies the exported file [name] from the NFS target, the SAF folder or Downloads/JDAndroid back to [dest]. */
     suspend fun restoreExported(name: String, dest: File): Boolean {
+        val nfsSettings = settings.currentNfs()
+        if (nfsSettings.isUsable && nfs.restoreExported(nfsSettings, name, dest)) return true
         targetTree()?.let { root -> TreeDir(root.uri, null).fileUri(name) }?.let { uri ->
             return copyUriTo(uri, dest)
         }

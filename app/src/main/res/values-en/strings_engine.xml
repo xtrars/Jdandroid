@@ -51,4 +51,10 @@
     <string name="engine_secrets_decrypt_failed">Credentials cannot be read (Android keystore: %1$s). Please delete the account and add it again.</string>
     <string name="engine_secrets_key_missing">Key missing in keystore</string>
     <string name="engine_package_from_date">Package from %1$s</string>
+
+    <!-- NFS target -->
+    <string name="engine_nfs_unreachable">NFS server unreachable: %1$s</string>
+    <string name="engine_nfs_denied">NFS: access denied (check UID/GID and export)</string>
+    <string name="engine_nfs_export_missing">NFS export not found or not shared (export path, “insecure” option)</string>
+    <string name="engine_nfs_pending">Waiting for NFS target</string>
 </resources>

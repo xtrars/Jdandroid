@@ -52,4 +52,10 @@
     <string name="engine_secrets_decrypt_failed">Zugangsdaten nicht lesbar (Android-Keystore: %1$s). Bitte das Konto löschen und neu anlegen.</string>
     <string name="engine_secrets_key_missing">Schlüssel fehlt im Keystore</string>
     <string name="engine_package_from_date">Paket vom %1$s</string>
+
+    <!-- NFS target -->
+    <string name="engine_nfs_unreachable">NFS-Server nicht erreichbar: %1$s</string>
+    <string name="engine_nfs_denied">NFS: Zugriff verweigert (UID/GID und Freigabe prüfen)</string>
+    <string name="engine_nfs_export_missing">NFS-Freigabe nicht gefunden oder nicht freigegeben (Export-Pfad, Option „insecure“)</string>
+    <string name="engine_nfs_pending">Wartet auf NFS-Ziel</string>
 </resources>

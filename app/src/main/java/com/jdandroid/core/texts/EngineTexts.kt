@@ -56,5 +56,11 @@ object EngineTexts {
         "engine_secrets_decrypt_failed" to "Zugangsdaten nicht lesbar (Android-Keystore: %1\$s). Bitte das Konto löschen und neu anlegen.",
         "engine_secrets_key_missing" to "Schlüssel fehlt im Keystore",
         "engine_package_from_date" to "Paket vom %1\$s",
+
+        // NFS target
+        "engine_nfs_unreachable" to "NFS-Server nicht erreichbar: %1\$s",
+        "engine_nfs_denied" to "NFS: Zugriff verweigert (UID/GID und Freigabe prüfen)",
+        "engine_nfs_export_missing" to "NFS-Freigabe nicht gefunden oder nicht freigegeben (Export-Pfad, Option „insecure“)",
+        "engine_nfs_pending" to "Wartet auf NFS-Ziel",
     )
 }

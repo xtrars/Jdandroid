@@ -242,6 +242,14 @@ interface DownloadDao {
     @Query("UPDATE downloads SET localPath = :path, errorMessage = NULL WHERE id IN (:ids) AND status = 'COMPLETED'")
     suspend fun updateCompletedSet(ids: List<Long>, path: String?)
 
+    /** Completed entries carrying the note code :note (e.g. [DownloadNotes.EXPORT_PENDING]). */
+    @Query("SELECT * FROM downloads WHERE status = 'COMPLETED' AND errorMessage = :note ORDER BY id")
+    suspend fun byNote(note: String): List<DownloadItem>
+
+    /** Result of a retried export: new display path (or unchanged) and the note or error text. */
+    @Query("UPDATE downloads SET localPath = :path, errorMessage = :note WHERE id IN (:ids) AND status = 'COMPLETED'")
+    suspend fun setExported(ids: List<Long>, path: String?, note: String?)
+
     /** Resets link checks left in CHECKING by a process exit. */
     @Query("UPDATE downloads SET online = 0 WHERE online = 3")
     suspend fun resetChecking()

@@ -101,8 +101,8 @@ internal class ArchiveCoordinator(
                 // Paused or requeued while finishing: keep the .part file for resuming
                 val row = dao.byId(id) ?: return@withLock null
                 if (row.status != DownloadStatus.RUNNING) return@withLock null
-                val path = storage.finish(temp, fileName)
-                markCompleted(id, path, null)
+                val placed = storage.finish(temp, fileName)
+                markCompleted(id, placed.path, placed.note)
                 row.packageId
             }
             // A waiting archive set of the same package may be complete now
@@ -321,16 +321,17 @@ internal class ArchiveCoordinator(
                         flat = settings.currentFlatExtract(),
                         progress = listener
                     )
-                    val exportedPath = storage.exportDirectory(extractDir, folder)
+                    val exported = storage.exportDirectory(extractDir, folder)
                     if (settings.currentDeleteArchive()) {
                         archiveDir(packageId).listFiles()
                             ?.filter { ArchiveNames.archiveBase(it.name) == base }
                             ?.forEach { it.delete() }
                     }
                     dao.byId(id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
-                    dao.completeExtractingSet(setIds, exportedPath, null)
+                    dao.completeExtractingSet(setIds, exported.path, exported.note)
                     finished = true
-                    if (settings.currentRemoveLinksAfterExtract()) {
+                    // A pending NFS upload needs its rows for the retry
+                    if (!exported.pending && settings.currentRemoveLinksAfterExtract()) {
                         removeExtractedEntries(set)
                     }
                 } catch (e: Throwable) {
