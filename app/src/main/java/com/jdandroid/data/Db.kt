@@ -324,6 +324,18 @@ interface DownloadDao {
 
     @Query("DELETE FROM downloads WHERE packageId = :packageId")
     suspend fun deletePackageItems(packageId: Long)
+
+    @Query("UPDATE downloads SET online = 3 WHERE id IN (:ids) AND status = 'COLLECTED'")
+    suspend fun setCheckingAll(ids: List<Long>)
+
+    @Query(PackageQueries.REQUEUE_PACKAGE)
+    suspend fun requeuePackage(packageId: Long)
+
+    @Query(PackageQueries.DELETE_COLLECTED_IN_PACKAGE)
+    suspend fun deleteCollectedInPackage(packageId: Long): Int
+
+    @Query(PackageQueries.COUNT_NOT_COLLECTED)
+    suspend fun countByPackageNotCollected(packageId: Long): Int
 }
 
 /** Sets the file name and derives the archive key from it. */

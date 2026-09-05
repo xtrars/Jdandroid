@@ -12,8 +12,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
@@ -49,7 +55,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.R
-import com.jdandroid.container.ContainerFiles
 import com.jdandroid.core.AppMessages
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +70,8 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     private val sharedText = mutableStateOf<String?>(null)
-    private val dlcContent = mutableStateOf<String?>(null)
+    // DLC files are read in the ViewModel so rotation cannot cancel the import.
+    private val downloadVm: DownloadViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,9 +124,7 @@ class MainActivity : ComponentActivity() {
                 Surface(color = background) {
                     MainScreen(
                         sharedText = sharedText.value,
-                        onSharedTextConsumed = { sharedText.value = null },
-                        dlcContent = dlcContent.value,
-                        onDlcConsumed = { dlcContent.value = null }
+                        onSharedTextConsumed = { sharedText.value = null }
                     )
                 }
             }
@@ -141,8 +145,20 @@ class MainActivity : ComponentActivity() {
     private fun handleResumeRequest(intent: Intent?) {
         if (intent?.getBooleanExtra(DownloadService.EXTRA_RESUME_ALL, false) == true) {
             intent.removeExtra(DownloadService.EXTRA_RESUME_ALL)
-            DownloadService.send(this, DownloadService.ACTION_RESUME_ALL)
+            // The activity is exported: only the app's own PendingIntents may control downloads.
+            if (launchedFromOwnApp()) DownloadService.send(this, DownloadService.ACTION_RESUME_ALL)
         }
+    }
+
+    /**
+     * Whether the current launch (or the intent in onNewIntent) came from this
+     * app. For a PendingIntent the system reports its creator as referrer.
+     */
+    private fun launchedFromOwnApp(): Boolean {
+        // getReferrer() prefers caller-supplied extras, which any app can forge.
+        intent?.removeExtra(Intent.EXTRA_REFERRER)
+        intent?.removeExtra(Intent.EXTRA_REFERRER_NAME)
+        return isOwnAppReferrer(referrer?.toString(), packageName)
     }
 
     /** Routes incoming intents to shared text or DLC files. */
@@ -158,24 +174,13 @@ class MainActivity : ComponentActivity() {
             }
             else -> null
         }
-        if (uri != null) {
-            // Off the main thread: the filter accepts any octet-stream file,
-            // and cloud providers download it on open.
-            lifecycleScope.launch(Dispatchers.IO) {
-                val result = runCatching { ContainerFiles.readText(contentResolver, uri) }
-                val content = result.getOrNull()
-                if (content != null && ContainerFiles.looksLikeDlc(content)) {
-                    withContext(Dispatchers.Main) { dlcContent.value = content }
-                } else {
-                    AppMessages.error(
-                        result.exceptionOrNull()?.message
-                            ?: getString(R.string.accounts_not_dlc_opened)
-                    )
-                }
-            }
-        }
+        if (uri != null) downloadVm.openDlc(contentResolver, uri)
     }
 }
+
+/** True for the referrer the system sets when this app itself starts the activity. */
+internal fun isOwnAppReferrer(referrer: String?, packageName: String): Boolean =
+    referrer == "android-app://$packageName"
 
 /** Tabs of the bottom navigation bar. */
 private enum class Tab(val labelRes: Int) {
@@ -188,9 +193,7 @@ private enum class Tab(val labelRes: Int) {
 @Composable
 fun MainScreen(
     sharedText: String?,
-    onSharedTextConsumed: () -> Unit,
-    dlcContent: String?,
-    onDlcConsumed: () -> Unit
+    onSharedTextConsumed: () -> Unit
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.Downloads) }
     val context = LocalContext.current
@@ -205,10 +208,11 @@ fun MainScreen(
     var showAddAccount by rememberSaveable { mutableStateOf(false) }
 
     // Import regardless of the open tab, then switch to where the links land.
+    val dlcContent by downloadVm.pendingDlc.collectAsStateWithLifecycle()
     LaunchedEffect(dlcContent) {
-        if (dlcContent != null) {
-            downloadVm.importDlc(dlcContent)
-            onDlcConsumed()
+        dlcContent?.let { content ->
+            downloadVm.importDlc(content)
+            downloadVm.consumePendingDlc()
             tab = if (settings.currentAutoStartLinks()) Tab.Downloads else Tab.Collector
         }
     }
@@ -279,19 +283,24 @@ fun MainScreen(
         return
     }
 
+    val horizontalInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
     Scaffold(
         // Inner screens (own TopAppBar) and the NavigationBar handle the insets;
         // otherwise the padding would be applied twice.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { JdSnackbarHost(messageHost) },
+        // Zero content insets leave FAB and snackbar under the side navigation
+        // bar in landscape; they take the horizontal insets themselves.
+        snackbarHost = { JdSnackbarHost(messageHost, Modifier.windowInsetsPadding(horizontalInsets)) },
         // FAB in the outer Scaffold so the snackbar pushes it up instead of covering it.
         floatingActionButton = {
             when (tab) {
                 Tab.Collector -> FloatingActionButton(
-                    onClick = { addLinksPrefill = ""; showAddLinks = true }
+                    onClick = { addLinksPrefill = ""; showAddLinks = true },
+                    modifier = Modifier.windowInsetsPadding(horizontalInsets)
                 ) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.accounts_add_links)) }
                 Tab.Accounts -> FloatingActionButton(
-                    onClick = { showAddAccount = true }
+                    onClick = { showAddAccount = true },
+                    modifier = Modifier.windowInsetsPadding(horizontalInsets)
                 ) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.accounts_add_title)) }
                 else -> {}
             }
@@ -320,7 +329,8 @@ fun MainScreen(
             }
         }
     ) { padding ->
-        val modifier = Modifier.padding(padding)
+        // Consumed so imePadding in a tab pads only the part not already covered by the bottom bar.
+        val modifier = Modifier.padding(padding).consumeWindowInsets(padding)
         // Keeps per-tab state (search, filters, collapsed packages, scroll position).
         val holder = rememberSaveableStateHolder()
         holder.SaveableStateProvider(tab.name) {

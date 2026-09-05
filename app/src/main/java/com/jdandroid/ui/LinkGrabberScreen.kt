@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -177,6 +178,7 @@ private fun CollectorPackageHeader(
     onToggle: () -> Unit
 ) {
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var renaming by rememberSaveable { mutableStateOf(false) }
     val online = group.items.count { it.online == OnlineState.ONLINE }
     val checking = group.items.count { it.online == OnlineState.CHECKING }
     val known = group.items.filter { it.fileSize > 0 }.sumOf { it.fileSize }
@@ -217,6 +219,11 @@ private fun CollectorPackageHeader(
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
+                            text = { Text(stringResource(R.string.downloads_menu_rename)) },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = { menuOpen = false; renaming = true }
+                        )
+                        DropdownMenuItem(
                             text = { Text(stringResource(R.string.linkgrabber_discard_package)) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                             onClick = { menuOpen = false; confirmDelete = true }
@@ -234,6 +241,13 @@ private fun CollectorPackageHeader(
             ),
             onConfirm = { vm.deletePackage(group.pkg.id) },
             onDismiss = { confirmDelete = false }
+        )
+    }
+    if (renaming) {
+        RenamePackageDialog(
+            currentName = group.pkg.name,
+            onRename = { vm.renamePackage(group.pkg.id, it) },
+            onDismiss = { renaming = false }
         )
     }
 }

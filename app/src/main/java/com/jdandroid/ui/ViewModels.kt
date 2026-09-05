@@ -5,6 +5,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
 import com.jdandroid.R
@@ -223,9 +224,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             // Collector items have nothing on disk; no need to start the service.
-            val items = dao.byPackage(packageId)
-            items.filter { it.status == DownloadStatus.COLLECTED }.forEach { dao.delete(it.id) }
-            if (items.any { it.status != DownloadStatus.COLLECTED }) {
+            dao.deleteCollectedInPackage(packageId)
+            if (dao.countByPackageNotCollected(packageId) > 0) {
                 // The service deletes items (jobs, files) and then the package row,
                 // so no orphans remain.
                 DownloadService.send(getApplication(), DownloadService.ACTION_DELETE_PACKAGE, packageId)
@@ -237,9 +237,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startPackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.byPackage(packageId)
-                .filter { it.status != DownloadStatus.COMPLETED }
-                .forEach { dao.requeue(it.id) }
+            dao.requeuePackage(packageId)
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }
@@ -302,17 +300,42 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun importDlcFromUri(resolver: ContentResolver, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            val result = runCatching { ContainerFiles.readText(resolver, uri) }
-            val content = result.getOrNull()
-            val app = getApplication<Application>()
-            when {
-                content == null -> AppMessages.error(
+            readDlc(resolver, uri, R.string.accounts_not_dlc_chosen)?.let { importDlc(it) }
+        }
+    }
+
+    private val _pendingDlc = MutableStateFlow<String?>(null)
+    /** DLC content from "Open with"; the main screen imports it and switches tabs. */
+    val pendingDlc: StateFlow<String?> = _pendingDlc
+
+    /** Reads a DLC handed to the activity (VIEW/SEND) and publishes it as [pendingDlc]. */
+    fun openDlc(resolver: ContentResolver, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            readDlc(resolver, uri, R.string.accounts_not_dlc_opened)?.let { _pendingDlc.value = it }
+        }
+    }
+
+    fun consumePendingDlc() {
+        _pendingDlc.value = null
+    }
+
+    /** Reads and validates a DLC file; reports the failure and returns null otherwise. */
+    private fun readDlc(resolver: ContentResolver, uri: Uri, notDlcRes: Int): String? {
+        val result = runCatching { ContainerFiles.readText(resolver, uri) }
+        val content = result.getOrNull()
+        val app = getApplication<Application>()
+        return when {
+            content == null -> {
+                AppMessages.error(
                     result.exceptionOrNull()?.message ?: app.getString(R.string.accounts_dlc_read_failed)
                 )
-                !ContainerFiles.looksLikeDlc(content) ->
-                    AppMessages.error(app.getString(R.string.accounts_not_dlc_chosen))
-                else -> importDlc(content)
+                null
             }
+            !ContainerFiles.looksLikeDlc(content) -> {
+                AppMessages.error(app.getString(notDlcRes))
+                null
+            }
+            else -> content
         }
     }
 
@@ -478,4 +501,9 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(account: Account) {
         viewModelScope.launch(Dispatchers.IO) { dao.delete(account) }
     }
+}
+
+/** State of the settings tab that has to outlive the composition. */
+class SettingsViewModel : ViewModel() {
+    internal val nfsProbe = NfsProbeRunner(viewModelScope)
 }
