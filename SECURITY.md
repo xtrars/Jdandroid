@@ -38,7 +38,7 @@ ausschließlich in die jeweils neueste Version; es gibt keine gepflegten
 
 | Version | Unterstützt |
 |---|---|
-| neueste `0.1.x` (derzeit 0.1.0, `versionCode` 41) | ja |
+| neueste `0.1.x` (derzeit 0.1.1, `versionCode` 42) | ja |
 | ältere `0.1.x` | nein, bitte aktualisieren |
 | `0.0.x` (unveröffentlichte Vorstufen, alter Schlüssel) | nein, siehe [Signatur](#signatur) |
 | `1.x` (Versionsstand vor dem Reset am 04.09.2026) | nein |

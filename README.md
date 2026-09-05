@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational.svg)
+![Version 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational.svg)
 
 ## English summary
 
@@ -25,7 +25,7 @@ per-package progress, Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
 **Install.** No store release. Download the newest APK from the
-[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.1.0.apk`, with a
+[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.1.1.apk`, with a
 SHA-256 checksum; the five newest APKs are also kept in
 [`release/`](release/)), allow installation from unknown sources for your
 browser or file manager, and open the file. Requires Android 8.0 (API 26) or
@@ -198,11 +198,11 @@ die fünf neuesten APKs im Repository unter [`release/`](release/):
 
 | Version | `versionCode` | Datei |
 |---|---|---|
-| **0.1.0** (aktuell) | 41 | [Release v0.1.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.0) · [`release/JDAndroid-0.1.0.apk`](release/JDAndroid-0.1.0.apk) |
+| **0.1.1** (aktuell) | 42 | [Release v0.1.1](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.1) · [`release/JDAndroid-0.1.1.apk`](release/JDAndroid-0.1.1.apk) |
+| 0.1.0 | 41 | [Release v0.1.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.0) · [`release/JDAndroid-0.1.0.apk`](release/JDAndroid-0.1.0.apk) |
 | 0.0.16 | 40 | [`release/JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk) |
 | 0.0.15 | 39 | [`release/JDAndroid-0.0.15.apk`](release/JDAndroid-0.0.15.apk) |
 | 0.0.14 | 38 | [`release/JDAndroid-0.0.14.apk`](release/JDAndroid-0.0.14.apk) |
-| 0.0.13 | 37 | [`release/JDAndroid-0.0.13.apk`](release/JDAndroid-0.0.13.apk) |
 
 **Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
 Schlüssel signiert, der im Repository lag und deshalb als kompromittiert

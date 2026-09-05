@@ -127,4 +127,16 @@ class FileNamesTest {
         assertEquals(300_000L, DownloadEngine.backoffMillis(6))
         assertEquals(300_000L, DownloadEngine.backoffMillis(50))
     }
+
+    @Test
+    fun langerNameBehaeltMehrteiligeEndung() {
+        val long = "x".repeat(300)
+        val rar = FileNames.limitLength("$long.part1.rar")
+        assertTrue(rar, rar.endsWith(".part1.rar"))
+        assertTrue(rar.toByteArray().size <= 200)
+        val sevenZ = FileNames.limitLength("$long.7z.001")
+        assertTrue(sevenZ, sevenZ.endsWith(".7z.001"))
+        // A plain extension is still trimmed to the last segment only
+        assertTrue(FileNames.limitLength("$long.tar.gz").endsWith(".gz"))
+    }
 }

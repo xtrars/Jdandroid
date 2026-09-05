@@ -27,6 +27,34 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.1.1] – 2026-09-05
+
+Testabsicherung der Erkenntnisse aus der Gesamtprüfung: 407 Unit-Tests
+(vorher 316), dazu zwei dabei gefundene Fehler behoben.
+
+### Behoben
+
+- Dateinamen über 200 Byte verloren beim Kürzen die Teil-Endung
+  (`.part1.rar`, `.7z.001`); mehrteilige Archive wurden dann nicht mehr als
+  Set erkannt.
+- ddownload-Titel-Fallback schnitt weiterhin am ersten Bindestrich im
+  Dateinamen ab; Trenner zählen nur noch mit Leerzeichen (` - `, ` | `).
+- Release-Workflow: Signatur-Secrets werden getrimmt und vor dem Build mit
+  `keytool` geprüft (klare Meldung statt „keystore password was incorrect“);
+  ein manueller Start legt einen fehlenden Tag selbst an.
+
+### Hinzugefügt
+
+- Tests: Premium vor Free (`FreeFlow.choosePath`), Archivordner je Paket und
+  Entpack-Registry, Vermerk-Codes und Migration 10→11 auf der JVM, mehrteiliges
+  7z, Hoster-Abläufe gegen MockWebServer (Rapidgator-Timer und Captcha,
+  1fichier-Sperrtabellen und Free-Formular, ddownload-Kontoseite,
+  Weiterleitungsketten, Turnstile und Wartezeiten), Click'n'Load-Grenzen,
+  DLC-Rundreise mit injizierbarem Dienst, Kontoprüfung, Secrets-Präfix,
+  Platzhalter-Konsistenz aller Übersetzungen, Migrationskette 5→11.
+- Hoster mit injizierbaren Basis-URLs und Clients (nur für Tests, Standard
+  unverändert).
+
 ## [0.1.0] – 2026-09-05
 
 Erste veröffentlichte Version, `versionCode` 41; ab hier gilt das
@@ -680,6 +708,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.1.1]: https://github.com/xtrars/Jdandroid/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xtrars/Jdandroid/compare/6db7793...v0.1.0
 [0.0.16]: https://github.com/xtrars/Jdandroid/commit/6db7793
 [0.0.15]: https://github.com/xtrars/Jdandroid/commit/f2c5395

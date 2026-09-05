@@ -27,10 +27,23 @@ internal object FileNames {
     /** File systems allow 255 bytes; keeps the extension and shortens the base (multibyte-safe). */
     fun limitLength(name: String, maxBytes: Int = MAX_BYTES): String {
         if (name.toByteArray().size <= maxBytes) return name
-        val ext = name.substringAfterLast('.', "").take(10)
-        var base = name.substringBeforeLast('.')
+        val ext = volumeSuffix(name) ?: name.substringAfterLast('.', "").take(10)
+        var base = if (ext.isEmpty()) name else name.removeSuffix(".$ext")
         while (base.isNotEmpty() && (base + "." + ext).toByteArray().size > maxBytes) base = base.dropLast(1)
         return if (ext.isEmpty()) base else "$base.$ext"
+    }
+
+    /**
+     * Multi-volume suffix that must survive truncation ("part1.rar", "7z.001"),
+     * otherwise the parts of one archive stop being recognised as a set.
+     */
+    private fun volumeSuffix(name: String): String? {
+        val parts = name.split('.')
+        if (parts.size < 3) return null
+        val last = parts[parts.size - 1]
+        val previous = parts[parts.size - 2]
+        val volume = previous.matches(Regex("part\\d+", RegexOption.IGNORE_CASE)) || last.matches(Regex("\\d{3}"))
+        return if (volume) "$previous.$last" else null
     }
 
     /**
