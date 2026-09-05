@@ -60,16 +60,10 @@ internal class ArchiveCoordinator(
     /** Triggering entry, its package and the archive key. */
     private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String) {
         /** Registry key: same base in different packages are different sets. */
-        val key get() = "${packageId ?: 0}/$base"
+        val key get() = setKey(packageId, base)
     }
 
-    /**
-     * Archive volumes are kept per package so that same-named sets of two
-     * packages never mix; ".archives" can never collide with a package folder
-     * ([FileNames.clean] strips leading dots).
-     */
-    fun archiveDir(packageId: Long?): File =
-        File(storage.downloadDir(), ".archives/${packageId ?: 0}").apply { mkdirs() }
+    fun archiveDir(packageId: Long?): File = archiveDir(storage.downloadDir(), packageId)
 
     /**
      * Completes a download: archives are extracted once all parts are present
@@ -377,5 +371,16 @@ internal class ArchiveCoordinator(
          * the UI translates it (`downloads_waiting_for_parts`).
          */
         const val WAITING_NOTE = DownloadNotes.WAITING_PARTS
+
+        /** [ExtractionRegistry] key of a set; entries without a package count as package 0. */
+        fun setKey(packageId: Long?, base: String): String = "${packageId ?: 0}/$base"
+
+        /**
+         * Archive volumes are kept per package so that same-named sets of two
+         * packages never mix; ".archives" can never collide with a package folder
+         * ([FileNames.clean] strips leading dots).
+         */
+        fun archiveDir(downloadDir: File, packageId: Long?): File =
+            File(downloadDir, ".archives/${packageId ?: 0}").apply { mkdirs() }
     }
 }
