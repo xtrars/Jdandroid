@@ -11,8 +11,11 @@ export const meta = {
 }
 
 // Grundlagen fuer jeden Agenten: Projektregeln zuerst lesen.
+// Arbeitsverzeichnis (Standard: Hauptarbeitsbaum; fuer parallele Laeufe ein Worktree via args.repo).
+const REPO = args && typeof args.repo === 'string' ? args.repo : '/home/user/Jdandroid'
+
 const BASIS =
-  'Repository: /home/user/Jdandroid (Android, Kotlin, Compose, Room). Lies zuerst CLAUDE.md und ' +
+  `Repository: ${REPO} (Android, Kotlin, Compose, Room). Arbeite ausschliesslich dort (cd ${REPO}). Lies zuerst CLAUDE.md und ` +
   'docs/PRUEFUNG.md und halte dich an die dort festgelegten Regeln. Verifiziere jede Aussage im Code, ' +
   'keine Spekulation. Antworte knapp und auf Deutsch. '
 
