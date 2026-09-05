@@ -9,20 +9,28 @@ Oberfläche, der Kommentare und der Commit-Texte ist Deutsch.
 - Antworten auf Deutsch, knapp, mit dem Ergebnis zuerst.
 - Nach jeder fertigen Änderung: Version erhöhen, Release-APK bauen, APK in
   `release/JDAndroid-<version>.apk` ablegen, README-Link anpassen, committen,
-  pushen und die APK per Datei senden.
+  pushen, Tag `v<version>` pushen (löst `release.yml` aus und legt das
+  GitHub-Release an) und die APK per Datei senden.
 - In `release/` bleiben nur die fünf neuesten APKs; ältere werden mit
   `git rm` entfernt (Reihenfolge nach Version, `versionCode` in
   `app/build.gradle.kts` ist maßgeblich).
-- Versionsschema: `0.0.x`, solange die App nicht veröffentlicht ist.
-  `versionCode` zählt trotzdem bei jedem Build hoch (sonst verweigert Android
-  das Update).
+- Versionsschema: `0.1.x` seit der ersten Veröffentlichung (0.1.0,
+  versionCode 41); `1.0.0` erst nach Store-Reife. `versionCode` zählt bei
+  jedem Build hoch (sonst verweigert Android das Update).
 - Branch: `claude/android-jdownloader-app-1zqi1n`. Nie auf einen anderen Branch
   pushen. Push mit `git push -u origin <branch>`.
 - Commit-Texte enden mit den Zeilen
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` und
   `Claude-Session: https://claude.ai/code/session_01UV4wJYXghm3NB8sw2efw2Y`.
   Keine Modellnamen in Code, Kommentaren oder Commits darüber hinaus.
-- Keystore liegt bewusst im Repo (Wunsch des Nutzers), APK ebenfalls.
+- Keystore liegt NICHT im Repo (seit 0.1.0; der alte öffentliche Schlüssel
+  ist außer Dienst). Signierung: Umgebungsvariablen `KEYSTORE_FILE`,
+  `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` oder `keystore.properties`
+  im Projektstamm (gitignored). In einer Claude-Sitzung: liegt
+  `KEYSTORE_BASE64` (plus Passwörter) in der Umgebung, den Keystore in den
+  Scratchpad dekodieren und `keystore.properties` daraus erzeugen; fehlt das,
+  entsteht eine unsignierte APK – dann den Nutzer um den Schlüssel bitten,
+  nie einen neuen erzeugen. Die APKs in `release/` bleiben (fünf neueste).
 - Keine Diagnose-Ausgaben in den Einstellungen anhäufen („vollgespamt“).
   Fehler sollen als eine klare Meldung erscheinen, nicht als Protokoll.
 
@@ -110,6 +118,15 @@ auf Wunsch des Nutzers, nicht mehr regelmäßig (Routine und CI-Zeitplan wurden
 entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 `.claude/workflows/pruefung.js` (Workflow-Tool mit `scriptPath`; optional
 `args: {reports: [...]}`). Nach dem Workflow: Version/APK wie oben.
+
+## Veröffentlichung
+
+- Verteilung über GitHub Releases (`release.yml` bei Tag `v*`): mit den
+  Repository-Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+  `KEY_PASSWORD` baut und signiert die CI, ohne Secrets nimmt sie die
+  eingecheckte `release/JDAndroid-<version>.apk`.
+- Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
+  Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
 
 ## Parallele Workflows
 

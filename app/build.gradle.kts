@@ -1,10 +1,43 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+/**
+ * Signaturdaten fuer den Release-Build: zuerst die Umgebungsvariablen
+ * KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD, sonst die Datei
+ * keystore.properties im Projektstamm (Schluessel storeFile, storePassword,
+ * keyAlias, keyPassword; storeFile relativ zum Projektstamm oder absolut).
+ * Fehlt beides, liefert die Funktion null und die APK bleibt unsigniert.
+ */
+fun releaseSigning(): Map<String, String>? {
+    val envStore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    if (envStore != null) {
+        return mapOf(
+            "storeFile" to envStore,
+            "storePassword" to (System.getenv("KEYSTORE_PASSWORD") ?: ""),
+            "keyAlias" to (System.getenv("KEY_ALIAS") ?: ""),
+            "keyPassword" to (System.getenv("KEY_PASSWORD") ?: ""),
+        )
+    }
+    val datei = rootProject.file("keystore.properties")
+    if (!datei.isFile) return null
+    val p = Properties().apply { datei.inputStream().use { p -> load(p) } }
+    val store = p.getProperty("storeFile")?.trim().orEmpty()
+    if (store.isEmpty()) return null
+    val storeDatei = File(store).let { f -> if (f.isAbsolute) f else rootProject.file(store) }
+    return mapOf(
+        "storeFile" to storeDatei.absolutePath,
+        "storePassword" to p.getProperty("storePassword", ""),
+        "keyAlias" to p.getProperty("keyAlias", ""),
+        "keyPassword" to p.getProperty("keyPassword", ""),
+    )
 }
 
 android {
@@ -17,8 +50,8 @@ android {
         targetSdk = 36
         // versionCode muss bei jedem Release steigen, sonst verweigert der
         // Paketinstaller das Update ("App nicht installiert").
-        versionCode = 40
-        versionName = "0.0.16"
+        versionCode = 41
+        versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -30,23 +63,18 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
+    // Signierung der Release-APK. Der Keystore liegt nicht im Repository.
+    // Reihenfolge: Umgebungsvariablen (CI mit Secrets, siehe
+    // .github/workflows/release.yml) -> keystore.properties im Projektstamm
+    // (lokal, in .gitignore) -> ohne beides entsteht eine unsignierte APK.
+    val signing = releaseSigning()
     signingConfigs {
-        create("release") {
-            // Signierung wahlweise aus Umgebungsvariablen (CI mit Secrets, siehe
-            // .github/workflows/release.yml: KEYSTORE_FILE, KEYSTORE_PASSWORD,
-            // KEY_ALIAS, KEY_PASSWORD). Fehlen sie, wird der Keystore im Repo
-            // benutzt (Eigenbedarf, liegt bewusst im Repo; kein Play-Store-Release).
-            val envStore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
-            if (envStore != null) {
-                storeFile = file(envStore)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            } else {
-                storeFile = file("keystore/release.jks")
-                storePassword = "jdandroid"
-                keyAlias = "jdandroid"
-                keyPassword = "jdandroid"
+        if (signing != null) {
+            create("release") {
+                storeFile = file(signing.getValue("storeFile"))
+                storePassword = signing.getValue("storePassword")
+                keyAlias = signing.getValue("keyAlias")
+                keyPassword = signing.getValue("keyPassword")
             }
         }
     }
@@ -61,7 +89,7 @@ android {
             // test bleibt der sichere Weg ein unveraenderter Build.
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

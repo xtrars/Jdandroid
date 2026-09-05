@@ -2,21 +2,23 @@
 
 Alle nennenswerten Änderungen an JDAndroid stehen in dieser Datei. Das Format
 folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), die neueste
-Version steht oben. Jede Version ist mit dem Commit verlinkt, in dem sie
-gebaut wurde; Git-Tags oder GitHub-Releases gibt es bisher nicht (der
-Workflow `.github/workflows/release.yml` legt sie an, sobald ein Tag
-`v<version>` gepusht wird), die fertigen APKs liegen unter
-[`release/`](release/) (immer die fünf neuesten).
+Version steht oben. Seit 0.1.0 erscheint jede Version als
+[GitHub-Release](https://github.com/xtrars/Jdandroid/releases) mit APK und SHA-256-Prüfsumme (Tag `v<version>`,
+angelegt von `.github/workflows/release.yml`); die fünf neuesten APKs liegen
+zusätzlich unter [`release/`](release/). Ältere Versionen sind mit dem
+Commit verlinkt, in dem sie gebaut wurden.
 
-**Hinweis zur Zählung.** Die Versionen `0.1.0` und `1.0.0` bis `1.5.7` waren
-interne Vorstufen aus den ersten Entwicklungstagen. Am 04.09.2026 wurde die
-Versionsnummer auf `0.0.1` zurückgesetzt, weil die App noch nicht
-veröffentlicht ist („0.0.x, solange unveröffentlicht“). Der interne
-`versionCode` in `app/build.gradle.kts` zählt trotzdem weiter
-(1.5.7 = 23, 0.0.1 = 25, 0.0.4 = 28; die 24 wurde übersprungen und ist in
-keinem Commit enthalten), damit Android jede neue APK als Update über die
-vorherige installiert. Wer noch eine 1.5.x installiert hat, kann
-also direkt auf 0.0.4 aktualisieren.
+**Hinweis zur Zählung.** Die Versionen `0.1.0 (Vorstufe)` und `1.0.0` bis
+`1.5.7` waren interne Vorstufen aus den ersten Entwicklungstagen. Am
+04.09.2026 wurde die Versionsnummer auf `0.0.1` zurückgesetzt, weil die App
+noch nicht veröffentlicht war („0.0.x, solange unveröffentlicht“). Mit der
+ersten Veröffentlichung am 05.09.2026 gilt das Schema `0.1.x`; die neue
+0.1.0 hat mit der gleichnamigen Vorstufe nichts zu tun. Der interne
+`versionCode` in `app/build.gradle.kts` zählt durchgehend weiter
+(1.5.7 = 23, 0.0.1 = 25, 0.0.16 = 40, 0.1.0 = 41; die 24 wurde übersprungen
+und ist in keinem Commit enthalten). Wegen des Signaturwechsels in 0.1.0
+lässt sich diese Version aber nicht als Update über eine `0.0.x` oder
+`1.5.x` installieren; die alte App muss einmal deinstalliert werden.
 
 Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit**,
 **Entfernt**.
@@ -24,6 +26,46 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 ## [Unveröffentlicht]
 
 _Noch nichts._
+
+## [0.1.0] – 2026-09-05
+
+Erste veröffentlichte Version, `versionCode` 41; ab hier gilt das
+Versionsschema `0.1.x`.
+
+### Sicherheit
+
+- Signaturwechsel: Der bis 0.0.16 im Repository eingecheckte Keystore war
+  öffentlich, gilt als kompromittiert und ist außer Dienst. Alle APKs ab
+  0.1.0 sind mit einem neuen Schlüssel signiert, der außerhalb des
+  Repositorys verwahrt wird (Fingerabdruck in `SECURITY.md`). **Wer eine
+  `0.0.x`-APK installiert hat, muss die App einmal deinstallieren**;
+  Warteschlange, Konten und Einstellungen gehen dabei verloren.
+- Signierung im Build nur noch aus Umgebungsvariablen oder einer
+  gitignorierten `keystore.properties`; ohne Keystore entsteht eine
+  unsignierte Release-APK.
+
+### Hinzugefügt
+
+- GitHub-Releases: Ein Tag `v<version>` erzeugt ein Release mit APK und
+  SHA-256-Prüfsumme; die CI signiert mit den Repository-Secrets, ohne
+  Secrets wird die eingecheckte `release/`-APK übernommen.
+- Englische Lokalisierung der Oberfläche; Deutsch bleibt Standard.
+- CI-Job mit Android-Emulator für die instrumentierten Tests
+  (Migrationstest).
+- Veröffentlichungsunterlagen: Datenschutzerklärung (`docs/DATENSCHUTZ.md`),
+  Angaben zur Play-Datensicherheit (`docs/PLAY_DATA_SAFETY.md`),
+  Release-Checkliste (`docs/RELEASE.md`).
+
+### Geändert
+
+- Click'n'Load läuft über einen eigenen kleinen HTTP-Server statt NanoHTTPD.
+- OkHttp 5.4, Gradle 8.14.5.
+- Zeitmessungen (Wartezeiten, Geschwindigkeit) über die monotone Uhr, damit
+  Uhrzeitsprünge sie nicht verfälschen.
+- Datenbank-Schema 11: Spalte `extractProgress` entfernt, Migrationen 1–4
+  entfernt, Indizes für die häufigen Abfragen ergänzt.
+- `DownloadEngine` und `DdownloadHoster` in kleinere Klassen aufgeteilt.
+- Android-Lint meldet 0 Warnungen.
 
 ## [0.0.16] – 2026-09-04
 
@@ -582,7 +624,7 @@ die APK `JDAndroid-1.0.0.apk` wurde mehrfach überschrieben.
   7-Zip-Initialisierung; Click'n'Load-Race; Rapidgator `file_id`, 1fichier
   Offer-Parsing; Schaltflächen bleiben über der Tastatur sichtbar.
 
-## [0.1.0] – 2026-08-30
+## 0.1.0 (Vorstufe) – 2026-08-30
 
 Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionCode 1.
 
@@ -596,6 +638,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.1.0]: https://github.com/xtrars/Jdandroid/compare/6db7793...v0.1.0
 [0.0.16]: https://github.com/xtrars/Jdandroid/commit/6db7793
 [0.0.15]: https://github.com/xtrars/Jdandroid/commit/f2c5395
 [0.0.14]: https://github.com/xtrars/Jdandroid/commit/891a924
@@ -625,4 +668,3 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
 [1.2.0]: https://github.com/xtrars/Jdandroid/commit/ec69a88
 [1.1.0]: https://github.com/xtrars/Jdandroid/commit/f3c6fd7
 [1.0.0]: https://github.com/xtrars/Jdandroid/commit/1e6a86e
-[0.1.0]: https://github.com/xtrars/Jdandroid/commit/98e7010

@@ -118,6 +118,18 @@ const BLICKWINKEL = [
       'Geheimnisse in Logs oder Meldungen, Pfadangriffe beim Entpacken (Zip-Slip), Dateinamen vom Server.',
   },
   {
+    key: 'effizienz',
+    prompt:
+      'Effizienzpruefung des gesamten app/src/main-Baums: Hauptthread-Arbeit (IO, Room ohne suspend, ' +
+      'runBlocking, synchrones Dateilesen in Composables), Rekompositionen (instabile Parameter, fehlende ' +
+      'keys in LazyColumn, teure Berechnung ohne remember/derivedStateOf), Flows (combine auf Main, stateIn ' +
+      'ohne WhileSubscribed, Polling-Schleifen), Room (all()-Schleifen, fehlende Indizes, N+1, Schreibhaeufigkeit ' +
+      'bei Fortschritt), Netzwerk (Puffer, Progress je Chunk, Abbruch von Calls), Entpacken (Speicher, doppelte ' +
+      'Enumeration, Kopieren statt Verschieben), Akku (WakeLock-Dauer, Vordergrunddienst ohne Arbeit, ' +
+      'Netzwerk-Callbacks ohne Entprellung), Benachrichtigungs-Updates, Startzeit. Melde nur messbar ' +
+      'relevante Punkte mit konkretem Umbauvorschlag.',
+  },
+  {
     key: 'tests',
     prompt:
       'Pruefe die Tests unter app/src/test und app/src/androidTest: Sind sie sinnvoll (Verhalten statt ' +
@@ -130,10 +142,15 @@ const BLICKWINKEL = [
 
 // Vorab-Berichte (z.B. aus einer frueheren Sitzung) koennen die Suche ersetzen.
 const vorab = args && Array.isArray(args.reports) ? args.reports : null
+// Bereits strukturierte Funde (z.B. aus einer vorgezogenen Suchphase) ersetzen die Suche ganz.
+const vorabFunde = args && Array.isArray(args.findings) ? args.findings : null
 
 phase('Finden')
 let funde
-if (vorab) {
+if (vorabFunde) {
+  log(`Nutze ${vorabFunde.length} vorab strukturierte Funde statt eigener Suche`)
+  funde = vorabFunde
+} else if (vorab) {
   log(`Nutze ${vorab.length} vorab erstellte Berichte statt eigener Suche`)
   const extrahiert = await parallel(
     vorab.map((text, i) => () =>

@@ -31,53 +31,63 @@ kein Bug-Bounty-Programm.
 
 ## Unterstützte Versionen
 
-Die App befindet sich vor der ersten Veröffentlichung im Versionsschema
-`0.0.x`. Korrekturen fließen ausschließlich in die jeweils neueste Version;
-es gibt keine gepflegten älteren Zweige.
+Seit 0.1.0 (erste veröffentlichte Version, `versionCode` 41) gilt das
+Versionsschema `0.1.x`; `1.0.0` folgt später. Korrekturen fließen
+ausschließlich in die jeweils neueste Version; es gibt keine gepflegten
+älteren Zweige.
 
 | Version | Unterstützt |
 |---|---|
-| neueste `0.0.x` (derzeit 0.0.4, `versionCode` 28) | ja |
-| ältere `0.0.x` | nein, bitte aktualisieren |
+| neueste `0.1.x` (derzeit 0.1.0, `versionCode` 41) | ja |
+| ältere `0.1.x` | nein, bitte aktualisieren |
+| `0.0.x` (unveröffentlichte Vorstufen, alter Schlüssel) | nein, siehe [Signatur](#signatur) |
 | `1.x` (Versionsstand vor dem Reset am 04.09.2026) | nein |
 
-Aktuelle APKs liegen unter `release/`; die neueste ist
-`release/JDAndroid-0.0.4.apk`. Ältere Dateien dort dienen nur dem
-Nachvollziehen und erhalten keine Korrekturen.
+Aktuelle APKs stehen unter [GitHub Releases](https://github.com/xtrars/Jdandroid/releases) mit SHA-256-Prüfsumme;
+die fünf neuesten liegen zusätzlich unter `release/`. Ältere Dateien dienen
+nur dem Nachvollziehen und erhalten keine Korrekturen.
 
-## Keystore und APKs im Repository
+## Signatur
 
-Das Repository enthält bewusst:
+Der Signatur-Keystore liegt **nicht** im Repository. Bis 0.0.16 war
+`app/keystore/release.jks` samt Passwort eingecheckt; dieser Schlüssel war
+damit öffentlich, gilt als kompromittiert und ist außer Dienst. Die
+Git-Historie wurde bewusst nicht umgeschrieben, der alte Schlüssel ist dort
+weiterhin zu finden; er signiert nur keine Version mehr, und eine damit
+signierte APK ist keine Version dieses Projekts.
 
-- den Signatur-Keystore `app/keystore/release.jks` samt Passwörtern im Klartext
-  in `app/build.gradle.kts` (Store- und Schlüsselpasswort `jdandroid`,
-  Alias `jdandroid`),
-- die fünf neuesten signierten Release-APKs unter `release/`.
+Seit 0.1.0 sind alle APKs mit einem neuen Schlüssel signiert (PKCS12,
+RSA 4096, Alias `jdandroid`, gültig bis 2056), der außerhalb des
+Repositorys verwahrt wird. Fingerabdruck des Zertifikats (SHA-256):
 
-Das ist eine Entscheidung des Repository-Inhabers, kein Versehen, und wird
-nicht geändert. Hintergrund: Die App ist für den Eigenbedarf gedacht und
-wird nicht über Google Play oder einen anderen Store verteilt. Mit dem
-eingecheckten Keystore kann jeder Build, ob lokal, aus der CI oder aus
-`release/`, mit derselben Signatur installiert und als Update übereinander
-installiert werden, ohne dass Android „App nicht installiert“ meldet oder
-eine Deinstallation mit Datenverlust nötig wird.
+```
+86:EB:89:53:D0:23:A3:ED:04:6E:CC:1F:08:B3:6B:B6:D5:27:D5:ED:EA:2B:9C:BC:79:5C:6B:45:1B:1A:BD:2E
+```
+
+Prüfen mit `apksigner` aus den Android-Build-Tools:
+
+```bash
+apksigner verify --print-certs JDAndroid-<version>.apk
+```
+
+Weicht der Fingerabdruck ab, stammt die APK nicht aus diesem Projekt, auch
+wenn Android sie als Update anbietet.
 
 Was das für Nutzer bedeutet:
 
-- **Die Signatur beweist keine Herkunft.** Jede Person mit Zugriff auf das
-  Repository kann eine APK erzeugen, die für Android wie ein legitimes
-  Update aussieht. Installiere daher nur APKs, die du selbst aus dem
-  Quellcode gebaut hast oder die direkt aus diesem Repository (`release/`,
-  GitHub-Releases aus `.github/workflows/release.yml`) beziehungsweise den
-  CI-Artefakten (`JDAndroid-release`) stammen. APKs aus anderen Quellen
-  mit derselben Signatur sind nicht vertrauenswürdiger als unsignierte.
-- Der Keystore ist **kein Geheimnis** und wird nicht als solches behandelt.
-  Meldungen, dass er öffentlich ist, sind keine Sicherheitslücke.
-- Wer die App unter eigenem Namen weiterverteilen oder in einem Store
-  veröffentlichen möchte, muss einen eigenen, geheimen Keystore verwenden
-  und die `applicationId` ändern. Ein Wechsel der Signatur bei gleicher
-  `applicationId` erfordert auf bestehenden Geräten eine Deinstallation, die
-  Warteschlange und Konten löscht.
+- **Signaturwechsel:** Wer eine `0.0.x`-APK installiert hat, muss die App
+  vor 0.1.0 einmal deinstallieren; Android verweigert ein Update mit
+  anderer Signatur. Warteschlange, Konten und Einstellungen gehen dabei
+  verloren. Ab 0.1.0 installieren sich Updates wieder übereinander.
+- Signierte APKs gibt es aus zwei Quellen: den
+  [GitHub Releases](https://github.com/xtrars/Jdandroid/releases) (mit SHA-256-Prüfsumme) und dem Ordner
+  `release/` im Repository. Der Release-Workflow baut und signiert in der
+  CI, wenn die Repository-Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
+  `KEY_ALIAS` und `KEY_PASSWORD` gesetzt sind; sonst übernimmt er die lokal
+  signierte Datei aus `release/`. Ohne Keystore entsteht lokal nur eine
+  unsignierte Release-APK.
+- Wer die App unter eigenem Namen weiterverteilen möchte, verwendet einen
+  eigenen Keystore und ändert die `applicationId`.
 
 ## Wie die App mit sensiblen Daten umgeht
 

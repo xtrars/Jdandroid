@@ -68,6 +68,20 @@ Regeln:
 - Abhängigkeiten: Versionen in `gradle/libs.versions.toml` gegen den
   aktuellen Stand prüfen, `verification-metadata.xml` nachziehen.
 
+## 2a. Effizienz
+
+- Hauptthread frei von IO und Room-Aufrufen; keine `runBlocking` außer dem
+  Theme-Start.
+- Rekompositionen: stabile Parameter, `key` in Listen, teure Berechnung nur
+  mit `remember`/`derivedStateOf`; Flows mit `WhileSubscribed`, Transformation
+  auf `Dispatchers.Default`.
+- Room: gezielte Abfragen, Indizes auf `status`, `packageId`, `archiveKey`;
+  Fortschritt nur gedrosselt schreiben (ProgressBus).
+- Netzwerk und Entpacken: Puffergrößen, Abbruch von Calls beim Pausieren,
+  Verschieben statt Kopieren, keine doppelte Enumeration.
+- Akku: WakeLock nur während der Übertragung, Vordergrunddienst endet ohne
+  Arbeit, Netzwerk-Callbacks entprellt, Benachrichtigungen gedrosselt.
+
 ## 3. Tests
 
 - Laufen alle Unit-Tests grün (`./gradlew testDebugUnitTest`)?

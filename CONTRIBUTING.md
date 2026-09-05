@@ -11,7 +11,7 @@ Deutsch: Oberfläche, Kommentare, Commit-Texte, Issues und Pull Requests.
 | Werkzeug | Version | Bemerkung |
 |---|---|---|
 | JDK | 17 (Temurin) | `sourceCompatibility`/`jvmTarget` 17 |
-| Gradle | 8.14.3 | über den Wrapper `./gradlew`, keine eigene Installation nötig |
+| Gradle | 8.14.5 | über den Wrapper `./gradlew`, keine eigene Installation nötig |
 | Android Gradle Plugin | 8.13.2 | in `gradle/libs.versions.toml` |
 | Kotlin / KSP | 2.3.21 / 2.3.11 | Compose-Compiler-Plugin aus dem Kotlin-Release |
 | Android SDK | compileSdk 36, minSdk 26 | Pfad in `local.properties` (`sdk.dir=...`) |
@@ -21,14 +21,22 @@ Nach dem Klonen reicht ein vorhandenes Android-SDK und JDK 17; der Wrapper
 lädt Gradle selbst. Alle Abhängigkeiten werden über
 `gradle/verification-metadata.xml` per SHA-256 geprüft (siehe unten).
 
-Das Repository enthält bewusst den Signatur-Keystore `app/keystore/release.jks`
-und die letzten fünf Release-APKs in `release/`. Beides ist so gewollt und
-wird in `SECURITY.md` erklärt; bitte nicht entfernen oder ersetzen.
+Der Signatur-Keystore liegt **nicht** im Repository (der früher
+eingecheckte gilt als kompromittiert und ist außer Dienst, siehe
+`SECURITY.md`). Für eine signierte Release-APK legst du im Projektstamm eine
+`keystore.properties` an (gitignored) mit `storeFile`, `storePassword`,
+`keyAlias` und `keyPassword`; die Umgebungsvariablen `KEYSTORE_FILE`,
+`KEYSTORE_PASSWORD`, `KEY_ALIAS` und `KEY_PASSWORD` haben Vorrang. Ohne
+beides baut `assembleRelease` eine unsignierte APK
+(`app-release-unsigned.apk`); zum Ausprobieren auf einem Gerät reicht ein
+Debug-Build (`assembleDebug`), der davon unberührt ist. Die offiziellen
+Releases signiert nur der Projektinhaber. Die letzten fünf Release-APKs in
+`release/` sind gewollt; bitte nicht entfernen oder ersetzen.
 
 ## Bauen
 
 ```bash
-# Unit-Tests, danach signierte Release-APK
+# Unit-Tests, danach Release-APK (signiert, wenn ein Keystore konfiguriert ist)
 ./gradlew --offline -q testDebugUnitTest
 ./gradlew --offline -q assembleRelease
 # Ergebnis: app/build/outputs/apk/release/JDAndroid-<version>.apk
@@ -69,7 +77,7 @@ Prüfsummen werden verifiziert.
 ### Room-Schema und Migrationen
 
 Die Datenbank (`app/src/main/java/com/jdandroid/data/Db.kt`) hat aktuell
-Schema-Version 9; die Schemata werden nach `app/schemas/` exportiert. Bei
+Schema-Version 11; die Schemata werden nach `app/schemas/` exportiert. Bei
 jeder Änderung an einer Entity:
 
 1. Schema-Version in `Db.kt` erhöhen und eine `Migration` ergänzen. Keine
@@ -168,19 +176,22 @@ Logs oder Meldungen erscheinen.
 
 ## Versionierung und Commits
 
-- Versionsschema `0.0.x`, solange die App nicht veröffentlicht ist. Beides
-  steht in `app/build.gradle.kts`: `versionName` und `versionCode`. Der
+- Versionsschema `0.1.x` seit der ersten Veröffentlichung (0.1.0,
+  `versionCode` 41); `1.0.0` folgt später. Beides steht in
+  `app/build.gradle.kts`: `versionName` und `versionCode`. Der
   `versionCode` steigt bei **jedem** Release-Build um eins, sonst verweigert
   Android das Update.
 - Ein Feature- oder Fix-PR ändert die Version nicht selbst; das geschieht
   beim Zusammenführen zusammen mit der neuen APK in `release/` (nur die
   fünf neuesten Versionen bleiben dort, ältere werden mit `git rm`
   entfernt).
-- Optional ein Git-Tag `v<versionName>` (z. B. `v0.0.4`) auf den
-  Versions-Commit setzen und pushen: `.github/workflows/release.yml` baut
-  dann die APK erneut, prüft die Signatur und legt ein GitHub-Release mit
-  APK und SHA-256-Prüfsumme an. Der Tag muss zum `versionName` passen,
-  sonst bricht der Lauf ab.
+- Ein Git-Tag `v<versionName>` (z. B. `v0.1.0`) auf den Versions-Commit
+  setzen und pushen: `.github/workflows/release.yml` baut und signiert die
+  APK mit den Repository-Secrets (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
+  `KEY_ALIAS`, `KEY_PASSWORD`); fehlen sie, nimmt er die eingecheckte
+  `release/JDAndroid-<version>.apk`. In beiden Fällen prüft er die Signatur
+  und legt ein GitHub-Release mit APK und SHA-256-Prüfsumme an. Der Tag
+  muss zum `versionName` passen, sonst bricht der Lauf ab.
 - Commit-Texte auf Deutsch, erste Zeile als knappe Zusammenfassung, bei
   Versionssprüngen mit Präfix, z. B.
   `0.0.4: Entpack-Status für alle Archivteile und das Paket`. Bei

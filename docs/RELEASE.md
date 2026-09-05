@@ -1,57 +1,80 @@
 # Veröffentlichung: Checkliste
 
-Gilt für die erste öffentliche Version (Play Store, GitHub-Release, ggf.
-F-Droid). Bis dahin bleibt das Schema `0.0.x` und der Ablauf aus `CLAUDE.md`
-(APK in `release/`, Keystore im Repo).
+Stand und offene Punkte der Veröffentlichung (GitHub-Release seit 0.1.0,
+später Play Store, ggf. F-Droid). Mit 0.1.0 (`versionCode` 41, 05.09.2026)
+gilt das Schema `0.1.x`; `1.0.0` folgt, sobald die App reif dafür ist. Die
+APKs erscheinen als GitHub-Release, die fünf neuesten liegen vorerst
+zusätzlich in `release/`. Erledigtes ist abgehakt, Offenes für den
+Projektinhaber steht in Abschnitt 2 gesammelt.
 
 ## 1. Version
 
-- [ ] Versionsschema auf `1.0.0` umstellen (`versionName` in
-      `app/build.gradle.kts`, Semantic Versioning: Fehlerbehebung → Patch,
-      Funktion → Minor, Bruch → Major). `versionCode` zählt einfach weiter
+- [x] Versionsschema `0.1.x` seit 0.1.0 (`versionName` in
+      `app/build.gradle.kts`; Semantic Versioning: Fehlerbehebung → Patch,
+      Funktion → Minor). `1.0.0` später. `versionCode` zählt einfach weiter
       hoch (aktueller Stand + 1); er darf nie kleiner werden, sonst verweigern
       Android und Play das Update.
-- [ ] `CHANGELOG.md` mit dem Eintrag zur Version, README-Badge und
-      Installationsabschnitt anpassen.
-- [ ] `git tag v<versionName>` auf dem Release-Commit; der Tag muss exakt
-      `v` + `versionName` sein, sonst bricht `release.yml` ab.
+- [x] `CHANGELOG.md` mit dem Eintrag zur Version, README-Badge und
+      Installationsabschnitt angepasst (0.1.0).
+- [ ] `git tag v<versionName>` auf dem Release-Commit setzen und pushen; der
+      Tag muss exakt `v` + `versionName` sein, sonst bricht `release.yml` ab.
+      Bei jeder weiteren Version wiederholen.
 
 ## 2. Signierung und Keystore
 
-- [ ] **Vor der Veröffentlichung muss der bisherige Keystore aus dem Repo
-      und aus der Git-Historie verschwinden** – ein öffentlicher Keystore mit
-      bekanntem Passwort erlaubt jedem, „Updates“ mit derselben Signatur zu
-      bauen. Vorgehen: neuen Keystore erzeugen (`keytool -genkeypair -v
-      -keystore release.jks -alias jdandroid -keyalg RSA -keysize 4096
-      -validity 10000`), alten mit `git rm app/keystore/release.jks`
-      entfernen, Historie mit `git filter-repo --path app/keystore/release.jks
-      --invert-paths` bereinigen, Force-Push, alle Klone neu ziehen,
-      `SECURITY.md` und README anpassen. Nutzer bisheriger `0.0.x`-APKs
-      müssen die App einmal deinstallieren (Signaturwechsel).
-- [ ] Neuen Keystore **nur** als Repository-Secrets hinterlegen:
-      `KEYSTORE_BASE64` (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`,
-      `KEY_ALIAS`, `KEY_PASSWORD`. `release.yml` dekodiert ihn in eine
-      temporäre Datei und gibt ihn über `KEYSTORE_FILE` & Co. an
-      `signingConfigs.release`; ohne Secrets fällt der Build auf den
-      Keystore im Repo zurück (dann muss in `app/build.gradle.kts` der
-      Fallback entfernt werden, sobald der Keystore weg ist).
+Erledigt (0.1.0):
+
+- [x] Alter Keystore `app/keystore/release.jks` (Passwort `jdandroid`) aus
+      dem Repository entfernt. Er war öffentlich, gilt als kompromittiert
+      und ist außer Dienst; keine Version wird mehr damit signiert.
+- [x] Neuer Schlüssel erzeugt (PKCS12, RSA 4096, Alias `jdandroid`, gültig
+      bis 2056), liegt **nicht** im Repository. Fingerabdruck (SHA-256) in
+      `SECURITY.md` veröffentlicht:
+      `86:EB:89:53:D0:23:A3:ED:04:6E:CC:1F:08:B3:6B:B6:D5:27:D5:ED:EA:2B:9C:BC:79:5C:6B:45:1B:1A:BD:2E`
+- [x] `app/build.gradle.kts`: Signierung zuerst aus den Umgebungsvariablen
+      `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`,
+      sonst aus `keystore.properties` im Projektstamm (gitignored; Schlüssel
+      `storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Fehlt beides,
+      wird die Release-APK unsigniert gebaut (`app-release-unsigned.apk`);
+      Debug-Builds sind unberührt. Kein Fallback auf einen Keystore im Repo
+      mehr.
+- [x] `release.yml`: Mit den Repository-Secrets `KEYSTORE_BASE64`
+      (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+      `KEY_PASSWORD` baut und signiert die CI; ohne Secrets nimmt der
+      Workflow die eingecheckte, lokal signierte
+      `release/JDAndroid-<version>.apk` als Release-Asset. In beiden Fällen
+      Signaturprüfung mit `apksigner verify --print-certs` und
+      GitHub-Release mit APK und SHA-256.
+- [x] `SECURITY.md`, README, CONTRIBUTING, ARCHITEKTUR und CHANGELOG auf
+      den Signaturwechsel umgestellt (Hinweis: Nutzer von `0.0.x` müssen
+      die App einmal deinstallieren).
+
+**Offen für den Projektinhaber:**
+
+- [ ] Die vier Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+      `KEY_PASSWORD` unter GitHub → Settings → Secrets and variables →
+      Actions anlegen. Bis dahin veröffentlicht `release.yml` die lokal
+      signierte APK aus `release/`.
 - [ ] Keystore und Passwörter außerhalb von GitHub sichern (Passwort-
       Manager, Offline-Kopie). Ein verlorener Keystore bedeutet: keine
       Updates mehr für bestehende Installationen. Für Play alternativ
       „Play App Signing“ nutzen (Upload-Key lokal, App-Signing-Key bei
       Google); dann ist `KEYSTORE_*` der Upload-Key.
-- [ ] Signatur der fertigen Datei prüfen: `apksigner verify --print-certs`
-      (macht `release.yml`) und den Zertifikats-Fingerabdruck in
-      `SECURITY.md` veröffentlichen.
+- [ ] Git-Historie bereinigen: **bewusst nicht gemacht.** Der alte Keystore
+      bleibt in alten Commits auffindbar, wird aber nicht mehr verwendet.
+      Wer die Historie trotzdem säubern will: `git filter-repo --path
+      app/keystore/release.jks --invert-paths`, Force-Push, alle Klone neu
+      ziehen; Links auf alte Commit-Hashes im CHANGELOG brechen dabei.
 
 ## 3. CI
 
 - [ ] `android.yml` grün: Unit-Tests, Lint, Kompilieren der
       instrumentierten Tests, Release-APK sowie der Emulator-Job
       (`connectedDebugAndroidTest`, API 34).
-- [ ] `release.yml` läuft beim Tag `v*`: prüft Tag gegen `versionName`,
-      baut, prüft die Signatur, legt APK und SHA-256 als GitHub-Release ab.
-      Manuell erneut auslösbar über `workflow_dispatch` mit dem Tag.
+- [x] `release.yml` läuft beim Tag `v*`: prüft Tag gegen `versionName`,
+      baut und signiert mit Secrets (sonst `release/`-APK), prüft die
+      Signatur, legt APK und SHA-256 als GitHub-Release ab. Manuell erneut
+      auslösbar über `workflow_dispatch` mit dem Tag.
 - [ ] `gradle/verification-metadata.xml` aktuell (Build bricht sonst).
 
 ## 4. Artefakte: APK und AAB
@@ -119,8 +142,9 @@ F-Droid). Bis dahin bleibt das Schema `0.0.x` und der Ablauf aus `CLAUDE.md`
 
 ## 7. Nach der Veröffentlichung
 
-- [ ] `CLAUDE.md`: Regeln „APK in `release/`“ und „Keystore im Repo“
-      streichen bzw. auf GitHub-Releases umstellen; Versionsschema-Absatz
-      ändern.
-- [ ] `SECURITY.md`: Signatur-Fingerabdruck, Meldeweg.
-- [ ] README-Installationsabschnitt: Play-, GitHub-Release- und F-Droid-Links.
+- [ ] `CLAUDE.md`: Regel „Keystore im Repo“ streichen, Versionsschema
+      `0.1.x`, GitHub-Release als Verteilweg; `release/` bleibt vorerst.
+- [x] `SECURITY.md`: Signatur-Fingerabdruck, Meldeweg.
+- [x] README-Installationsabschnitt: GitHub-Release-Link.
+- [ ] README-Installationsabschnitt: Play- und F-Droid-Links, sobald
+      vorhanden.

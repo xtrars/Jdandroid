@@ -481,16 +481,18 @@ liefert. Click'n'Load 2 kommt ohne den Dienst aus.
 | R8/Shrinking **aus**, `-dontobfuscate` | `app/build.gradle.kts`, `proguard-rules.pro` | Der Shrinker entfernte `Extractor.RarOpenCallback` und das `ISequentialOutStream`-Lambda, die nur per JNI aus nativem 7-Zip-Code aufgerufen werden – Release-Builds entpackten kein RAR mehr (per dexdump belegt). Keep-Regeln liegen bereit, aber ohne Gerätetest bleibt der unveränderte Build der sichere Weg. Ohne Obfuskation bleiben Absturzberichte lesbar |
 | Absturzbericht nur lokal | `CrashReporter.kt` | Stacktrace in `files/last_crash.txt`, sichtbar in den Einstellungen; nichts wird gesendet |
 | Nur eine exportierte Activity, Dienst nicht exportiert, `BootReceiver` nur für Systemaktionen | `AndroidManifest.xml` | Kleine Angriffsfläche |
-| Keystore und APKs im Repository | `app/keystore/release.jks`, `release/` | Bewusste Entscheidung für Eigenbedarf ohne Store-Release, damit jede APK dieselbe Signatur trägt; Einordnung in [`../SECURITY.md`](../SECURITY.md) |
+| Signatur-Keystore außerhalb des Repositorys | `app/build.gradle.kts` (`signingConfigs.release`), `.github/workflows/release.yml` | Der bis 0.0.16 eingecheckte Schlüssel war öffentlich, gilt als kompromittiert und ist außer Dienst. Der neue kommt aus den Umgebungsvariablen `KEYSTORE_FILE`/`KEYSTORE_PASSWORD`/`KEY_ALIAS`/`KEY_PASSWORD` oder aus `keystore.properties` (gitignored), in der CI aus Repository-Secrets; ohne Keystore entsteht eine unsignierte Release-APK. Die fünf neuesten signierten APKs bleiben zusätzlich in `release/`. Fingerabdruck und Einordnung in [`../SECURITY.md`](../SECURITY.md) |
 
 ## Build und Tests
 
-- Toolchain: JDK 17, Gradle 8.14.3 (Wrapper mit SHA-256-Prüfsumme), AGP
+- Toolchain: JDK 17, Gradle 8.14.5 (Wrapper mit SHA-256-Prüfsumme), AGP
   8.13.2, Kotlin 2.3.21, KSP 2.3.11, Compose BOM 2026.06.01, Room 2.8.4.
   Versionen in `gradle/libs.versions.toml`; alle Artefakte werden über
   `gradle/verification-metadata.xml` per SHA-256 verifiziert.
-- Release-APK heißt `JDAndroid-<versionName>.apk` und wird mit
-  `app/keystore/release.jks` signiert.
+- Release-APK heißt `JDAndroid-<versionName>.apk` und wird mit dem
+  Keystore aus `keystore.properties` bzw. den `KEYSTORE_*`-Umgebungsvariablen
+  signiert; ohne Keystore heißt sie `app-release-unsigned.apk`. Debug-Builds
+  sind davon unberührt.
 - 85 Unit-Tests in 13 Dateien (`app/src/test/`): Linkparser, Hoster-Erkennung,
   ddownload-Formulare/Antworten/Kontingent, 1fichier-Normalisierung,
   Linkprüfung, DLC-Entschlüsselung (mit echtem `rc`-Wert), Click'n'Load
@@ -500,8 +502,11 @@ liefert. Click'n'Load 2 kommt ohne den Dienst aus.
 - CI (`.github/workflows/android.yml`): bei Push, Pull Request und
   wöchentlich montags `testDebugUnitTest`, `lintDebug`,
   `compileDebugAndroidTestKotlin`, `assembleRelease`. Ein Tag
-  `v<versionName>` löst zusätzlich `.github/workflows/release.yml` aus
-  (APK bauen, Signatur prüfen, GitHub-Release mit SHA-256-Prüfsumme).
+  `v<versionName>` löst zusätzlich `.github/workflows/release.yml` aus:
+  mit den Repository-Secrets wird die APK in der CI gebaut und signiert,
+  ohne Secrets dient die eingecheckte `release/JDAndroid-<version>.apk` als
+  Release-Asset; in beiden Fällen Signaturprüfung und GitHub-Release mit
+  SHA-256-Prüfsumme.
 
 ## Bewusst nicht umgesetzt
 

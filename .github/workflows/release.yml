@@ -8,8 +8,9 @@ name: Release
 #      KEY_ALIAS und KEY_PASSWORD gesetzt: der Keystore wird in eine temporaere
 #      Datei dekodiert und ueber Umgebungsvariablen (KEYSTORE_FILE, ...) an den
 #      Build gegeben. So fuer eine Veroeffentlichung, siehe docs/RELEASE.md.
-#   b) Keine Secrets: Keystore app/keystore/release.jks aus dem Repo mit den
-#      Passwoertern aus app/build.gradle.kts (bisheriges Verhalten, Eigenbedarf).
+#   b) Keine Secrets: der Keystore liegt nicht im Repository, die CI kann dann
+#      nicht signieren. Stattdessen wird die lokal signierte, eingecheckte
+#      Datei release/JDAndroid-<version>.apk als Release-Asset verwendet.
 #
 # Ablauf fuer ein Release:
 #   1. versionName/versionCode in app/build.gradle.kts erhoehen, committen.
@@ -40,7 +41,7 @@ jobs:
     timeout-minutes: 30
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      # Leer, wenn die Secrets nicht angelegt sind -> Keystore aus dem Repo.
+      # Leer, wenn die Secrets nicht angelegt sind -> APK aus release/.
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -86,17 +87,25 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$datei"
           echo "KEYSTORE_FILE=$datei" >> "$GITHUB_ENV"
           echo "Signierung: Keystore aus Secrets (Alias $KEY_ALIAS)."
-      - name: Signierung ohne Secrets
-        if: env.KEYSTORE_BASE64 == ''
-        run: |
-          echo "Signierung: Keystore aus dem Repository (app/keystore/release.jks)."
-
-      # Beide Tasks getrennt, wie in CLAUDE.md beschrieben: parallele
+      # Beide Gradle-Tasks getrennt, wie in CLAUDE.md beschrieben: parallele
       # KSP-Laeufe koennen sonst ein leeres Room-Schema anlegen.
       - name: Unit-Tests
         run: ./gradlew --no-daemon testDebugUnitTest
-      - name: Release-APK bauen
+      - name: Release-APK bauen und signieren
+        if: env.KEYSTORE_BASE64 != ''
         run: ./gradlew --no-daemon assembleRelease
+      - name: Signierte APK aus dem Repository verwenden
+        if: env.KEYSTORE_BASE64 == ''
+        run: |
+          set -eu
+          apk="release/JDAndroid-${VERSION}.apk"
+          if [ ! -f "$apk" ]; then
+            echo "::error::Keine Signatur-Secrets (KEYSTORE_BASE64 ...) und keine Datei $apk im Repository."
+            exit 1
+          fi
+          echo "::notice::Signatur-Secrets fehlen; die lokal signierte Datei $apk wird als Release-Asset verwendet."
+          mkdir -p app/build/outputs/apk/release
+          cp "$apk" app/build/outputs/apk/release/
 
       - name: APK pruefen und Pruefsumme erzeugen
         run: |
@@ -112,12 +121,6 @@ jobs:
             "$apksigner" verify --print-certs "dist/JDAndroid-${VERSION}.apk"
           else
             echo "::warning::apksigner nicht gefunden, Signatur nicht geprueft."
-          fi
-          # Hinweis: liegt fuer diese Version schon eine APK in release/, muss sie
-          # nicht bytegleich sein (Build-Zeitstempel); die Signatur ist dieselbe,
-          # solange kein anderer Keystore aus den Secrets benutzt wird.
-          if [ -f "release/JDAndroid-${VERSION}.apk" ]; then
-            echo "release/JDAndroid-${VERSION}.apk ist im Repo vorhanden."
           fi
 
       - name: GitHub-Release anlegen oder aktualisieren

@@ -11,3 +11,7 @@ captures/
 # Claude-Arbeitsdateien
 .claude/*
 !.claude/workflows/
+# Signaturschluessel bleiben ausserhalb des Repos
+keystore.properties
+*.jks
+*.keystore

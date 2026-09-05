@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.0.16](https://img.shields.io/badge/Version-0.0.16-informational.svg)
+![Version 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational.svg)
 
 ## English summary
 
@@ -23,12 +23,14 @@ extraction into a folder named after the package with per-file and
 per-package progress, Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
-**Install.** No store release. Download the newest APK from
-[`release/`](release/) (currently
-[`JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk)), allow installation
-from unknown sources for your browser or file manager, and open the file.
-Updates install over previous versions because every APK is signed with the
-same key. Requires Android 8.0 (API 26) or newer.
+**Install.** No store release. Download the newest APK from the
+[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.1.0.apk`, with a
+SHA-256 checksum; the five newest APKs are also kept in
+[`release/`](release/)), allow installation from unknown sources for your
+browser or file manager, and open the file. Requires Android 8.0 (API 26) or
+newer. **Upgrading from a 0.0.x build:** 0.1.0 is signed with a new key, so
+Android refuses it as an update. Uninstall the old version first (queue and
+accounts are lost). From 0.1.0 on, updates install over the previous version.
 
 The rest of this document is in German, the project language.
 
@@ -48,8 +50,11 @@ Click'n'Load-2-Protokoll und das DLC-Dateiformat, dessen Entschlüsselung über
 den Webdienst des JDownloader-Projekts läuft. „JDownloader“ ist ein Name der
 AppWork GmbH; JDAndroid steht in keiner Verbindung zu AppWork.
 
-**Fertige APK:** [`release/JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk)
-(signiert, installierbar ab Android 8.0; Update über ältere Versionen möglich)
+**Fertige APK:** [GitHub Releases](https://github.com/xtrars/Jdandroid/releases) (aktuell 0.1.0, signiert, mit
+SHA-256-Prüfsumme; installierbar ab Android 8.0). Zusätzlich liegen die fünf
+neuesten APKs unter [`release/`](release/). Wer noch eine `0.0.x` installiert
+hat, muss sie wegen des Signaturwechsels einmal deinstallieren (siehe
+[Installation](#installation)).
 
 ## Bildschirmfotos
 
@@ -181,31 +186,43 @@ Absturzbericht steht in den Einstellungen unter „Letzter Absturz“.
 
 ## Installation
 
-JDAndroid wird nicht über einen App-Store verteilt. Die Release-APKs liegen
-im Repository unter [`release/`](release/), immer die fünf neuesten
-Versionen:
+JDAndroid wird nicht über einen App-Store verteilt. Jede Version erscheint
+als [GitHub-Release](https://github.com/xtrars/Jdandroid/releases) mit APK und SHA-256-Prüfsumme; zusätzlich liegen
+die fünf neuesten APKs im Repository unter [`release/`](release/):
 
-| Version | Datei |
-|---|---|
-| **0.0.16** (aktuell) | [`release/JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk) |
-| 0.0.15 | [`release/JDAndroid-0.0.15.apk`](release/JDAndroid-0.0.15.apk) |
-| 0.0.14 | [`release/JDAndroid-0.0.14.apk`](release/JDAndroid-0.0.14.apk) |
-| 0.0.13 | [`release/JDAndroid-0.0.13.apk`](release/JDAndroid-0.0.13.apk) |
-| 0.0.12 | [`release/JDAndroid-0.0.12.apk`](release/JDAndroid-0.0.12.apk) |
+| Version | `versionCode` | Datei |
+|---|---|---|
+| **0.1.0** (aktuell) | 41 | [Release v0.1.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.1.0) · [`release/JDAndroid-0.1.0.apk`](release/JDAndroid-0.1.0.apk) |
+| 0.0.16 | 40 | [`release/JDAndroid-0.0.16.apk`](release/JDAndroid-0.0.16.apk) |
+| 0.0.15 | 39 | [`release/JDAndroid-0.0.15.apk`](release/JDAndroid-0.0.15.apk) |
+| 0.0.14 | 38 | [`release/JDAndroid-0.0.14.apk`](release/JDAndroid-0.0.14.apk) |
+| 0.0.13 | 37 | [`release/JDAndroid-0.0.13.apk`](release/JDAndroid-0.0.13.apk) |
+
+**Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
+Schlüssel signiert, der im Repository lag und deshalb als kompromittiert
+gilt. Seit 0.1.0 signiert ein neuer, nicht veröffentlichter Schlüssel
+(Fingerabdruck in [SECURITY.md](SECURITY.md)). Android lässt kein Update
+mit anderer Signatur zu: Wer 0.0.x installiert hat, muss die App einmal
+deinstallieren und 0.1.0 neu installieren; Warteschlange, Konten und
+Einstellungen gehen dabei verloren. Ab 0.1.0 installieren sich Updates
+wieder über die bestehende Version.
 
 Die Versionsnummern wurden am 04.09.2026 von `1.5.7` auf `0.0.1`
-zurückgesetzt („0.0.x, solange die App nicht veröffentlicht ist“). Der
-interne `versionCode` zählt weiter hoch (1.5.7 = 23, 0.0.16 = 40), deshalb
-lässt sich 0.0.16 problemlos über 1.5.7 installieren. Einzelheiten stehen im
+zurückgesetzt; mit der ersten Veröffentlichung gilt seit dem 05.09.2026 das
+Schema `0.1.x`. Der interne `versionCode` zählt durchgehend hoch
+(1.5.7 = 23, 0.0.16 = 40, 0.1.0 = 41). Einzelheiten stehen im
 [CHANGELOG](CHANGELOG.md).
 
-1. APK auf dem Gerät herunterladen (GitHub → `release/` → Datei → „Download raw file“).
+1. APK auf dem Gerät herunterladen: [GitHub Releases](https://github.com/xtrars/Jdandroid/releases) → neueste
+   Version → `JDAndroid-<version>.apk` (alternativ `release/` → Datei →
+   „Download raw file“).
 2. Beim ersten Mal erlaubt Android die Installation aus dieser Quelle nicht:
    in der Abfrage „Unbekannte Apps installieren“ für den Browser bzw.
    Dateimanager zulassen (Einstellungen → Apps → Spezieller App-Zugriff).
-3. APK öffnen und installieren. Updates werden über die bestehende
-   Installation eingespielt, weil alle APKs mit demselben Schlüssel signiert
-   sind (siehe [SECURITY.md](SECURITY.md)).
+3. APK öffnen und installieren. Updates ab 0.1.0 werden über die bestehende
+   Installation eingespielt; eine `0.0.x` vorher deinstallieren (siehe
+   oben). Die Signatur lässt sich mit `apksigner verify --print-certs`
+   gegen den Fingerabdruck in [SECURITY.md](SECURITY.md) prüfen.
 4. Beim ersten Start fragt die App die Berechtigung für Benachrichtigungen
    ab (Android 13+), damit der Download-Fortschritt sichtbar ist.
 
@@ -265,7 +282,7 @@ Browser-Besonderheiten:
 ## Build aus dem Quelltext
 
 Voraussetzungen: JDK 17, Android SDK mit Platform 36. Toolchain: Gradle
-8.14.3 (Wrapper mit SHA-256-Prüfsumme), AGP 8.13.2, Kotlin 2.3.21,
+8.14.5 (Wrapper mit SHA-256-Prüfsumme), AGP 8.13.2, Kotlin 2.3.21,
 KSP 2.3.11, Compose BOM 2026.06.01, Room 2.8.4.
 
 ```bash
@@ -275,8 +292,9 @@ cd Jdandroid
 ./gradlew lintDebug                      # Android-Lint
 ./gradlew compileDebugAndroidTestKotlin  # Migrationstest nur kompilieren
 ./gradlew connectedDebugAndroidTest      # Migrationstest auf Gerät/Emulator
-./gradlew assembleRelease                # signierte APK
+./gradlew assembleRelease                # Release-APK (signiert, wenn ein Keystore konfiguriert ist)
 # Ergebnis: app/build/outputs/apk/release/JDAndroid-<version>.apk
+#           ohne Keystore: app-release-unsigned.apk
 ```
 
 Hinweise:
@@ -290,9 +308,14 @@ Hinweise:
 - R8/Minify ist im Release-Build bewusst **aus**: der Shrinker entfernte die
   Rückrufklassen des RAR-Entpackers, die nur aus nativem 7-Zip-Code per JNI
   aufgerufen werden. Keep-Regeln dafür liegen in `app/proguard-rules.pro`.
-- Der Release-Build wird mit `app/keystore/release.jks` signiert (Passwort
-  in `app/build.gradle.kts`). Der Keystore liegt bewusst im Repository, damit
-  jede gebaute APK dieselbe Signatur trägt; Hintergrund in
+- **Signierung:** Der Keystore liegt nicht im Repository. `app/build.gradle.kts`
+  liest zuerst die Umgebungsvariablen `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`,
+  `KEY_ALIAS` und `KEY_PASSWORD`, sonst die Datei `keystore.properties` im
+  Projektstamm (gitignored; Schlüssel `storeFile`, `storePassword`,
+  `keyAlias`, `keyPassword`). Fehlt beides, entsteht eine unsignierte
+  Release-APK (`app-release-unsigned.apk`); Debug-Builds sind davon
+  unberührt. Der bis 0.0.16 eingecheckte Keystore ist außer Dienst,
+  Hintergrund und Fingerabdruck des neuen Zertifikats in
   [SECURITY.md](SECURITY.md).
 
 Dasselbe läuft als GitHub-Actions-Workflow
@@ -303,21 +326,21 @@ Migrationstests und Release-APK (Artefakt `JDAndroid-release`); ein zweiter
 Job führt die instrumentierten Tests auf einem Android-Emulator (API 34,
 x86_64) aus (Artefakt `androidTest-report`).
 Ein weiterer Workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
-baut bei einem Git-Tag `v<versionName>` (z. B. `v0.0.4`) die APK erneut,
-prüft die Signatur und legt sie samt SHA-256-Prüfsumme als GitHub-Release
-ab. Sind die Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` und
-`KEY_PASSWORD` gesetzt, signiert er damit, sonst mit dem Keystore im Repo.
-Bisher wurden noch keine Tags gesetzt, daher gibt es noch keine
-GitHub-Releases.
+läuft bei einem Git-Tag `v<versionName>` (z. B. `v0.1.0`): Sind die
+Repository-Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` und
+`KEY_PASSWORD` gesetzt, baut und signiert er die APK in der CI; ohne Secrets
+nimmt er die im Repository eingecheckte, lokal signierte Datei
+`release/JDAndroid-<version>.apk`. In beiden Fällen prüft er die Signatur
+und legt ein [GitHub-Release](https://github.com/xtrars/Jdandroid/releases) mit APK und SHA-256-Prüfsumme an.
 
 ## Veröffentlichung
 
 Die App ist noch nicht in einem Store. Die Unterlagen dafür liegen vor:
 
-- [`docs/RELEASE.md`](docs/RELEASE.md) – Checkliste: Version `1.0.0`,
-  Tag `v*`, CI, Signierung aus Repository-Secrets, Entfernen des Keystores
-  aus Repo und Historie, APK/AAB, Play-Hinweise samt Richtlinienrisiko,
-  F-Droid (Anti-Feature `NonFreeDep`).
+- [`docs/RELEASE.md`](docs/RELEASE.md) – Checkliste: Versionsschema
+  `0.1.x`, Tag `v*`, CI, Signierung aus Repository-Secrets (Keystore ist
+  aus dem Repo entfernt, Stand und offene Punkte dort), APK/AAB,
+  Play-Hinweise samt Richtlinienrisiko, F-Droid (Anti-Feature `NonFreeDep`).
 - [`docs/DATENSCHUTZ.md`](docs/DATENSCHUTZ.md) – Datenschutzerklärung
   (deutsch, mit englischer Fassung): keine Telemetrie, Zugangsdaten nur
   lokal und verschlüsselt, Verbindungen nur zu den eingerichteten Hostern
@@ -332,7 +355,7 @@ Die App ist noch nicht in einem Store. Die Unterlagen dafür liegen vor:
 app/src/main/java/com/jdandroid/
 ├── JdApp.kt            Application: Datenbank, Einstellungen, Benachrichtigungskanal
 ├── CrashReporter.kt    unbehandelte Ausnahmen → Einstellungen „Letzter Absturz“
-├── data/               Room (Db.kt: packages/downloads/accounts, Schema v9, Migrationen),
+├── data/               Room (Db.kt: packages/downloads/accounts, Schema v11, Migrationen),
 │                       DataStore-Einstellungen, Secrets (AES-GCM/Keystore),
 │                       LinkChecker (Online-Prüfung), AccountRefresher, PackageNaming
 ├── hoster/             Hoster-Interface, Registry, LinkParser, OkHttp-Client;
@@ -397,7 +420,7 @@ Eingebundene Bibliotheken und ihre Lizenzen:
 | 7-Zip-JBinding-4Android (Release-16.02-2.03) | LGPL-2.1, enthält 7-Zip/unRAR-Code mit unRAR-Einschränkung; nur dynamisch als Bibliothek eingebunden | RAR4/RAR5 |
 | zip4j 2.11.6 | Apache-2.0 | ZIP inkl. AES |
 | Apache Commons Compress 1.28.0, XZ for Java 1.12 | Apache-2.0, 0BSD | 7z |
-| OkHttp 4.12.0 (mit Okio) | Apache-2.0 | HTTP |
+| OkHttp 5.4.0 (mit Okio) | Apache-2.0 | HTTP |
 | Kotlin, kotlinx-coroutines, AndroidX, Jetpack Compose, Room | Apache-2.0 | Sprache, Plattform, UI, Datenbank |
 | JUnit 4, androidx.test | EPL-1.0, Apache-2.0 | nur Tests |
 
