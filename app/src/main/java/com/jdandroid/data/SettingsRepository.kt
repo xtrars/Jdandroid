@@ -99,6 +99,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setExtractExcludeList(value: String) {
+        context.dataStore.edit { it[keyExtractExcludes] = value }
+    }
+
     suspend fun removeExtractExclude(pattern: String) {
         context.dataStore.edit { prefs ->
             val remaining = (prefs[keyExtractExcludes] ?: "").lines()

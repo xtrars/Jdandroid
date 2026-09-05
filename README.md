@@ -211,6 +211,10 @@ Gerätesprache (Deutsch ist die Standardsprache). Alle Texte – auch die
 Meldungen aus Engine und Hostern – liegen als String-Ressourcen vor, siehe
 [`docs/I18N.md`](docs/I18N.md).
 
+- **Sicherung:** Einstellungen (und auf Wunsch die Konten mit Zugangsdaten
+  im Klartext) als JSON-Datei sichern und wiederherstellen – nötig vor einer
+  Deinstallation, weil `allowBackup="false"` Cloud-Backups ausschließt.
+
 ## Installation
 
 JDAndroid wird nicht über einen App-Store verteilt. Jede Version erscheint

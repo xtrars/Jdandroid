@@ -28,6 +28,8 @@ Die App ist mit `allowBackup="false"` gebaut: Konten, Download-Liste und
 Einstellungen wandern nicht in Cloud-Backups von Android. Beim Deinstallieren
 löscht Android die App-Daten; heruntergeladene Dateien im öffentlichen
 Download-Ordner bleiben erhalten.
+Eine Sicherungsdatei (Einstellungen → „Sicherung“) liegt nur dort, wo du sie
+speicherst; Zugangsdaten kommen nur auf Wunsch hinein, dann im Klartext.
 
 ## Mit wem die App Verbindungen aufbaut
 
@@ -112,7 +114,9 @@ DataStore; downloaded and extracted files go to `Downloads/JDAndroid/`, the
 folder you choose or your NAS (NFS target). A
 crash trace, if any, is kept in app storage for display at the next start and
 is never transmitted. The app is built with `allowBackup="false"`, so
-accounts and lists are excluded from Android cloud backups.
+accounts and lists are excluded from Android cloud backups. A backup file
+(Settings → "Backup") exists only where you save it; credentials are included
+only on request, then in plain text.
 
 **Network connections.** JDAndroid has no server of its own. It connects
 only to (1) the hosters you configure or whose links you add – ddownload.com
