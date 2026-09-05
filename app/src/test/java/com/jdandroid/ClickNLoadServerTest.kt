@@ -16,6 +16,7 @@ import java.net.Socket
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Base64
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
@@ -310,12 +311,16 @@ class ClickNLoadServerTest {
 
     @Test
     fun mehrereAnfragenParallel() {
-        // Thread pool: concurrent clients all get an answer
+        // Thread pool: concurrent clients all get an answer. Results are
+        // collected and checked on the test thread; a failure inside a
+        // client thread would otherwise only print a stack trace.
+        val codes = ConcurrentLinkedQueue<Int>()
         val threads = (1..8).map {
-            Thread { assertEquals(200, request("/jdcheck.js").code) }.apply { start() }
+            Thread { codes += runCatching { request("/jdcheck.js").code }.getOrDefault(-1) }.apply { start() }
         }
         threads.forEach { it.join(10000) }
         assertTrue(threads.none { it.isAlive })
+        assertEquals(List(8) { 200 }, codes.toList())
     }
 
     @Test

@@ -64,15 +64,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.JdApp
 import com.jdandroid.R
 import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
 import com.jdandroid.data.NfsSettings
-import com.jdandroid.engine.nfs.NfsFailure
-import com.jdandroid.engine.nfs.NfsProbe
-import com.jdandroid.engine.nfs.NfsShares
+import com.jdandroid.data.SettingsRepository
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -85,36 +84,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val settings = (context.applicationContext as JdApp).settings
     val scope = rememberCoroutineScope()
-    val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
-    val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
-    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = true)
-    val flatExtract by settings.flatExtract.collectAsStateWithLifecycle(initialValue = true)
-    val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
-    val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
-    val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
-    val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
-    val freeMode by settings.freeMode.collectAsStateWithLifecycle(initialValue = true)
-    val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
-    val excludeText by settings.extractExcludeList.collectAsStateWithLifecycle(initialValue = "")
-    val excludes = remember(excludeText) {
-        excludeText.lines().map { it.trim() }.filter { it.isNotEmpty() }
-    }
-    val passwordText by settings.passwordList.collectAsStateWithLifecycle(initialValue = "")
-    val passwords = remember(passwordText) {
-        passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    // Prefill from the stored values only once; edits survive rotation and tab switches.
-    var maxConcurrentText by rememberSaveable { mutableStateOf("") }
-    var speedLimitText by rememberSaveable { mutableStateOf("") }
-    var loaded by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!loaded) {
-            maxConcurrentText = settings.maxConcurrent.first().toString()
-            speedLimitText = formatMbit(settings.speedLimitMbit.first())
-            loaded = true
-        }
-    }
 
     // The persisted permission lets the download service write to the folder.
     val folderPicker = rememberLauncherForActivityResult(
@@ -143,120 +112,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            SectionTitle(stringResource(R.string.settings_section_appearance))
-            SettingsGroup {
-                val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
-                Spacer(Modifier.height(6.dp))
-                Text(stringResource(R.string.settings_theme_label), style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(6.dp))
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    ThemeMode.entries.forEachIndexed { index, m ->
-                        SegmentedButton(
-                            selected = themeKey == m.key,
-                            onClick = { scope.launch { settings.setThemeMode(m.key) } },
-                            shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
-                        ) { Text(stringResource(m.labelRes())) }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
+            AppearanceSection(settings)
 
             Spacer(Modifier.height(16.dp))
-            SectionTitle(stringResource(R.string.settings_section_downloads))
-            Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
-                value = maxConcurrentText,
-                onValueChange = { value ->
-                    maxConcurrentText = value.filter { it.isDigit() }.take(2)
-                    maxConcurrentText.toIntOrNull()?.let { n ->
-                        if (loaded && n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
-                    }
-                },
-                label = { Text(stringResource(R.string.settings_max_concurrent_label)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = speedLimitText,
-                onValueChange = { value ->
-                    // Digits and a single decimal separator (comma or period).
-                    val cleaned = buildString {
-                        var separator = false
-                        for (c in value) {
-                            if (c.isDigit()) append(c)
-                            else if ((c == ',' || c == '.') && !separator) { append(','); separator = true }
-                        }
-                    }.take(8)
-                    speedLimitText = cleaned
-                    parseMbit(cleaned)?.let { n ->
-                        if (loaded) scope.launch { settings.setSpeedLimitMbit(n) }
-                    }
-                },
-                label = { Text(stringResource(R.string.settings_speed_limit_label)) },
-                supportingText = {
-                    val bytes = parseMbit(speedLimitText)
-                        ?.let { com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
-                    Text(
-                        if (bytes > 0) stringResource(R.string.settings_speed_limit_hint_bytes, formatBytes(bytes))
-                        else stringResource(R.string.settings_speed_limit_hint)
-                    )
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            SettingSwitch(
-                title = stringResource(R.string.settings_auto_start_title),
-                subtitle = stringResource(R.string.settings_auto_start_subtitle),
-                checked = autoStart,
-                onChange = { v -> scope.launch { settings.setAutoStartLinks(v) } }
-            )
-            SettingSwitch(
-                title = stringResource(R.string.settings_wifi_only_title),
-                subtitle = stringResource(R.string.settings_wifi_only_subtitle),
-                checked = wifiOnly,
-                onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
-            )
-            SettingSwitch(
-                title = stringResource(R.string.settings_free_mode_title),
-                subtitle = stringResource(R.string.settings_free_mode_subtitle),
-                checked = freeMode,
-                onChange = { v -> scope.launch { settings.setFreeMode(v) } }
-            )
-
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.settings_target_folder), style = MaterialTheme.typography.titleSmall)
-            Text(
-                treeUri?.let {
-                    stringResource(
-                        R.string.settings_target_folder_chosen,
-                        displayTree(it).ifBlank { stringResource(R.string.settings_target_folder_main_storage) }
-                    )
-                } ?: stringResource(
-                    if (export) R.string.settings_target_folder_default_public
-                    else R.string.settings_target_folder_default_private
-                ),
-                style = MaterialTheme.typography.bodySmall
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { folderPicker.launch(null) }) { Text(stringResource(R.string.settings_choose_folder)) }
-                if (treeUri != null) {
-                    TextButton(onClick = { scope.launch { settings.setDownloadTreeUri(null) } }) {
-                        Text(stringResource(R.string.settings_reset))
-                    }
-                }
-            }
-            if (treeUri == null) {
-                SettingSwitch(
-                    title = stringResource(R.string.settings_export_title),
-                    subtitle = stringResource(R.string.settings_export_subtitle),
-                    checked = export,
-                    onChange = { v -> scope.launch { settings.setExportToDownloads(v) } }
-                )
-            }
+            DownloadSection(settings, onChooseFolder = { folderPicker.launch(null) })
 
             Spacer(Modifier.height(12.dp))
             NfsSection(settings)
@@ -264,133 +123,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-
-            SectionTitle(stringResource(R.string.common_extract))
-            Spacer(Modifier.height(8.dp))
-            SettingSwitch(
-                title = stringResource(R.string.settings_auto_extract_title),
-                subtitle = stringResource(R.string.settings_auto_extract_subtitle),
-                checked = autoExtract,
-                onChange = { v -> scope.launch { settings.setAutoExtract(v) } }
-            )
-            SettingSwitch(
-                title = stringResource(R.string.settings_flat_extract_title),
-                subtitle = stringResource(R.string.settings_flat_extract_subtitle),
-                checked = flatExtract,
-                onChange = { v -> scope.launch { settings.setFlatExtract(v) } }
-            )
-            SettingSwitch(
-                title = stringResource(R.string.settings_delete_archive_title),
-                subtitle = stringResource(R.string.settings_delete_archive_subtitle),
-                checked = deleteArchive,
-                onChange = { v -> scope.launch { settings.setDeleteArchiveAfterExtract(v) } }
-            )
-            SettingSwitch(
-                title = stringResource(R.string.settings_remove_entries_title),
-                subtitle = stringResource(R.string.settings_remove_entries_subtitle),
-                checked = removeLinks,
-                onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
-            )
-            Spacer(Modifier.height(12.dp))
-            StringListEditor(
-                title = stringResource(R.string.settings_passwords_title),
-                description = stringResource(R.string.settings_passwords_description),
-                emptyText = stringResource(R.string.settings_passwords_empty),
-                fieldLabel = stringResource(R.string.settings_passwords_field_label),
-                importTitle = stringResource(R.string.settings_passwords_import_title),
-                importPlaceholder = stringResource(R.string.settings_passwords_import_placeholder),
-                removeDescription = stringResource(R.string.settings_passwords_remove),
-                items = passwords,
-                onAdd = { list -> scope.launch { settings.addPasswords(list) } },
-                onRemove = { pw -> scope.launch { settings.removePassword(pw) } }
-            )
-            Spacer(Modifier.height(16.dp))
-            StringListEditor(
-                title = stringResource(R.string.settings_excludes_title),
-                description = stringResource(
-                    R.string.settings_excludes_description,
-                    stringArrayResource(R.array.settings_exclude_examples).joinToString(", ")
-                ),
-                emptyText = stringResource(R.string.settings_excludes_empty),
-                fieldLabel = stringResource(R.string.settings_excludes_field_label),
-                importTitle = stringResource(R.string.settings_excludes_import_title),
-                importPlaceholder = stringResource(R.string.settings_excludes_import_placeholder),
-                removeDescription = stringResource(R.string.settings_excludes_remove),
-                items = excludes,
-                onAdd = { list -> scope.launch { settings.addExtractExcludes(list) } },
-                onRemove = { pattern -> scope.launch { settings.removeExtractExclude(pattern) } }
-            )
+            ExtractSection(settings)
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-
-            SectionTitle(stringResource(R.string.settings_section_cnl))
-            Spacer(Modifier.height(8.dp))
-            SettingSwitch(
-                title = stringResource(R.string.settings_cnl_title),
-                subtitle = stringResource(R.string.settings_cnl_subtitle, ClickNLoadServer.PORT),
-                checked = cnlEnabled,
-                onChange = { v ->
-                    scope.launch {
-                        settings.setClickNLoadEnabled(v)
-                        val action = if (v) DownloadService.ACTION_START_CNL
-                        else DownloadService.ACTION_STOP_CNL
-                        DownloadService.send(context, action)
-                    }
-                }
-            )
-            val cnlRunning by CnlStatus.running.collectAsStateWithLifecycle()
-            val cnlError by CnlStatus.error.collectAsStateWithLifecycle()
-            val cnlBoundTo by CnlStatus.boundTo.collectAsStateWithLifecycle()
-            val cnlLast by CnlStatus.lastRequest.collectAsStateWithLifecycle()
-            var cnlTest by remember { mutableStateOf<String?>(null) }
-            Text(
-                when {
-                    cnlRunning -> stringResource(
-                        R.string.settings_cnl_status_running, ClickNLoadServer.PORT, cnlBoundTo.orEmpty()
-                    )
-                    cnlError != null -> stringResource(R.string.settings_cnl_status_failed, cnlError.orEmpty())
-                    cnlEnabled -> stringResource(R.string.settings_cnl_status_starting)
-                    else -> stringResource(R.string.settings_cnl_status_off)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = when {
-                    cnlRunning -> MaterialTheme.colorScheme.primary
-                    cnlError != null -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            if (cnlRunning) {
-                Text(
-                    cnlLast?.let { stringResource(R.string.settings_cnl_last_request, it) }
-                        ?: stringResource(R.string.settings_cnl_no_request),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val testingText = stringResource(R.string.settings_cnl_testing)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = {
-                        cnlTest = testingText
-                        scope.launch {
-                            cnlTest = withContext(Dispatchers.IO) { ClickNLoadServer.selfTest() }
-                        }
-                    }) { Text(stringResource(R.string.settings_cnl_test)) }
-                    cnlTest?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    }
-                }
-                Text(
-                    stringResource(R.string.settings_cnl_chrome_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.settings_dlc_hint),
-                style = MaterialTheme.typography.bodySmall
-            )
+            ClickNLoadSection(settings)
 
             Spacer(Modifier.height(24.dp))
             Text(
@@ -414,10 +152,301 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+private fun AppearanceSection(settings: SettingsRepository) {
+    val scope = rememberCoroutineScope()
+    val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
+    SectionTitle(stringResource(R.string.settings_section_appearance))
+    SettingsGroup {
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(R.string.settings_theme_label), style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            ThemeMode.entries.forEachIndexed { index, m ->
+                SegmentedButton(
+                    selected = themeKey == m.key,
+                    onClick = { scope.launch { settings.setThemeMode(m.key) } },
+                    shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
+                ) { Text(stringResource(m.labelRes())) }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+/** Limits, connection switches and the target folder. */
+@Composable
+private fun DownloadSection(settings: SettingsRepository, onChooseFolder: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
+    val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
+    val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
+    val freeMode by settings.freeMode.collectAsStateWithLifecycle(initialValue = true)
+    val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
+
+    // Prefill from the stored values only once; edits survive rotation and tab switches.
+    var maxConcurrentText by rememberSaveable { mutableStateOf("") }
+    var speedLimitText by rememberSaveable { mutableStateOf("") }
+    var loaded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!loaded) {
+            maxConcurrentText = settings.maxConcurrent.first().toString()
+            speedLimitText = formatMbit(settings.speedLimitMbit.first())
+            loaded = true
+        }
+    }
+
+    SectionTitle(stringResource(R.string.settings_section_downloads))
+    Spacer(Modifier.height(4.dp))
+    OutlinedTextField(
+        value = maxConcurrentText,
+        onValueChange = { value ->
+            maxConcurrentText = value.filter { it.isDigit() }.take(2)
+            maxConcurrentText.toIntOrNull()?.let { n ->
+                if (loaded && n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
+            }
+        },
+        label = { Text(stringResource(R.string.settings_max_concurrent_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = speedLimitText,
+        onValueChange = { value ->
+            // Digits and a single decimal separator (comma or period).
+            val cleaned = buildString {
+                var separator = false
+                for (c in value) {
+                    if (c.isDigit()) append(c)
+                    else if ((c == ',' || c == '.') && !separator) { append(','); separator = true }
+                }
+            }.take(8)
+            speedLimitText = cleaned
+            parseMbit(cleaned)?.let { n ->
+                if (loaded) scope.launch { settings.setSpeedLimitMbit(n) }
+            }
+        },
+        label = { Text(stringResource(R.string.settings_speed_limit_label)) },
+        supportingText = {
+            val bytes = parseMbit(speedLimitText)?.let { SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
+            Text(
+                if (bytes > 0) stringResource(R.string.settings_speed_limit_hint_bytes, formatBytes(bytes))
+                else stringResource(R.string.settings_speed_limit_hint)
+            )
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    SettingSwitch(
+        title = stringResource(R.string.settings_auto_start_title),
+        subtitle = stringResource(R.string.settings_auto_start_subtitle),
+        checked = autoStart,
+        onChange = { v -> scope.launch { settings.setAutoStartLinks(v) } }
+    )
+    SettingSwitch(
+        title = stringResource(R.string.settings_wifi_only_title),
+        subtitle = stringResource(R.string.settings_wifi_only_subtitle),
+        checked = wifiOnly,
+        onChange = { v -> scope.launch { settings.setWifiOnly(v) } }
+    )
+    SettingSwitch(
+        title = stringResource(R.string.settings_free_mode_title),
+        subtitle = stringResource(R.string.settings_free_mode_subtitle),
+        checked = freeMode,
+        onChange = { v -> scope.launch { settings.setFreeMode(v) } }
+    )
+
+    Spacer(Modifier.height(12.dp))
+    Text(stringResource(R.string.settings_target_folder), style = MaterialTheme.typography.titleSmall)
+    Text(
+        treeUri?.let {
+            stringResource(
+                R.string.settings_target_folder_chosen,
+                displayTree(it).ifBlank { stringResource(R.string.settings_target_folder_main_storage) }
+            )
+        } ?: stringResource(
+            if (export) R.string.settings_target_folder_default_public
+            else R.string.settings_target_folder_default_private
+        ),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = onChooseFolder) { Text(stringResource(R.string.settings_choose_folder)) }
+        if (treeUri != null) {
+            TextButton(onClick = { scope.launch { settings.setDownloadTreeUri(null) } }) {
+                Text(stringResource(R.string.settings_reset))
+            }
+        }
+    }
+    if (treeUri == null) {
+        SettingSwitch(
+            title = stringResource(R.string.settings_export_title),
+            subtitle = stringResource(R.string.settings_export_subtitle),
+            checked = export,
+            onChange = { v -> scope.launch { settings.setExportToDownloads(v) } }
+        )
+    }
+}
+
+/** Extraction switches plus the password and exclude lists. */
+@Composable
+private fun ExtractSection(settings: SettingsRepository) {
+    val scope = rememberCoroutineScope()
+    val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
+    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = true)
+    val flatExtract by settings.flatExtract.collectAsStateWithLifecycle(initialValue = true)
+    val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
+    val excludeText by settings.extractExcludeList.collectAsStateWithLifecycle(initialValue = "")
+    val excludes = remember(excludeText) {
+        excludeText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    }
+    val passwordText by settings.passwordList.collectAsStateWithLifecycle(initialValue = "")
+    val passwords = remember(passwordText) {
+        passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    SectionTitle(stringResource(R.string.common_extract))
+    Spacer(Modifier.height(8.dp))
+    SettingSwitch(
+        title = stringResource(R.string.settings_auto_extract_title),
+        subtitle = stringResource(R.string.settings_auto_extract_subtitle),
+        checked = autoExtract,
+        onChange = { v -> scope.launch { settings.setAutoExtract(v) } }
+    )
+    SettingSwitch(
+        title = stringResource(R.string.settings_flat_extract_title),
+        subtitle = stringResource(R.string.settings_flat_extract_subtitle),
+        checked = flatExtract,
+        onChange = { v -> scope.launch { settings.setFlatExtract(v) } }
+    )
+    SettingSwitch(
+        title = stringResource(R.string.settings_delete_archive_title),
+        subtitle = stringResource(R.string.settings_delete_archive_subtitle),
+        checked = deleteArchive,
+        onChange = { v -> scope.launch { settings.setDeleteArchiveAfterExtract(v) } }
+    )
+    SettingSwitch(
+        title = stringResource(R.string.settings_remove_entries_title),
+        subtitle = stringResource(R.string.settings_remove_entries_subtitle),
+        checked = removeLinks,
+        onChange = { v -> scope.launch { settings.setRemoveLinksAfterExtract(v) } }
+    )
+    Spacer(Modifier.height(12.dp))
+    StringListEditor(
+        title = stringResource(R.string.settings_passwords_title),
+        description = stringResource(R.string.settings_passwords_description),
+        emptyText = stringResource(R.string.settings_passwords_empty),
+        fieldLabel = stringResource(R.string.settings_passwords_field_label),
+        importTitle = stringResource(R.string.settings_passwords_import_title),
+        importPlaceholder = stringResource(R.string.settings_passwords_import_placeholder),
+        removeDescription = stringResource(R.string.settings_passwords_remove),
+        items = passwords,
+        onAdd = { list -> scope.launch { settings.addPasswords(list) } },
+        onRemove = { pw -> scope.launch { settings.removePassword(pw) } }
+    )
+    Spacer(Modifier.height(16.dp))
+    StringListEditor(
+        title = stringResource(R.string.settings_excludes_title),
+        description = stringResource(
+            R.string.settings_excludes_description,
+            stringArrayResource(R.array.settings_exclude_examples).joinToString(", ")
+        ),
+        emptyText = stringResource(R.string.settings_excludes_empty),
+        fieldLabel = stringResource(R.string.settings_excludes_field_label),
+        importTitle = stringResource(R.string.settings_excludes_import_title),
+        importPlaceholder = stringResource(R.string.settings_excludes_import_placeholder),
+        removeDescription = stringResource(R.string.settings_excludes_remove),
+        items = excludes,
+        onAdd = { list -> scope.launch { settings.addExtractExcludes(list) } },
+        onRemove = { pattern -> scope.launch { settings.removeExtractExclude(pattern) } }
+    )
+}
+
+/** Click'n'Load switch with the live server status and self-test. */
+@Composable
+private fun ClickNLoadSection(settings: SettingsRepository) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val cnlRunning by CnlStatus.running.collectAsStateWithLifecycle()
+    val cnlError by CnlStatus.error.collectAsStateWithLifecycle()
+    val cnlBoundTo by CnlStatus.boundTo.collectAsStateWithLifecycle()
+    val cnlLast by CnlStatus.lastRequest.collectAsStateWithLifecycle()
+    var cnlTest by remember { mutableStateOf<String?>(null) }
+
+    SectionTitle(stringResource(R.string.settings_section_cnl))
+    Spacer(Modifier.height(8.dp))
+    SettingSwitch(
+        title = stringResource(R.string.settings_cnl_title),
+        subtitle = stringResource(R.string.settings_cnl_subtitle, ClickNLoadServer.PORT),
+        checked = cnlEnabled,
+        onChange = { v ->
+            scope.launch {
+                settings.setClickNLoadEnabled(v)
+                val action = if (v) DownloadService.ACTION_START_CNL
+                else DownloadService.ACTION_STOP_CNL
+                DownloadService.send(context, action)
+            }
+        }
+    )
+    Text(
+        when {
+            cnlRunning -> stringResource(
+                R.string.settings_cnl_status_running, ClickNLoadServer.PORT, cnlBoundTo.orEmpty()
+            )
+            cnlError != null -> stringResource(R.string.settings_cnl_status_failed, cnlError.orEmpty())
+            cnlEnabled -> stringResource(R.string.settings_cnl_status_starting)
+            else -> stringResource(R.string.settings_cnl_status_off)
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = when {
+            cnlRunning -> MaterialTheme.colorScheme.primary
+            cnlError != null -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    )
+    if (cnlRunning) {
+        Text(
+            cnlLast?.let { stringResource(R.string.settings_cnl_last_request, it) }
+                ?: stringResource(R.string.settings_cnl_no_request),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        val testingText = stringResource(R.string.settings_cnl_testing)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = {
+                cnlTest = testingText
+                scope.launch {
+                    cnlTest = withContext(Dispatchers.IO) { ClickNLoadServer.selfTest() }
+                }
+            }) { Text(stringResource(R.string.settings_cnl_test)) }
+            cnlTest?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            }
+        }
+        Text(
+            stringResource(R.string.settings_cnl_chrome_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.settings_dlc_hint),
+        style = MaterialTheme.typography.bodySmall
+    )
+}
+
 /** Collapsible NFS target: switch, connection fields and a single-line connection check. */
 @Composable
-private fun NfsSection(settings: com.jdandroid.data.SettingsRepository) {
+private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
+    val probing by vm.nfsProbe.probing.collectAsStateWithLifecycle()
+    val outcome by vm.nfsProbe.outcome.collectAsStateWithLifecycle()
     val nfs by settings.nfs.collectAsStateWithLifecycle(initialValue = NfsSettings())
     var expanded by rememberSaveable { mutableStateOf(false) }
     var serverText by rememberSaveable { mutableStateOf("") }
@@ -426,8 +455,6 @@ private fun NfsSection(settings: com.jdandroid.data.SettingsRepository) {
     var uidText by rememberSaveable { mutableStateOf("") }
     var gidText by rememberSaveable { mutableStateOf("") }
     var loaded by rememberSaveable { mutableStateOf(false) }
-    var probing by remember { mutableStateOf(false) }
-    var outcome by remember { mutableStateOf<NfsProbeOutcome?>(null) }
     LaunchedEffect(Unit) {
         if (!loaded) {
             val current = settings.currentNfs()
@@ -540,13 +567,9 @@ private fun NfsSection(settings: com.jdandroid.data.SettingsRepository) {
         TextButton(
             enabled = !probing && serverText.isNotBlank() && exportText.isNotBlank(),
             onClick = {
-                probing = true
-                outcome = null
                 scope.launch {
                     // The check must work before the switch is on, so probe with the fields as typed.
-                    val target = settings.currentNfs().copy(enabled = true)
-                    outcome = NfsProbeOutcome.of(runCatching { NfsShares.probe(target) })
-                    probing = false
+                    vm.nfsProbe.start(settings.currentNfs().copy(enabled = true))
                 }
             }
         ) { Text(stringResource(R.string.settings_nfs_probe)) }
@@ -567,24 +590,6 @@ private fun NfsSection(settings: com.jdandroid.data.SettingsRepository) {
             style = MaterialTheme.typography.bodySmall,
             color = if (result is NfsProbeOutcome.Ok) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.error
-        )
-    }
-}
-
-/** Outcome of a connection check, reduced to what the single result line shows. */
-internal sealed class NfsProbeOutcome {
-    data class Ok(val entries: Int, val freeBytes: Long, val totalBytes: Long) : NfsProbeOutcome()
-    /** NAS off or unreachable; shown with a "not reachable" prefix. */
-    data class Unreachable(val message: String) : NfsProbeOutcome()
-    data class Failed(val message: String) : NfsProbeOutcome()
-
-    companion object {
-        fun of(result: Result<NfsProbe>): NfsProbeOutcome = result.fold(
-            onSuccess = { Ok(it.entries.size, it.freeBytes, it.totalBytes) },
-            onFailure = { e ->
-                val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-                if (e is NfsFailure.Transient) Unreachable(message) else Failed(message)
-            }
         )
     }
 }

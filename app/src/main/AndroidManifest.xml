@@ -29,10 +29,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Jdandroid">
 
+        <!-- adjustResize: below Android 11 the IME insets (imePadding) are only
+             reported in this mode; with edge-to-edge on newer versions it has
+             no effect. -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

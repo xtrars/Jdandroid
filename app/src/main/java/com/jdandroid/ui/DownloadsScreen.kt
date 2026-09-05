@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -106,6 +107,39 @@ fun ConfirmDeleteDialog(
             TextButton(onClick = { onConfirm(); onDismiss() }) {
                 Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
+    )
+}
+
+/** Trimmed package name from the rename field, or null when nothing usable was entered. */
+fun cleanPackageName(input: String): String? = input.trim().ifEmpty { null }
+
+/** Rename dialog shared by the download list and the link collector. */
+@Composable
+fun RenamePackageDialog(
+    currentName: String,
+    onRename: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf(currentName) }
+    val cleaned = cleanPackageName(name)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.downloads_rename_title)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = cleaned != null,
+                onClick = { cleaned?.let(onRename); onDismiss() }
+            ) { Text(stringResource(R.string.downloads_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
@@ -228,7 +262,7 @@ fun DownloadsScreen(
             }
         } else {
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().imePadding(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(12.dp)
             ) {
@@ -380,27 +414,10 @@ private fun PackageHeader(
     }
 
     if (renaming) {
-        var name by rememberSaveable { mutableStateOf(group.pkg.name) }
-        AlertDialog(
-            onDismissRequest = { renaming = false },
-            title = { Text(stringResource(R.string.downloads_rename_title)) },
-            text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = { vm.renamePackage(group.pkg.id, name.trim()); renaming = false }
-                ) { Text(stringResource(R.string.downloads_save)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { renaming = false }) { Text(stringResource(R.string.common_cancel)) }
-            }
+        RenamePackageDialog(
+            currentName = group.pkg.name,
+            onRename = { vm.renamePackage(group.pkg.id, it) },
+            onDismiss = { renaming = false }
         )
     }
 }
