@@ -180,6 +180,10 @@ object JdIcons {
         icon("Download", "M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z")
     }
 
+    val Storage: ImageVector by lazy {
+        icon("Storage", "M2,20h20v-4H2v4zm2,-3h2v2H4v-2zM2,4v4h20V4H2zm4,3H4V5h2v2zm-4,7h20v-4H2v4zm2,-3h2v2H4v-2z")
+    }
+
     val Link: ImageVector by lazy {
         icon(
             "Link",

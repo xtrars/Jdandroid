@@ -57,4 +57,5 @@
     <string name="engine_nfs_denied">NFS: access denied (check UID/GID and export)</string>
     <string name="engine_nfs_export_missing">NFS export not found or not shared (export path, “insecure” option)</string>
     <string name="engine_nfs_pending">Waiting for NFS target</string>
+    <string name="engine_nfs_exports_failed">Export list unavailable: %1$s</string>
 </resources>

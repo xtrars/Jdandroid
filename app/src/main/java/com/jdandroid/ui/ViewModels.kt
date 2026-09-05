@@ -23,6 +23,7 @@ import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
+import com.jdandroid.engine.nfs.NfsDiscovery
 import com.jdandroid.engine.DownloadService
 import com.jdandroid.engine.CaptchaPage
 import com.jdandroid.engine.FreeDownloads
@@ -504,7 +505,11 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 /** State of the settings tab that has to outlive the composition. */
-class SettingsViewModel : ViewModel() {
+class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     internal val nfsProbe = NfsProbeRunner(viewModelScope)
     internal val nfsBrowser = NfsBrowserRunner(viewModelScope)
+    internal val nfsDiscovery = NfsDiscoveryRunner(
+        viewModelScope,
+        discover = { onFound -> NfsDiscovery.discover(app, onFound) }
+    )
 }

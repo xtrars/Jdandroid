@@ -79,6 +79,7 @@ import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
 import com.jdandroid.data.NfsSettings
 import com.jdandroid.data.SettingsRepository
+import com.jdandroid.engine.nfs.NfsServer
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -455,6 +456,7 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
     val probing by vm.nfsProbe.probing.collectAsStateWithLifecycle()
     val outcome by vm.nfsProbe.outcome.collectAsStateWithLifecycle()
     val browser by vm.nfsBrowser.state.collectAsStateWithLifecycle()
+    val discovery by vm.nfsDiscovery.state.collectAsStateWithLifecycle()
     val nfs by settings.nfs.collectAsStateWithLifecycle(initialValue = NfsSettings())
     var expanded by rememberSaveable { mutableStateOf(false) }
     var serverText by rememberSaveable { mutableStateOf("") }
@@ -513,24 +515,33 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
         autoCorrectEnabled = false,
         imeAction = ImeAction.Next
     )
-    OutlinedTextField(
-        value = serverText,
-        onValueChange = { serverText = it; update { copy(server = it.trim()) } },
-        label = { Text(stringResource(R.string.settings_nfs_server)) },
-        keyboardOptions = uriKeyboard,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(
+            value = serverText,
+            onValueChange = { serverText = it; update { copy(server = it.trim()) } },
+            label = { Text(stringResource(R.string.settings_nfs_server)) },
+            keyboardOptions = uriKeyboard,
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = vm.nfsDiscovery::search) { Text(stringResource(R.string.settings_nfs_discover)) }
+    }
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = exportText,
-        onValueChange = { exportText = it; update { copy(export = it.trim()) } },
-        label = { Text(stringResource(R.string.settings_nfs_export)) },
-        placeholder = { Text(stringResource(R.string.settings_nfs_export_placeholder)) },
-        keyboardOptions = uriKeyboard,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(
+            value = exportText,
+            onValueChange = { exportText = it; update { copy(export = it.trim()) } },
+            label = { Text(stringResource(R.string.settings_nfs_export)) },
+            placeholder = { Text(stringResource(R.string.settings_nfs_export_placeholder)) },
+            keyboardOptions = uriKeyboard,
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(
+            enabled = serverText.isNotBlank(),
+            onClick = { vm.nfsDiscovery.select(NfsServer(serverText.trim())) }
+        ) { Text(stringResource(R.string.settings_nfs_exports)) }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = subDirText,
@@ -616,6 +627,129 @@ private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = vie
             }
         )
     }
+    discovery?.let { state ->
+        NfsDiscoveryDialog(
+            state = state,
+            runner = vm.nfsDiscovery,
+            onChooseServer = { host ->
+                serverText = host
+                update { copy(server = host) }
+                vm.nfsDiscovery.close()
+            },
+            onChooseExport = { host, path ->
+                serverText = host
+                exportText = path
+                update { copy(server = host, export = path) }
+                vm.nfsDiscovery.close()
+            }
+        )
+    }
+}
+
+/**
+ * Server search in two levels: found servers (name and IP), then the exports
+ * of the tapped server. Both lists shrink so the buttons stay visible; the
+ * server can be taken over without an export when the listing fails.
+ */
+@Composable
+private fun NfsDiscoveryDialog(
+    state: NfsDiscoveryState,
+    runner: NfsDiscoveryRunner,
+    onChooseServer: (String) -> Unit,
+    onChooseExport: (String, String) -> Unit
+) {
+    val selected = state.selected
+    AlertDialog(
+        onDismissRequest = runner::close,
+        title = {
+            Text(
+                if (selected == null) stringResource(R.string.settings_nfs_discover_title)
+                else stringResource(R.string.settings_nfs_exports_title, selected.name ?: selected.host)
+            )
+        },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                if (selected == null) {
+                    if (state.searching) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(R.string.settings_nfs_discover_searching), style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (state.servers.isEmpty()) {
+                        Text(
+                            stringResource(R.string.settings_nfs_discover_none),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                        items(state.servers, key = { it.host }) { server ->
+                            NfsBrowserRow(
+                                icon = JdIcons.Storage,
+                                name = server.name ?: server.host,
+                                detail = if (server.name == null) null else server.host,
+                                enabled = true,
+                                contentDescription = null,
+                                onClick = { runner.select(server) }
+                            )
+                        }
+                    }
+                } else {
+                    Text(selected.host, style = MaterialTheme.typography.bodyMedium)
+                    state.error?.let { error ->
+                        Text(
+                            if (error.unreachable) stringResource(R.string.settings_nfs_probe_unreachable, error.message)
+                            else error.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (state.loadingExports) {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        if (state.exports.isEmpty() && state.error == null) {
+                            Text(
+                                stringResource(R.string.settings_nfs_exports_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                            items(state.exports, key = { it }) { path ->
+                                NfsBrowserRow(
+                                    icon = JdIcons.Folder,
+                                    name = path,
+                                    detail = null,
+                                    enabled = true,
+                                    contentDescription = null,
+                                    onClick = { onChooseExport(selected.host, path) }
+                                )
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onChooseServer(selected.host) }) {
+                        Text(stringResource(R.string.settings_nfs_exports_use_server))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (selected == null) {
+                TextButton(enabled = !state.searching, onClick = runner::search) {
+                    Text(stringResource(R.string.settings_nfs_discover_again))
+                }
+            } else {
+                TextButton(onClick = runner::back) { Text(stringResource(R.string.settings_nfs_exports_back)) }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = runner::close) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
 }
 
 /**

@@ -58,4 +58,5 @@
     <string name="engine_nfs_denied">NFS: Zugriff verweigert (UID/GID und Freigabe prüfen)</string>
     <string name="engine_nfs_export_missing">NFS-Freigabe nicht gefunden oder nicht freigegeben (Export-Pfad, Option „insecure“)</string>
     <string name="engine_nfs_pending">Wartet auf NFS-Ziel</string>
+    <string name="engine_nfs_exports_failed">Freigabeliste nicht abrufbar: %1$s</string>
 </resources>

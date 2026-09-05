@@ -62,5 +62,6 @@ object EngineTexts {
         "engine_nfs_denied" to "NFS: Zugriff verweigert (UID/GID und Freigabe prüfen)",
         "engine_nfs_export_missing" to "NFS-Freigabe nicht gefunden oder nicht freigegeben (Export-Pfad, Option „insecure“)",
         "engine_nfs_pending" to "Wartet auf NFS-Ziel",
+        "engine_nfs_exports_failed" to "Freigabeliste nicht abrufbar: %1\$s",
     )
 }
