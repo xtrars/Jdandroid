@@ -83,6 +83,20 @@ jobs:
             echo "VERSION=$version"
             echo "VERSION_CODE=$code"
           } >> "$GITHUB_ENV"
+      - name: Keystore pruefen
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          set -eu
+          echo "Keystore: $(stat -c %s "$KEYSTORE_FILE") Bytes, SHA-256 $(sha256sum "$KEYSTORE_FILE" | cut -c1-16)..., Passwortlaenge ${#KEYSTORE_PASSWORD}, Alias-Laenge ${#KEY_ALIAS}"
+          if ! keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            if keytool -list -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "::error::Keystore-Passwort stimmt, aber der Alias '$KEY_ALIAS' fehlt im Keystore."
+            else
+              echo "::error::Keystore laesst sich mit KEYSTORE_PASSWORD nicht oeffnen: Passwort falsch oder KEYSTORE_BASE64 beschaedigt (Groesse/Pruefsumme oben mit der Originaldatei vergleichen)."
+            fi
+            exit 1
+          fi
+          echo "Keystore und Alias in Ordnung."
 
       - uses: actions/setup-java@v6
         with:
