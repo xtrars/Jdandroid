@@ -66,7 +66,7 @@ internal object DdownloadFreePage {
     /** "1 hour, 23 minutes, 5 seconds", "2 days", "1:23:05" or "23:05" → seconds; 0 = nothing found. */
     fun parseWaitText(text: String): Int {
         fun unit(name: String): Int =
-            Regex("""(\d+)\s*$name""", ic).find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            Regex("""(\d+)\s*(?:$name)""", ic).find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
         val days = unit("days?")
         val hours = unit("hours?|stunden?")
         val minutes = unit("minutes?|minuten?")

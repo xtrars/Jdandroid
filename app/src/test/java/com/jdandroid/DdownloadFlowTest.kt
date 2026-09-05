@@ -227,6 +227,41 @@ class DdownloadFlowTest {
     }
 
     @Test
+    fun formularantwortMitAbgelaufenerSitzungIstVoruebergehend() {
+        for (text in listOf("Expired download session", "Skipped countdown")) {
+            withServer { server, _, hoster ->
+                server.dispatcher = siteDispatcher(form = html(dateiseite(extra = alert(text))))
+                val fehler = failure { hoster.resolve(fileUrl, session) }
+                assertTrue("$text: $fehler", fehler is HosterException && !fehler.permanent)
+                assertFalse(text, fehler is FileOfflineException)
+            }
+        }
+    }
+
+    @Test
+    fun dateiAlsFormularantwortIstKeinDirektlink() {
+        val datei = MockResponse().setBody("RAR!").addHeader("Content-Type", "application/octet-stream")
+            .addHeader("Content-Disposition", "attachment; filename=\"scn-smps8-S37E02.rar\"")
+        withServer { server, base, hoster ->
+            server.dispatcher = siteDispatcher(form = datei)
+            // The POST address fetched via GET would only serve the file page again
+            val premium = failure { hoster.resolve(fileUrl, session) }
+            assertTrue("$premium", premium is HosterException && !premium.permanent)
+            assertEquals(Texts.t("hoster_ddownload_no_direct_link", 200), premium!!.message)
+            val free = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+            assertTrue("$free", free is HosterException && !free.permanent)
+            assertEquals(Texts.t("hoster_ddownload_no_direct_link", 200), free!!.message)
+            assertTrue(server.requestCount >= 5)
+        }
+        withServer { server, base, hoster ->
+            // After a redirect hop the fetched address is the link
+            server.dispatcher = siteDispatcher(form = redirect("/cgi-bin/dl.cgi"), hops = mapOf("/cgi-bin/dl.cgi" to datei))
+            assertEquals("$base/cgi-bin/dl.cgi", runBlocking { hoster.resolve(fileUrl, session) }.directUrl)
+            assertEquals("$base/cgi-bin/dl.cgi", runBlocking { hoster.resolveFree(fileUrl, FreeHints()) }.directUrl)
+        }
+    }
+
+    @Test
     fun apiFehlerKlassifikation() {
         val hoster = DdownloadHoster()
         // (status, msg) -> permanent
@@ -330,12 +365,50 @@ class DdownloadFlowTest {
                 else -> MockResponse().setResponseCode(404)
             }
         }
-        assertTrue(failure { hoster.resolveFree(fileUrl, FreeHints()) } is WaitException)
+        val erste = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$erste", erste is WaitException)
+        assertEquals(601, (erste as WaitException).seconds)
         assertEquals(1, server.requestCount)
         assertTrue(failure { hoster.resolveFree("https://ddownload.com/$anderer", FreeHints()) } is WaitException)
         assertEquals(2, server.requestCount)
-        assertTrue(failure { hoster.resolveFree(fileUrl, FreeHints()) } is WaitException)
+        // Remembered form for the first code: no page reload, remaining time
+        val dritte = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$dritte", dritte is WaitException)
+        assertTrue((dritte as WaitException).seconds in 590..601)
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun countdownUeberFuenfSekundenGehtAnDieEngineUndDasFormularBleibt() = withServer { server, _, hoster ->
+        server.dispatcher = siteDispatcher(page = html(dateiseite(countdown = countdown(30))))
+        val erste = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$erste", erste is WaitException)
+        assertEquals(31, (erste as WaitException).seconds)
+        assertEquals(Texts.t("hoster_ddownload_free_countdown"), erste.message)
+        assertEquals(1, server.requestCount)
+        // Second attempt: the remembered form, no page reload, remaining time
+        val zweite = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$zweite", zweite is WaitException)
+        assertTrue((zweite as WaitException).seconds in 25..31)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun kurzerCountdownWirdAbgewartetUndDasFormularVerbraucht() = withServer { server, _, hoster ->
+        server.dispatcher = siteDispatcher(
+            page = html(dateiseite(countdown = countdown(1))),
+            form = html(dateiseite(extra = alert("Wrong captcha")))
+        )
+        val start = System.currentTimeMillis()
+        val fehler = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$fehler", fehler is CaptchaRequiredException)
+        assertTrue(System.currentTimeMillis() - start >= 1500)
+        assertEquals(2, server.requestCount)
+        assertEquals("GET", server.takeRequest().method)
+        assertEquals("POST", server.takeRequest().method)
+        // The form is used up: the next attempt reads the page again
+        assertTrue(failure { hoster.resolveFree(fileUrl, FreeHints()) } is CaptchaRequiredException)
+        assertEquals(4, server.requestCount)
     }
 
     @Test

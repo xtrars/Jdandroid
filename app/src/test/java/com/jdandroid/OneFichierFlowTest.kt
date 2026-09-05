@@ -215,6 +215,20 @@ class OneFichierFlowTest {
     }
 
     @Test
+    fun countdownUeberFuenfSekundenGehtAnDieEngine() = withServer { server, base, hoster ->
+        server.dispatcher = freeDispatcher(html(dateiseite(base, count = 30)), MockResponse().setResponseCode(500))
+        val erste = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$erste", erste is WaitException)
+        assertTrue((erste as WaitException).seconds in 30..31)
+        assertEquals(Texts.t("hoster_onefichier_free_countdown"), erste.message)
+        assertEquals(1, server.requestCount)
+        val zweite = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$zweite", zweite is WaitException)
+        assertTrue((zweite as WaitException).seconds in 25..31)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
     fun dateiseiteOhneFormularSperrenUndOffline() = withServer { server, base, hoster ->
         // (status, body) -> expected exception; 403/5xx are never permanent
         val faelle = listOf(

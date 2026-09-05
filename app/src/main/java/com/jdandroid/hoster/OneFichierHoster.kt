@@ -8,9 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
-import okhttp3.CookieJar
-import okhttp3.FormBody
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -79,14 +76,7 @@ class OneFichierHoster internal constructor(
     /** Host of [siteBase]; domain of the cookies set by the app itself. */
     private val siteHost = siteBase.toHttpUrl().host
 
-    /**
-     * Browser user agent as in the captcha view: file page, form and file
-     * request run under the same user agent and cookies.
-     */
-    private val browserUa: String
-        get() = Http.browserUserAgent
-            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/122.0.0.0 Mobile Safari/537.36"
+    private val browserUa: String get() = Http.browserUa
 
     /**
      * State of a free flow per file id: own cookie store (file page session,
@@ -101,79 +91,22 @@ class OneFichierHoster internal constructor(
         var fileSize = -1L
         var readyAt = 0L
         val createdAt = System.currentTimeMillis()
-        val store = mutableListOf<Cookie>()
-        val client: OkHttpClient = baseClient.newBuilder()
-            .followRedirects(true)
-            .cookieJar(object : CookieJar {
-                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    synchronized(store) {
-                        for (c in cookies) {
-                            store.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
-                            store.add(c)
-                        }
-                    }
-                }
-                override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(store) {
-                    val now = System.currentTimeMillis()
-                    store.filter { it.matches(url) && it.expiresAt > now }
-                }
-            })
-            .build()
+        val jar = MemoryCookieJar()
+        val client: OkHttpClient = baseClient.newBuilder().followRedirects(true).cookieJar(jar).build()
 
         val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
 
-        /** Cookie header for [url], null without matching cookies. */
-        fun cookieHeader(url: String): String? {
-            val http = url.toHttpUrlOrNull() ?: return null
-            val now = System.currentTimeMillis()
-            return synchronized(store) {
-                store.filter { it.matches(http) && it.expiresAt > now }
-                    .joinToString("; ") { "${it.name}=${it.value}" }
-            }.ifBlank { null }
-        }
+        fun cookieHeader(url: String): String? = jar.cookieHeader(url)
     }
 
     private val freeSessions = ConcurrentHashMap<String, FreeSession>()
-
-    private data class Resp(
-        val code: Int,
-        val body: String,
-        val location: String?,
-        val finalUrl: String,
-        /** Response is a file (Content-Disposition or non-text). */
-        val isFile: Boolean
-    )
 
     private fun FreeSession.fetch(
         url: String,
         referer: String? = null,
         form: Map<String, String>? = null,
         followRedirects: Boolean = true
-    ): Resp {
-        val builder = Request.Builder()
-            .url(url)
-            .header("User-Agent", browserUa)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "en-us,en;q=0.5")
-        referer?.let { builder.header("Referer", it) }
-        form?.let { f ->
-            builder.post(FormBody.Builder().apply { f.forEach { (k, v) -> add(k, v) } }.build())
-        }
-        val c = if (followRedirects) client else {
-            client.newBuilder().followRedirects(false).followSslRedirects(false).build()
-        }
-        return c.newCall(builder.build()).execute().use { resp ->
-            val type = resp.header("Content-Type").orEmpty().lowercase()
-            val attachment = resp.header("Content-Disposition")?.contains("attachment", true) == true
-            // Only read pages as text, never a file (heap)
-            val textual = !attachment && (
-                type.isBlank() || type.startsWith("text/") || type.contains("json") ||
-                    type.contains("javascript") || type.contains("xml")
-                )
-            val body = if (textual) runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("") else ""
-            Resp(resp.code, body, resp.header("Location"), resp.request.url.toString(), resp.isSuccessful && !textual)
-        }
-    }
+    ): PageResponse = client.fetchPage(url, referer, form, acceptLanguage = "en-us,en;q=0.5", followRedirects = followRedirects)
 
     private fun blockFor(block: OneFichierBlock): Nothing = when (block) {
         is OneFichierBlock.Wait -> throw WaitException(block.seconds, block.text)
@@ -187,7 +120,7 @@ class OneFichierHoster internal constructor(
      * visible text ([OneFichierFreePage.classify], on the file page with
      * [downloadOffered]). Returns if nothing objects.
      */
-    private fun checkPage(resp: Resp, downloadOffered: Boolean = false) {
+    private fun checkPage(resp: PageResponse, downloadOffered: Boolean = false) {
         if (resp.code == 404 || OneFichierFreePage.isOffline(resp.body)) throw FileOfflineException()
         OneFichierFreePage.classify(OneFichierFreePage.visibleText(resp.body), downloadOffered)?.let { blockFor(it) }
         when {
@@ -256,7 +189,7 @@ class OneFichierHoster internal constructor(
                 }
                 // After a redirect via GET the response may be the file; the
                 // POST address itself, fetched via GET, is only the file page
-                if (resp.isFile && currentUrl != action) { direct = resp.finalUrl; break }
+                if (resp.code in 200..299 && resp.isFile && currentUrl != action) { direct = resp.finalUrl; break }
                 direct = OneFichierFreePage.directLink(resp.body)
                 break
             }
@@ -286,9 +219,9 @@ class OneFichierHoster internal constructor(
         freeSessions.remove(id)
         val session = FreeSession(pageUrl, client)
         // Force English texts so the error patterns match
-        session.store.add(Cookie.Builder().name("LG").value("en").domain(siteHost).path("/").build())
+        session.jar.add(Cookie.Builder().name("LG").value("en").domain(siteHost).path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
-        if (page.isFile) {
+        if (page.code in 200..299 && page.isFile) {
             // Hotlink: the owner pays the traffic, no wait
             session.hotlink = ResolvedLink(
                 secure(page.finalUrl), headers = freeHeaders(link, page.finalUrl, session.cookieHeader(page.finalUrl))
@@ -348,8 +281,12 @@ class OneFichierHoster internal constructor(
     }
 
     private companion object {
-        /** Countdown remainders up to this run in-process; longer ones go to the engine as wait time. */
-        const val MAX_INLINE_WAIT_MS = 90_000L
+        /**
+         * Countdown remainders up to this run in-process; longer ones go to
+         * the engine as wait time so the job neither holds a slot nor keeps
+         * the wake lock.
+         */
+        const val MAX_INLINE_WAIT_MS = 5_000L
         const val SESSION_MAX_AGE_MS = 10L * 60 * 1000
     }
 
@@ -450,8 +387,13 @@ class OneFichierHoster internal constructor(
                 .header("User-Agent", Http.USER_AGENT)
                 .post(form)
                 .build()
-            val text = client.newCall(request).execute().use { resp ->
-                resp.peekBody(Http.MAX_TEXT_BYTES).string()
+            val (code, text) = client.newCall(request).execute().use { resp ->
+                resp.code to resp.peekBody(Http.MAX_TEXT_BYTES).string()
+            }
+            // Flood/data-center blocks (403) and errors answer with an HTML page
+            // whose links would otherwise parse as an online file.
+            if (code !in 200..299) {
+                return@withContext LinkInfo(online = null, note = Texts.t("hoster_http_status_unknown", code))
             }
             val line = text.lines().firstOrNull { it.contains("1fichier.com") }
                 ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_onefichier_check_no_response"))

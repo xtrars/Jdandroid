@@ -275,25 +275,30 @@ class OneFichierFreeTest {
 
     @Test
     fun resolveFreeUebernimmtBrowserDirektlink() = runBlocking {
-        Http.browserUserAgent = "Mozilla/5.0 (Test) WebView"
-        val link = hoster.resolveFree(
-            "https://1fichier.com/?abcde12345",
-            FreeHints(direktUrlAusBrowser = "http://a-3.1fichier.com/c1234567890", cookies = "LG=en; SID=abc")
-        )
-        // Cleartext is blocked: file server link over HTTPS
-        assertEquals("https://a-3.1fichier.com/c1234567890", link.directUrl)
-        assertEquals("LG=en; SID=abc", link.headers["Cookie"])
-        assertEquals("Mozilla/5.0 (Test) WebView", link.headers["User-Agent"])
-        assertEquals("https://1fichier.com/?abcde12345", link.headers["Referer"])
-        val ohneCookies = hoster.resolveFree("https://1fichier.com/?abcde12345", FreeHints(direktUrlAusBrowser = "https://a-3.1fichier.com/c1"))
-        assertFalse(ohneCookies.headers.containsKey("Cookie"))
-        // Foreign host: the link counts, the session cookies do not travel
-        val fremd = hoster.resolveFree(
-            "https://1fichier.com/?abcde12345",
-            FreeHints(direktUrlAusBrowser = "https://cdn.example.net/abc/name.rar", cookies = "SID=abc")
-        )
-        assertEquals("https://cdn.example.net/abc/name.rar", fremd.directUrl)
-        assertFalse(fremd.headers.containsKey("Cookie"))
+        val alt = Http.browserUserAgent
+        try {
+            Http.browserUserAgent = "Mozilla/5.0 (Test) WebView"
+            val link = hoster.resolveFree(
+                "https://1fichier.com/?abcde12345",
+                FreeHints(direktUrlAusBrowser = "http://a-3.1fichier.com/c1234567890", cookies = "LG=en; SID=abc")
+            )
+            // Cleartext is blocked: file server link over HTTPS
+            assertEquals("https://a-3.1fichier.com/c1234567890", link.directUrl)
+            assertEquals("LG=en; SID=abc", link.headers["Cookie"])
+            assertEquals("Mozilla/5.0 (Test) WebView", link.headers["User-Agent"])
+            assertEquals("https://1fichier.com/?abcde12345", link.headers["Referer"])
+            val ohneCookies = hoster.resolveFree("https://1fichier.com/?abcde12345", FreeHints(direktUrlAusBrowser = "https://a-3.1fichier.com/c1"))
+            assertFalse(ohneCookies.headers.containsKey("Cookie"))
+            // Foreign host: the link counts, the session cookies do not travel
+            val fremd = hoster.resolveFree(
+                "https://1fichier.com/?abcde12345",
+                FreeHints(direktUrlAusBrowser = "https://cdn.example.net/abc/name.rar", cookies = "SID=abc")
+            )
+            assertEquals("https://cdn.example.net/abc/name.rar", fremd.directUrl)
+            assertFalse(fremd.headers.containsKey("Cookie"))
+        } finally {
+            Http.browserUserAgent = alt
+        }
     }
 
     @Test

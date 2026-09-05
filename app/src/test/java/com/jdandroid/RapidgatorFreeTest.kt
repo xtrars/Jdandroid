@@ -249,8 +249,9 @@ class RapidgatorFreeTest {
 
     @Test
     fun direktlinkAusDemBrowserWirdMitCookiesUebernommen() = runBlocking {
-        Http.browserUserAgent = "Mozilla/5.0 (Test) WebView"
+        val alt = Http.browserUserAgent
         try {
+            Http.browserUserAgent = "Mozilla/5.0 (Test) WebView"
             val direct = "https://pr5.rapidgator.net//?r=download/index&session_id=AbC123"
             val link = hoster.resolveFree(
                 "https://rapidgator.net/file/0d348b3c239fe48ea3fed28b8810190d/c20-fundamentals.part02.rar.html",
@@ -275,7 +276,7 @@ class RapidgatorFreeTest {
             assertEquals("https://cdn.example.net/d/abc/name.rar", fremd.directUrl)
             assertNull(fremd.headers["Cookie"])
         } finally {
-            Http.browserUserAgent = null
+            Http.browserUserAgent = alt
         }
     }
 

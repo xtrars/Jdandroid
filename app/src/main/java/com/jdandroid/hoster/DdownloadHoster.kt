@@ -8,12 +8,9 @@ import com.jdandroid.data.plainCookies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
-import okhttp3.CookieJar
-import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
@@ -66,14 +63,10 @@ class DdownloadHoster internal constructor(
     /** Main domains that never serve a file (pages only). */
     override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
-    /** Browser-like user agent: XFileSharing/Cloudflare reject bot user agents. */
-    internal val browserUa: String
-        get() = Http.browserUserAgent
-            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/122.0.0.0 Mobile Safari/537.36"
+    internal val browserUa: String get() = Http.browserUa
 
     /** One cookie store (session) per account id. */
-    private val cookieStores = java.util.concurrent.ConcurrentHashMap<Long, MutableList<Cookie>>()
+    private val cookieJars = java.util.concurrent.ConcurrentHashMap<Long, MemoryCookieJar>()
     private val clients = java.util.concurrent.ConcurrentHashMap<Long, OkHttpClient>()
 
     override fun matches(url: String) = pattern.containsMatchIn(url)
@@ -82,44 +75,14 @@ class DdownloadHoster internal constructor(
         pattern.find(url)?.groupValues?.get(1)
             ?: throw HosterException(Texts.t("hoster_ddownload_invalid_link"), true)
 
-    internal data class Resp(
-        val code: Int,
-        val body: String,
-        val location: String? = null,
-        val contentType: String? = null,
-        /** Address after all followed redirects. */
-        val finalUrl: String = "",
-        val contentDisposition: String? = null
-    ) {
-        /** Response is a file, not a page. */
-        val isFile: Boolean
-            get() = contentDisposition?.contains("attachment", true) == true ||
-                (!contentType.isNullOrBlank() && !isTextualType(contentType))
-    }
+    private fun jarFor(accountId: Long): MemoryCookieJar = cookieJars.getOrPut(accountId) { MemoryCookieJar() }
 
     internal fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
-        // OkHttp calls the CookieJar from several threads (parallel downloads
-        // of the same account), so access is synchronized.
-        val store = cookieStores.getOrPut(accountId) { mutableListOf() }
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
-            .cookieJar(object : CookieJar {
-                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    synchronized(store) {
-                        for (c in cookies) {
-                            store.removeAll { it.name == c.name && it.domain == c.domain }
-                            store.add(c)
-                        }
-                    }
-                }
-                override fun loadForRequest(url: HttpUrl): List<Cookie> =
-                    synchronized(store) {
-                        val now = System.currentTimeMillis()
-                        store.filter { it.matches(url) && it.expiresAt > now }
-                    }
-            })
+            .cookieJar(jarFor(accountId))
             .build()
     }
 
@@ -128,43 +91,10 @@ class DdownloadHoster internal constructor(
         form: Map<String, String>? = null,
         referer: String? = null,
         followRedirects: Boolean = true
-    ): Resp {
-        val builder = Request.Builder()
-            .url(url)
-            .header("User-Agent", browserUa)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "de,en;q=0.8")
-        referer?.let { builder.header("Referer", it) }
-        if (form != null) {
-            val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
-            builder.post(body)
-        }
-        val client = if (followRedirects) this else {
-            newBuilder().followRedirects(false).followSslRedirects(false).build()
-        }
-        return client.newCall(builder.build()).execute().use { resp ->
-            val contentType = resp.header("Content-Type")
-            // Never read the body as text without a limit: if the server
-            // followed the download redirect, the body is the whole file and
-            // .string() would exhaust the heap.
-            val text = if (isTextual(contentType)) {
-                runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("")
-            } else {
-                ""
-            }
-            Resp(
-                resp.code, text, resp.header("Location"), contentType,
-                resp.request.url.toString(), resp.header("Content-Disposition")
-            )
-        }
-    }
-
-    /** Only textual responses may be read into memory. */
-    internal fun isTextual(contentType: String?): Boolean =
-        contentType.isNullOrBlank() || isTextualType(contentType)
+    ): PageResponse = fetchPage(url, referer, form, acceptLanguage = "de,en;q=0.8", followRedirects = followRedirects)
 
     /** Detects Cloudflare/WAF blocks so the message does not read "wrong password". */
-    internal fun checkBlocked(resp: Resp) {
+    internal fun checkBlocked(resp: PageResponse) {
         val blocked = resp.code == 403 || resp.code == 503 ||
             resp.body.contains("Just a moment", true) ||
             resp.body.contains("cf-browser-verification", true) ||
@@ -218,22 +148,12 @@ class DdownloadHoster internal constructor(
 
     /** Seeds the OkHttp cookie store with the cookie string from the browser. */
     private fun seedCookies(accountId: Long, raw: String, force: Boolean = false) {
-        val store = cookieStores.getOrPut(accountId) { mutableListOf() }
-        synchronized(store) {
-            if (store.isNotEmpty() && !force) return
-            store.clear()
-            raw.split(';').forEach { part ->
-                val name = part.substringBefore('=').trim()
-                val value = part.substringAfter('=', "").trim()
-                if (name.isNotEmpty()) {
-                    Cookie.Builder()
-                        .name(name).value(value)
-                        .domain(siteHost).path("/")
-                        .build()
-                        .let { store.add(it) }
-                }
-            }
+        val cookies = raw.split(';').mapNotNull { part ->
+            val name = part.substringBefore('=').trim()
+            val value = part.substringAfter('=', "").trim()
+            if (name.isEmpty()) null else Cookie.Builder().name(name).value(value).domain(siteHost).path("/").build()
         }
+        jarFor(accountId).seed(cookies, force)
     }
 
     /** Collects all hidden fields of a form (attribute order does not matter). */
@@ -428,7 +348,11 @@ class DdownloadHoster internal constructor(
                 page = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
                 currentUrl = pageUrl
                 checkBlocked(page)
-                if (page.code in 200..299 && page.isFile) { direct = page.finalUrl; break }
+                if (page.code in 200..299 && page.isFile) {
+                    // The file itself came back on the POST: its address fetched
+                    // via GET is only the file page, so there is no usable link
+                    throw HosterException(Texts.t("hoster_ddownload_no_direct_link", page.code), permanent = false)
+                }
                 direct = extractDirectLink(page.body)
                 if (direct == null && page.code !in 300..399) checkOffline(page.body)
             }
@@ -446,9 +370,13 @@ class DdownloadHoster internal constructor(
                     page.code in 300..399 -> Texts.t("hoster_hint_redirect_without_file")
                     else -> Texts.t("hoster_hint_unexpected_response")
                 }
+                // Form errors about the "rand" id are transient: a reloaded page
+                // yields a fresh one
+                val transientForm = DdownloadFreePage.isExpiredSession(page.body) ||
+                    DdownloadFreePage.isSkippedCountdown(page.body)
                 throw HosterException(
                     Texts.t("hoster_ddownload_no_direct_link_hint", page.code, hint),
-                    permanent = resolveFailurePermanent(page.code, limitReached)
+                    permanent = !transientForm && resolveFailurePermanent(page.code, limitReached)
                 )
             }
             val fileName = pageName ?: pageFileName(page.body)
@@ -462,15 +390,7 @@ class DdownloadHoster internal constructor(
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink = free.resolve(url, hints)
 
     /** Cookie header from the OkHttp store for [url]; null without matching cookies. */
-    internal fun cookieHeader(accountId: Long, url: String): String? {
-        val http = url.toHttpUrlOrNull() ?: return null
-        val store = cookieStores[accountId] ?: return null
-        val now = System.currentTimeMillis()
-        return synchronized(store) {
-            store.filter { it.matches(http) && it.expiresAt > now }
-                .joinToString("; ") { "${it.name}=${it.value}" }
-        }.ifBlank { null }
-    }
+    internal fun cookieHeader(accountId: Long, url: String): String? = cookieJars[accountId]?.cookieHeader(url)
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
@@ -553,7 +473,7 @@ class DdownloadHoster internal constructor(
         val start = pageFileName(html)?.let { text.indexOf(it) }?.takeIf { it >= 0 } ?: 0
         val m = Regex("""(\d+(?:[.,]\d+)?)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(text, start)
             ?: return -1
-        return DdownloadAccountPage.toBytes(m.groupValues[1].replace(',', '.'), m.groupValues[2])
+        return DdownloadAccountPage.toBytes(m.groupValues[1], m.groupValues[2])
     }
 
     /** Direct link via the API (premium required, no captcha). */
@@ -655,11 +575,4 @@ class DdownloadHoster internal constructor(
         !limitReached && code !in 500..599 && code != 429
 
     private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
-}
-
-/** Textual responses (pages, JSON); everything else is file content. */
-private fun isTextualType(contentType: String): Boolean {
-    val type = contentType.lowercase()
-    return type.startsWith("text/") || type.contains("html") || type.contains("json") ||
-        type.contains("xml") || type.contains("javascript")
 }

@@ -7,9 +7,6 @@ import com.jdandroid.hoster.DdownloadHoster
 import com.jdandroid.hoster.FreeCaptcha
 import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.Http
-import com.jdandroid.hoster.WaitException
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -84,6 +81,11 @@ class DdownloadFreeTest {
         assertFalse(DdownloadFreePage.isOffline(seite))
         assertFalse(DdownloadFreePage.isLimitWithoutTime(seite))
         assertFalse(DdownloadFreePage.isWrongCaptcha(seite))
+        val ohneCaptcha = seite
+            .replace(Regex("""<div class="dk-dl-captcha">[\s\S]*?</div>\s*</div>"""), "")
+            .replace(""">60<""", ">600<")
+        assertEquals(FreeCaptcha.None, DdownloadFreePage.captcha(ohneCaptcha))
+        assertEquals(600, DdownloadFreePage.countdownSeconds(ohneCaptcha))
     }
 
     @Test
@@ -109,6 +111,7 @@ class DdownloadFreeTest {
     fun klassischeWartezeitTexteWerdenGerechnet() {
         assertEquals(3723, DdownloadFreePage.parseWaitText(" 1 hour, 2 minutes, 3 seconds till next download"))
         assertEquals(2 * 86_400, DdownloadFreePage.parseWaitText(" 2 days"))
+        assertEquals(7530, DdownloadFreePage.parseWaitText(" 2 Stunden, 5 Minuten, 30 Sekunden warten"))
         assertEquals(3723, DdownloadFreePage.parseWaitText(" 1:02:03 warten"))
         assertEquals(125, DdownloadFreePage.parseWaitText(" 2:05 warten"))
         assertEquals(0, DdownloadFreePage.parseWaitText(" {t} warten bis zum nächsten Download"))
@@ -264,40 +267,6 @@ class DdownloadFreeTest {
         )
         assertFalse(link.headers.containsKey("Cookie"))
         assertNull(link.fileName)
-    }
-
-    /**
-     * Countdown above the inline limit: the form is remembered and the next
-     * attempt does not reload the page, otherwise the countdown would restart
-     * at the same value and the entry would loop without progress.
-     */
-    @Test
-    fun langerCountdownMerktFormularStattSeiteNeuZuLaden() = runBlocking {
-        val ohneCaptcha = seite
-            .replace(Regex("""<div class="dk-dl-captcha">[\s\S]*?</div>\s*</div>"""), "")
-            .replace(""">60<""", ">600<")
-        assertEquals(FreeCaptcha.None, DdownloadFreePage.captcha(ohneCaptcha))
-        assertEquals(600, DdownloadFreePage.countdownSeconds(ohneCaptcha))
-        val server = MockWebServer()
-        server.start()
-        try {
-            server.enqueue(MockResponse().setBody(ohneCaptcha).addHeader("Content-Type", "text/html"))
-            server.enqueue(MockResponse().setBody(ohneCaptcha).addHeader("Content-Type", "text/html"))
-            val lokal = DdownloadHoster(server.url("/").toString().trimEnd('/'))
-            val url = "https://ddownload.com/chnaz5epeg4t"
-            val erste = runCatching { lokal.resolveFree(url, FreeHints()) }.exceptionOrNull()
-            assertTrue("$erste", erste is WaitException)
-            assertEquals(601, (erste as WaitException).seconds)
-            assertEquals(1, server.requestCount)
-            assertEquals("/chnaz5epeg4t", server.takeRequest().path)
-            // Second attempt (after expiry or earlier): no new page, remaining time
-            val zweite = runCatching { lokal.resolveFree(url, FreeHints()) }.exceptionOrNull()
-            assertTrue("$zweite", zweite is WaitException)
-            assertTrue((zweite as WaitException).seconds in 590..601)
-            assertEquals(1, server.requestCount)
-        } finally {
-            server.shutdown()
-        }
     }
 
     @Test

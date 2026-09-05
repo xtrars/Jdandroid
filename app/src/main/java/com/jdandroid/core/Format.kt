@@ -17,3 +17,20 @@ fun formatBytes(bytes: Long): String {
     }
     return String.format(Locale.getDefault(), "%.1f %s", value, units[unit])
 }
+
+/**
+ * "1.5" + "GB", "1,5" + "Go", "700" + "MB" → bytes (1024-based); -1 for an
+ * unreadable number. Only the unit's first letter counts, so the French
+ * octet forms ("Go", "o") work like "GB" and "B".
+ */
+fun parseSize(value: String, unit: String): Long {
+    val number = value.replace(',', '.').toDoubleOrNull() ?: return -1
+    val factor = when (unit.uppercase().firstOrNull()) {
+        'K' -> 1L shl 10
+        'M' -> 1L shl 20
+        'G' -> 1L shl 30
+        'T' -> 1L shl 40
+        else -> 1L
+    }
+    return (number * factor).toLong()
+}

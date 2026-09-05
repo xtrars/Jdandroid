@@ -1,5 +1,7 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.HtmlText
+import com.jdandroid.core.parseSize
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -91,14 +93,7 @@ internal object DdownloadAccountPage {
         val unlimited: Boolean
     )
 
-    /** Visible page text: tags removed, whitespace collapsed. */
-    fun visibleText(html: String): String =
-        html.replace(Regex("""<script\b[^>]*>[\s\S]*?</script>""", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("""<style\b[^>]*>[\s\S]*?</style>""", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("""<[^>]+>"""), " ")
-            .replace("&nbsp;", " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
+    fun visibleText(html: String): String = HtmlText.visible(html)
 
     /**
      * Reads the quota from the account page, tolerant of different layouts:
@@ -110,7 +105,7 @@ internal object DdownloadAccountPage {
     fun parseTraffic(html: String): TrafficParse {
         val text = visibleText(html)
         val size = """(\d+(?:[.,]\d+)?)\s*(TB|GB|MB|KB)\b"""
-        val unit = { v: String, u: String -> toBytes(v.replace(',', '.'), u) }
+        val unit = { v: String, u: String -> toBytes(v, u) }
 
         var left = -1L
         var total = -1L
@@ -154,16 +149,5 @@ internal object DdownloadAccountPage {
     fun apiKeyFromPage(html: String): String? =
         Regex("""(?i)api[\s_-]*key[\s\S]{0,300}?value=["']([a-z0-9]{16,64})["']""").find(html)?.groupValues?.get(1)
 
-    /** "1.2" + "GB" → bytes (1024-based); -1 for an unreadable number. */
-    fun toBytes(value: String, unit: String): Long {
-        val n = value.toDoubleOrNull() ?: return -1
-        val factor = when (unit.uppercase()) {
-            "TB" -> 1L shl 40
-            "GB" -> 1L shl 30
-            "MB" -> 1L shl 20
-            "KB" -> 1L shl 10
-            else -> 1L
-        }
-        return (n * factor).toLong()
-    }
+    fun toBytes(value: String, unit: String): Long = parseSize(value, unit)
 }

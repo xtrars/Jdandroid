@@ -199,6 +199,12 @@ object Http {
     @Volatile
     var browserUserAgent: String? = null
 
+    /** Browser user agent for hoster pages: XFileSharing/Cloudflare reject bot user agents. */
+    val browserUa: String
+        get() = browserUserAgent
+            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.0.0 Mobile Safari/537.36"
+
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)

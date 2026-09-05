@@ -1,6 +1,8 @@
 package com.jdandroid.hoster
 
+import com.jdandroid.core.HtmlText
 import com.jdandroid.core.Texts
+import com.jdandroid.core.parseSize
 
 /**
  * Classification of a notice text of the Rapidgator website in free mode
@@ -60,17 +62,7 @@ internal object RapidgatorFreePage {
         return toBytes(m.groupValues[1], m.groupValues[2])
     }
 
-    fun toBytes(value: String, unit: String): Long {
-        val number = value.replace(",", ".").toDoubleOrNull() ?: return -1
-        val factor = when (unit.uppercase().first()) {
-            'K' -> 1024.0
-            'M' -> 1024.0 * 1024
-            'G' -> 1024.0 * 1024 * 1024
-            'T' -> 1024.0 * 1024 * 1024 * 1024
-            else -> 1.0
-        }
-        return (number * factor).toLong()
-    }
+    fun toBytes(value: String, unit: String): Long = parseSize(value, unit)
 
     /** MD5 of the file if the page shows one (usually not on the free page). */
     fun md5(html: String): String? =
@@ -177,10 +169,5 @@ internal object RapidgatorFreePage {
      */
     fun pageBlock(html: String): RapidgatorBlock? = classify(visibleText(html))
 
-    fun visibleText(html: String): String =
-        html.replace(Regex("""<script[\s\S]*?</script>""", ic), " ")
-            .replace(Regex("""<style[\s\S]*?</style>""", ic), " ")
-            .replace(Regex("""<!--[\s\S]*?-->"""), " ")
-            .replace(Regex("""<[^>]+>"""), " ")
-            .replace(Regex("""\s+"""), " ")
+    fun visibleText(html: String): String = HtmlText.visible(html)
 }

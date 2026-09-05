@@ -181,6 +181,62 @@ class RapidgatorFlowTest {
         }
     }
 
+    /**
+     * The server rejects the unlock or the captcha page; [perRestart] requests
+     * per attempt (file page and timer again), [perRejection] until the rejection.
+     */
+    private fun neustartBisAbbruch(
+        server: MockWebServer,
+        hoster: RapidgatorHoster,
+        perRejection: Int,
+        grund: String
+    ) {
+        val erste = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$erste", erste is WaitException)
+        assertEquals(1, (erste as WaitException).seconds)
+        assertEquals(2, server.requestCount)
+
+        // Rejected three times: the session is discarded and file page and timer fetched again
+        repeat(3) {
+            val vorher = server.requestCount
+            val fehler = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+            assertTrue("$it: $fehler", fehler is WaitException)
+            assertEquals(1, (fehler as WaitException).seconds)
+            assertEquals(vorher + perRejection + 2, server.requestCount)
+        }
+
+        // Fourth rejection: give up for now without fetching a new page
+        val vorher = server.requestCount
+        val abbruch = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$abbruch", abbruch is HosterException && !abbruch.permanent)
+        assertEquals(Texts.t("hoster_rapidgator_flow_not_accepted", grund), abbruch!!.message)
+        assertEquals(vorher + perRejection, server.requestCount)
+
+        // Counter reset: the next attempt starts from the file page again
+        val danach = failure { hoster.resolveFree(fileUrl, FreeHints()) }
+        assertTrue("$danach", danach is WaitException)
+        assertEquals(vorher + perRejection + 2, server.requestCount)
+    }
+
+    @Test
+    fun ungueltigerTimerStartetNeuUndGibtNachDreiNeustartsAuf() = withServer { server, hoster ->
+        val code = "You didn`t wait specified time. Try again or contact to administrator"
+        server.dispatcher = freeDispatcher(
+            html(dateiseite(0)),
+            getLink = json("""{"state":"error","code":"$code","0":"step3"}""")
+        )
+        neustartBisAbbruch(server, hoster, perRejection = 1, grund = Texts.t("hoster_rapidgator_unlock_rejected", code))
+    }
+
+    @Test
+    fun weiterleitungDerCaptchaSeiteStartetNeuUndGibtNachDreiNeustartsAuf() = withServer { server, hoster ->
+        server.dispatcher = freeDispatcher(
+            html(dateiseite(0)),
+            captcha = MockResponse().setResponseCode(302).addHeader("Location", "/file/$fileId")
+        )
+        neustartBisAbbruch(server, hoster, perRejection = 2, grund = Texts.t("hoster_rapidgator_captcha_page_redirect"))
+    }
+
     @Test
     fun dateiseiteOfflineOderNichtErreichbar() = withServer { server, hoster ->
         server.enqueue(html("<html><body><h1>404 File not found</h1></body></html>", 404))

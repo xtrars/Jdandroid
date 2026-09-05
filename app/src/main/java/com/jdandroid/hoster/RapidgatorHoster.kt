@@ -7,9 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
-import okhttp3.CookieJar
 import okhttp3.FormBody
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -53,14 +51,7 @@ class RapidgatorHoster internal constructor(
     /** Captcha page: the user solves the Turnstile there in the embedded browser. */
     private val captchaPageUrl get() = "$siteBase/download/captcha"
 
-    /**
-     * Browser user agent as in the captcha view: timer, unlock, captcha and
-     * file request run under the same user agent and cookies.
-     */
-    private val browserUa: String
-        get() = Http.browserUserAgent
-            ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/122.0.0.0 Mobile Safari/537.36"
+    private val browserUa: String get() = Http.browserUa
 
     /**
      * State of a free flow per file id: own cookie store (PHPSESSID, __token,
@@ -72,24 +63,8 @@ class RapidgatorHoster internal constructor(
         var fileName: String? = null
         var fileSize = -1L
         var hash: String? = null
-        val store = mutableListOf<Cookie>()
-        val client: OkHttpClient = baseClient.newBuilder()
-            .followRedirects(true)
-            .cookieJar(object : CookieJar {
-                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    synchronized(store) {
-                        for (c in cookies) {
-                            store.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
-                            store.add(c)
-                        }
-                    }
-                }
-                override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(store) {
-                    val now = System.currentTimeMillis()
-                    store.filter { it.matches(url) && it.expiresAt > now }
-                }
-            })
-            .build()
+        val jar = MemoryCookieJar()
+        val client: OkHttpClient = baseClient.newBuilder().followRedirects(true).cookieJar(jar).build()
         var sid: String? = null
         var readyAt = 0L
         var linkReady = false
@@ -97,21 +72,9 @@ class RapidgatorHoster internal constructor(
 
         val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
 
-        /** Cookie header for [url], null without matching cookies. */
-        fun cookieHeader(url: String): String? {
-            val http = runCatching { url.toHttpUrl() }.getOrNull() ?: return null
-            val now = System.currentTimeMillis()
-            return synchronized(store) {
-                store.filter { it.matches(http) && it.expiresAt > now }
-                    .joinToString("; ") { "${it.name}=${it.value}" }
-            }.ifBlank { null }
-        }
+        fun cookieHeader(url: String): String? = jar.cookieHeader(url)
 
-        /** All cookies in Set-Cookie format for the browser. */
-        fun cookiesForBrowser(): List<String> = synchronized(store) {
-            val now = System.currentTimeMillis()
-            store.filter { it.expiresAt > now }.map { it.toString() }
-        }
+        fun cookiesForBrowser(): List<String> = jar.cookiesForBrowser()
     }
 
     private val freeSessions = ConcurrentHashMap<String, FreeSession>()
@@ -119,37 +82,12 @@ class RapidgatorHoster internal constructor(
     /** Restarts per file when the server rejects the timer or the state. */
     private val restarts = ConcurrentHashMap<String, Int>()
 
-    private data class Resp(val code: Int, val body: String, val location: String?, val finalUrl: String)
-
     private fun FreeSession.fetch(
         url: String,
         referer: String? = null,
         ajax: Boolean = false,
         followRedirects: Boolean = true
-    ): Resp {
-        val builder = Request.Builder()
-            .url(url)
-            .header("User-Agent", browserUa)
-            .header("Accept-Language", "en,de;q=0.8")
-        if (ajax) {
-            builder.header("Accept", "application/json, text/javascript, */*; q=0.01")
-                .header("X-Requested-With", "XMLHttpRequest")
-        } else {
-            builder.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        }
-        referer?.let { builder.header("Referer", it) }
-        val c = if (followRedirects) client else {
-            client.newBuilder().followRedirects(false).followSslRedirects(false).build()
-        }
-        return c.newCall(builder.build()).execute().use { resp ->
-            val type = resp.header("Content-Type").orEmpty().lowercase()
-            // Only read pages and JSON as text, never a file (heap)
-            val textual = type.isBlank() || type.startsWith("text/") || type.contains("json") ||
-                type.contains("javascript") || type.contains("xml")
-            val body = if (textual) runCatching { resp.peekBody(Http.MAX_TEXT_BYTES).string() }.getOrDefault("") else ""
-            Resp(resp.code, body, resp.header("Location"), resp.request.url.toString())
-        }
-    }
+    ): PageResponse = client.fetchPage(url, referer, ajax = ajax, followRedirects = followRedirects)
 
     private fun waitFor(block: RapidgatorBlock): Nothing = when (block) {
         is RapidgatorBlock.Wait -> throw WaitException(block.seconds, block.text)
@@ -261,7 +199,7 @@ class RapidgatorHoster internal constructor(
         freeSessions.remove(id)
         val session = FreeSession(pageUrl, client)
         // Force English texts so the error patterns match
-        session.store.add(Cookie.Builder().name("lang").value("en").domain(siteHost).path("/").build())
+        session.jar.add(Cookie.Builder().name("lang").value("en").domain(siteHost).path("/").build())
         val page = session.fetch(pageUrl, referer = "$siteBase/")
         // Unknown id: 302 to /article/premium; rg.to redirects to rapidgator.net
         if (page.code == 404 || !page.finalUrl.contains("/file/$id", ignoreCase = true) ||

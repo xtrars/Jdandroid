@@ -17,13 +17,12 @@ import java.util.concurrent.ConcurrentHashMap
 internal class DdownloadFree(private val hoster: DdownloadHoster) {
 
     /**
-     * Intermediate state of a free flow per file code when the countdown is
-     * long: the parsed form ("rand" id, solved span captcha), name and size,
-     * and the time from which the form may be submitted. The cookies live in
-     * the free client's store (clientFor(0)). Without this state every retry
-     * would reload the page, the countdown would show the same value again
-     * and the entry would loop without progress (a wait does not count as an
-     * attempt).
+     * Intermediate state of a free flow per file code: the parsed form ("rand"
+     * id, solved span captcha), name and size, and the time from which the
+     * form may be submitted. The cookies live in the free client's store
+     * (clientFor(0)). Without this state every retry would reload the page,
+     * the countdown would show the same value again and the entry would loop
+     * without progress (a wait does not count as an attempt).
      */
     private class FreeSession(
         val form: Map<String, String>,
@@ -42,8 +41,11 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
 
     private val freeSessions = ConcurrentHashMap<String, FreeSession>()
 
-    /** Countdowns up to this run in-process; longer ones become engine wait time. */
-    private val MAX_INLINE_COUNTDOWN = 180
+    /**
+     * Countdowns up to this run in-process; longer ones become engine wait
+     * time so the job neither holds a slot nor keeps the wake lock.
+     */
+    private val MAX_INLINE_COUNTDOWN = 5
 
     /** Minimum wait after a block without a concrete time (seconds). */
     private val MIN_RETRY_WAIT = 60
@@ -115,12 +117,10 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             }
             form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
             countdown = DdownloadFreePage.countdownSeconds(page.body)
-            if (countdown > MAX_INLINE_COUNTDOWN) {
-                // Remember form and ready time; the next attempt submits it
-                freeSessions[code] = FreeSession(
-                    form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
-                )
-            }
+            // Remember form and ready time; the next attempt submits it
+            freeSessions[code] = FreeSession(
+                form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
+            )
         }
 
         // Countdown before the download: short waits in-process, long ones
@@ -138,14 +138,20 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         var currentUrl = pageUrl
         var hops = 0
         while (direct == null && hops++ < 6) {
-            if (resp.code in 200..299 && resp.isFile) { direct = resp.finalUrl; break }
             if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
                 val target = hoster.resolveLocation(currentUrl, resp.location!!)
                 if (hoster.isFileServerUrl(target)) { direct = target; break }
                 resp = with(hoster) { client.fetch(target, referer = currentUrl, followRedirects = false) }
                 currentUrl = target
                 hoster.checkBlocked(resp)
+                // Response is already the file: the fetched address is the link
+                if (resp.code in 200..299 && resp.isFile) { direct = target; break }
                 continue
+            }
+            if (resp.code in 200..299 && resp.isFile) {
+                // The file itself came back on the POST: its address fetched
+                // via GET is only the file page, so there is no usable link
+                throw HosterException(Texts.t("hoster_ddownload_no_direct_link", resp.code), permanent = false)
             }
             direct = hoster.extractDirectLink(resp.body)
             break

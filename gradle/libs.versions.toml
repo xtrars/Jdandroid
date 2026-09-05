@@ -16,6 +16,7 @@ coroutines = "1.11.0"
 junit = "4.13.2"
 androidxTestRunner = "1.7.0"
 androidxTestExtJunit = "1.3.0"
+orgJson = "20260814"
 
 [libraries]
 nfs-client = { group = "com.emc.ecs", name = "nfs-client", version.ref = "nfsClient" }
@@ -49,6 +50,8 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 # JVM tests of the SQL queries (ArchiveSetsTest); same version as the Room compiler
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
+# Real org.json for JVM tests: android.jar only carries a stub that throws "not mocked"
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 
