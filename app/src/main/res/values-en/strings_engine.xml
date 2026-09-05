@@ -20,13 +20,13 @@
     <string name="engine_part_size_mismatch">Partial file does not match the file size – restarting</string>
     <string name="engine_http_error">Server responded with HTTP %1$d</string>
     <string name="engine_html_instead_of_file">Server returned an HTML page instead of the file (%1$s) – link will be resolved again</string>
-    <string name="engine_empty_response">Empty response while downloading</string>
+    <string name="engine_empty_response">Empty response while downloading – link will be resolved again</string>
+    <string name="engine_size_mismatch">Server reports %1$s instead of %2$s – link will be resolved again</string>
     <string name="engine_not_enough_space">Not enough storage space: %1$s needed, %2$s free</string>
     <string name="engine_download_incomplete">Download incomplete (%1$s of %2$s)</string>
     <string name="engine_hash_mismatch">Checksum (%1$s) does not match – file will be downloaded again</string>
 
     <!-- Archives and extraction -->
-    <string name="engine_archive_name_clash">An archive with the same name exists in another package, not extracted</string>
     <string name="engine_first_volume_missing_not_extracted">First archive part missing, not extracted</string>
     <string name="engine_first_volume_missing">First archive part missing</string>
     <string name="engine_entry_not_found">Entry not found</string>
