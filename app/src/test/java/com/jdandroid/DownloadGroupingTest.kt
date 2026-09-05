@@ -116,4 +116,41 @@ class DownloadGroupingTest {
         assertFalse(idle.extracting)
         assertEquals(-1, idle.extractPercent)
     }
+
+    @Test
+    fun reihenfolgeImPaketFolgtDemHinzufuegezeitpunktNichtDerId() {
+        val packages = listOf(DownloadPackage(id = 1, name = "A"))
+        val items = listOf(item(10, 1, addedAt = 300), item(11, 1, addedAt = 100), item(12, 1, addedAt = 200))
+        val group = groupDownloads(items, packages, LOOSE).single()
+        assertEquals(listOf(11L, 12L, 10L), group.items.map { it.id })
+    }
+
+    @Test
+    fun paketreihenfolgeFolgtDerPaketlisteUndLoseEintraegeKommenZuletzt() {
+        // The package list is already sorted (newest first); the grouping must not reorder it
+        val packages = listOf(DownloadPackage(id = 2, name = "B"), DownloadPackage(id = 1, name = "A"))
+        val groups = groupDownloads(listOf(item(10, null), item(11, 1), item(12, 2)), packages, LOOSE)
+        assertEquals(listOf("B", "A", LOOSE), groups.map { it.pkg.name })
+        val loose = groups.last().pkg
+        assertEquals(0L, loose.id)
+        assertFalse(loose.autoNamed)
+    }
+
+    @Test
+    fun liveWerteOhneEntpackStandErzeugenKeinenEintrag() {
+        // Bytes-only live values (a running download) do not count as extraction progress
+        val running = item(10, 1).copy(status = DownloadStatus.RUNNING)
+        val extracting = item(11, 1).copy(status = DownloadStatus.EXTRACTING)
+        val live = mapOf(10L to LiveProgress(downloadedBytes = 500, speedBps = 9), 11L to LiveProgress(extractPercent = 0))
+        val group = groupDownloads(listOf(running, extracting), listOf(DownloadPackage(id = 1, name = "A")), LOOSE, live).single()
+        assertEquals(mapOf(11L to 0), group.extractPercents)
+        assertEquals(0, group.extractPercent)
+        assertEquals(-1, group.extractPercent(running))
+    }
+
+    @Test
+    fun leereEingabeErgibtKeineGruppen() {
+        assertTrue(groupDownloads(emptyList(), listOf(DownloadPackage(id = 1, name = "A")), LOOSE).isEmpty())
+        assertTrue(groupDownloads(emptyList(), emptyList(), LOOSE).isEmpty())
+    }
 }

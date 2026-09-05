@@ -60,9 +60,9 @@ object ContainerDecrypter {
 
     /**
      * Decrypts the content of a .dlc file into packages with URLs. Requires
-     * the JDownloader DLC service.
+     * the JDownloader DLC service ([rcFetcher], replaceable in tests).
      */
-    fun decryptDlcPackages(dlcContent: String): List<DlcPackage> {
+    fun decryptDlcPackages(dlcContent: String, rcFetcher: (String) -> String = ::fetchRc): List<DlcPackage> {
         // When the container arrives via form (Click'n'Load /flash/addcrypted)
         // the browser has already decoded "+" to spaces; convert back.
         val data = dlcContent.replace(' ', '+').filterNot { it.isWhitespace() }
@@ -72,7 +72,7 @@ object ContainerDecrypter {
         val dlcData = base64(data.substring(0, data.length - 88))
         if (dlcData.size % 16 != 0) throw ContainerException(ContainerTexts.t("service_dlc_corrupt"))
 
-        val realKey = deriveKey(fetchRc(dlcKey))
+        val realKey = deriveKey(rcFetcher(dlcKey))
         val xml = decodeXml(aesCbcDecrypt(dlcData, realKey, realKey))
         val packages = parsePackages(xml)
         if (packages.all { it.urls.isEmpty() }) {
@@ -82,8 +82,8 @@ object ContainerDecrypter {
     }
 
     /** All URLs of a DLC without package structure. */
-    fun decryptDlc(dlcContent: String): List<String> =
-        decryptDlcPackages(dlcContent).flatMap { it.urls }
+    fun decryptDlc(dlcContent: String, rcFetcher: (String) -> String = ::fetchRc): List<String> =
+        decryptDlcPackages(dlcContent, rcFetcher).flatMap { it.urls }
 
     /** AES/NoPadding leaves padding bytes; keep only valid base64 characters. */
     internal fun decodeXml(plain: ByteArray): String =
