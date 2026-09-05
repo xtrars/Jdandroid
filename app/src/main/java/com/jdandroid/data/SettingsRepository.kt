@@ -208,9 +208,20 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
+        /** Upper bound of the stored password list; every extraction tries all entries. */
+        const val MAX_STORED_PASSWORDS = 200
+
         /** Bytes pro Sekunde fuer ein Limit in Mbit/s (0 = unbegrenzt). */
         fun mbitToBytesPerSecond(mbit: Double): Long =
             if (mbit <= 0) 0L else (mbit * 1_000_000 / 8).toLong()
+
+        /** Appends [fresh] to [existing] without duplicates, dropping the oldest entries beyond the cap. */
+        fun mergePasswords(existing: List<String>, fresh: List<String>): List<String> =
+            (existing + fresh)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .takeLast(MAX_STORED_PASSWORDS)
     }
 
     suspend fun currentClickNLoadEnabled(): Boolean = clickNLoadEnabled.first()
@@ -246,9 +257,8 @@ class SettingsRepository(private val context: Context) {
         val fresh = passwords.map { it.trim() }.filter { it.isNotEmpty() }
         if (fresh.isEmpty()) return
         context.dataStore.edit { prefs ->
-            val existing = (prefs[keyPasswords] ?: "").lines().map { it.trim() }.filter { it.isNotEmpty() }
-            val merged = (existing + fresh).distinct()
-            prefs[keyPasswords] = merged.joinToString("\n")
+            val existing = (prefs[keyPasswords] ?: "").lines()
+            prefs[keyPasswords] = mergePasswords(existing, fresh).joinToString("\n")
         }
     }
 }

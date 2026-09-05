@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockWebServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -242,6 +243,18 @@ class DdownloadFreeTest {
         } finally {
             Http.browserUserAgent = alt
         }
+    }
+
+    /** Weiterleitung auf ein fremdes CDN: der Link zaehlt, die Hoster-Cookies gehen nicht mit. */
+    @Test
+    fun fremderHostBekommtKeineCookies() = runBlocking {
+        val link = hoster.resolveFree(
+            "https://ddownload.com/chnaz5epeg4t",
+            FreeHints(direktUrlAusBrowser = "https://cdn7.other-cdn.net/d/abc/name.rar", cookies = "cf_clearance=xyz")
+        )
+        assertEquals("https://cdn7.other-cdn.net/d/abc/name.rar", link.directUrl)
+        assertFalse(link.headers.containsKey("Cookie"))
+        assertNotNull(link.headers["User-Agent"])
     }
 
     @Test

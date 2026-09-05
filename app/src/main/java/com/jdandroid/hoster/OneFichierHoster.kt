@@ -1,6 +1,7 @@
 package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainApiKey
 import kotlinx.coroutines.Dispatchers
@@ -216,7 +217,7 @@ class OneFichierHoster : Hoster {
                     secure(direct),
                     session?.fileName,
                     session?.fileSize ?: -1,
-                    headers = freeHeaders(link, hints.cookies ?: session?.cookieHeader(direct))
+                    headers = freeHeaders(link, direct, hints.cookies ?: session?.cookieHeader(direct))
                 )
             }
 
@@ -264,7 +265,7 @@ class OneFichierHoster : Hoster {
                 secure(direct),
                 session.fileName,
                 session.fileSize,
-                headers = freeHeaders(link, session.cookieHeader(direct))
+                headers = freeHeaders(link, direct, session.cookieHeader(direct))
             )
         }
 
@@ -282,7 +283,7 @@ class OneFichierHoster : Hoster {
         if (page.isFile) {
             // Hotlink: Besitzer zahlt den Traffic, keine Wartezeit
             session.hotlink = ResolvedLink(
-                secure(page.finalUrl), headers = freeHeaders(link, session.cookieHeader(page.finalUrl))
+                secure(page.finalUrl), headers = freeHeaders(link, page.finalUrl, session.cookieHeader(page.finalUrl))
             )
             return session
         }
@@ -315,12 +316,15 @@ class OneFichierHoster : Hoster {
     /**
      * Header fuer den Dateiabruf im Free-Modus: Browser-Kennung, Referer der
      * Dateiseite und die Session-Cookies, falls der Fileserver sie verlangt.
+     * Cookies only for the hoster's own hosts, never for a foreign [directUrl].
      */
-    internal fun freeHeaders(pageUrl: String, cookies: String?): Map<String, String> {
+    internal fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
         headers["User-Agent"] = browserUa
         headers["Referer"] = pageUrl
-        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        if (DirectLinks.isSiteHost(directUrl, siteHosts)) {
+            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        }
         return headers
     }
 
@@ -474,11 +478,15 @@ class OneFichierHoster : Hoster {
             premiumUntil = end,
             trafficLeft = -1,
             trafficUnlimited = premium,
-            statusText = (if (premium) "Premium/Access" else freeStatusText).let { status ->
-                if (cdnGb != null && cdnGb > 0) Texts.t("hoster_status_cdn_credit", status, cdnGb) else status
-            }
+            statusText = withCdnCredit(if (premium) "Premium/Access" else freeStatusText, cdnGb)
         )
     }
+
+    /** Appends the CDN credit (reported by the API in GB) in binary units. */
+    internal fun withCdnCredit(status: String, cdnGb: Double?): String =
+        if (cdnGb != null && cdnGb > 0) {
+            Texts.t("hoster_status_cdn_credit", status, formatBytes((cdnGb * (1L shl 30)).toLong()))
+        } else status
 
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {

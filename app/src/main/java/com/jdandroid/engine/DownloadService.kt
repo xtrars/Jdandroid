@@ -95,9 +95,10 @@ class DownloadService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
         engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
         startForegroundCompat(buildNotification(getString(R.string.service_preparing)))
+        // Service is already stopping: no startup block, no network callback.
+        if (foregroundRefused) return
         scope.launch {
             try {
-                if (foregroundRefused) return@launch
                 // Erst CnL-Zustand klaeren, dann erst pumpen (sonst Race mit refresh)
                 if ((application as JdApp).settings.currentClickNLoadEnabled()) {
                     cnlWanted = true
@@ -256,9 +257,10 @@ class DownloadService : Service() {
         // Bei aktivem Click'n'Load Server am Leben halten, damit der Port lauscht.
         // Die Stopp-Entscheidung faellt unter der Engine-Sperre (isIdle) und mit
         // stopSelfResult: ein gleichzeitig eintreffender Befehl verhindert den Stopp.
-        if (startupDone && !cnlActive && engine.isIdle()) {
+        // Drop the foreground status only once the stop is certain, otherwise a
+        // concurrent command would leave a plain background service behind.
+        if (startupDone && !cnlActive && engine.isIdle() && stopSelfResult(lastStartId)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelfResult(lastStartId)
             return
         }
         ensureForegroundType(active > 0)

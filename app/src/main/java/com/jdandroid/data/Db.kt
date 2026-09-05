@@ -250,6 +250,10 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
     suspend fun pauseIfActive(id: Long)
 
+    /** [pauseIfActive] for every entry of a package in one statement. */
+    @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE packageId = :packageId AND status IN ('RUNNING', 'QUEUED')")
+    suspend fun pauseActiveInPackage(packageId: Long)
+
     /** "Nur WLAN": laufenden Download zurueck in die Warteschlange (startet bei WLAN automatisch). */
     @Query(
         "UPDATE downloads SET status = 'QUEUED', retryAt = 0, speedBps = 0, " +
@@ -309,10 +313,7 @@ interface DownloadDao {
     suspend fun completedArchives(packageId: Long): List<DownloadItem>
 
     @Query(ArchiveSets.COUNT_KEY)
-    suspend fun countByArchiveKey(key: String): Int
-
-    @Query(ArchiveSets.SAME_NAME_ELSEWHERE)
-    suspend fun countSameNameElsewhere(fileName: String, packageId: Long?): Int
+    suspend fun countByArchiveKey(packageId: Long?, key: String): Int
 
     /** Fertigen Eintrag von vorn laden. */
     @Query(

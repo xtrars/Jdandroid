@@ -11,6 +11,7 @@
     <string name="accounts_not_checked">Noch nicht geprüft</string>
     <string name="accounts_status_premium_until">%1$s · bis %2$s</string>
     <string name="accounts_check">Prüfen</string>
+    <string name="accounts_account_actions">Kontoaktionen</string>
     <string name="accounts_delete_title">Konto löschen?</string>
     <string name="accounts_delete_text">%1$s: %2$s wird entfernt. Downloads dieses Hosters können danach nicht mehr starten.</string>
     <string name="accounts_api_key">API-Key</string>

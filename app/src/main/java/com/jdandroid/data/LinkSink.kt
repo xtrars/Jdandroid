@@ -39,8 +39,6 @@ object LinkSink {
         val dao = app.db.downloadDao()
         val packageDao = app.db.packageDao()
 
-        if (passwords.isNotEmpty()) app.settings.addPasswords(passwords)
-
         val parsed = LinkParser.parse(text)
         if (parsed.isEmpty()) return 0
 
@@ -75,6 +73,8 @@ object LinkSink {
             inserted
         }
         if (ids.isEmpty()) return 0
+        // Only requests that actually added links may extend the password list
+        if (passwords.isNotEmpty()) app.settings.addPasswords(passwords)
         if (autoStart) onQueued(context)
         else LinkChecker.schedule(app, ids)
         return ids.size

@@ -3,6 +3,7 @@ package com.jdandroid.ui
 import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jdandroid.JdApp
@@ -37,27 +38,63 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** Ein Paket mit seinen Downloads. */
+@Immutable
 data class DownloadGroup(
     val pkg: DownloadPackage,
     val items: List<DownloadItem>,
     /** Entpack-Stand je Eintrag in Prozent (nur live aus dem [ProgressBus]), fehlend = unbekannt. */
     val extractPercents: Map<Long, Int> = emptyMap()
 ) {
-    val total: Long get() = items.sumOf { it.fileSize.coerceAtLeast(0) }
-    // Nur Eintraege mit bekannter Groesse zaehlen, sonst steht "1,2 GiB / 700 MiB"
-    val done: Long get() = items.sumOf { if (it.fileSize > 0) it.downloadedBytes else 0L }
-    val speed: Long get() = items.sumOf { it.speedBps }
-    val finished: Int get() = items.count { it.status == DownloadStatus.COMPLETED }
-    val failed: Int get() = items.count { it.status == DownloadStatus.FAILED }
-    val active: Boolean get() = items.any {
-        it.status == DownloadStatus.RUNNING || it.status == DownloadStatus.EXTRACTING
-    }
+    /** Sum of the known file sizes. */
+    val total: Long
+    /** Downloaded bytes of entries with a known size only, so "1.2 GiB / 700 MiB" cannot appear. */
+    val done: Long
+    val speed: Long
+    val finished: Int
+    val failed: Int
+    val active: Boolean
     /** Laeuft gerade ein Entpacken in diesem Paket? */
-    val extracting: Boolean get() = items.any { it.status == DownloadStatus.EXTRACTING }
+    val extracting: Boolean
     /** Entpack-Fortschritt in Prozent, -1 = unbekannt. */
-    val extractPercent: Int get() = items
-        .filter { it.status == DownloadStatus.EXTRACTING }
-        .maxOfOrNull { extractPercents[it.id] ?: -1 } ?: -1
+    val extractPercent: Int
+
+    // Computed once per instance: the header reads these fields on every recomposition.
+    init {
+        var total = 0L
+        var done = 0L
+        var speed = 0L
+        var finished = 0
+        var failed = 0
+        var active = false
+        var extracting = false
+        var percent = -1
+        for (item in items) {
+            if (item.fileSize > 0) {
+                total += item.fileSize
+                done += item.downloadedBytes
+            }
+            speed += item.speedBps
+            when (item.status) {
+                DownloadStatus.COMPLETED -> finished++
+                DownloadStatus.FAILED -> failed++
+                DownloadStatus.RUNNING -> active = true
+                DownloadStatus.EXTRACTING -> {
+                    active = true
+                    extracting = true
+                    percent = maxOf(percent, extractPercents[item.id] ?: -1)
+                }
+                else -> {}
+            }
+        }
+        this.total = total
+        this.done = done
+        this.speed = speed
+        this.finished = finished
+        this.failed = failed
+        this.active = active
+        this.extracting = extracting
+        this.extractPercent = percent
+    }
 
     /** Entpack-Stand eines Eintrags in Prozent, -1 = unbekannt. */
     fun extractPercent(item: DownloadItem): Int = extractPercents[item.id] ?: -1
@@ -160,7 +197,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val collectorGroups: StateFlow<List<DownloadGroup>> =
         combine(dao.observeAll(), packageDao.observeAll()) { items, packages ->
             groupDownloads(items.filter { it.status == DownloadStatus.COLLECTED }, packages, noPackageName())
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Uebersetzte Beschriftung der Sammelgruppe fuer Eintraege ohne Paket. */
     private fun noPackageName(): String = getApplication<Application>().getString(R.string.accounts_no_package)

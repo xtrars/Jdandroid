@@ -173,22 +173,13 @@ class ArchiveSetsTest : SchemaDbTest() {
     }
 
     @Test
-    fun `countByArchiveKey zaehlt paketuebergreifend`() {
+    fun `countByArchiveKey zaehlt nur im eigenen Paket`() {
         item(1, "film.part1.rar", DownloadStatus.COMPLETED)
         item(2, "film.part2.rar", DownloadStatus.QUEUED, packageId = 2)
-        assertEquals(2, count(ArchiveSets.COUNT_KEY, "key" to "film"))
-        assertEquals(0, count(ArchiveSets.COUNT_KEY, "key" to "other"))
-    }
-
-    @Test
-    fun `sameNameElsewhere nur fertige Dateien anderer Pakete`() {
-        item(1, "film.rar", DownloadStatus.RUNNING)
-        item(2, "film.rar", DownloadStatus.COMPLETED, packageId = 2)
-        assertEquals(1, count(ArchiveSets.SAME_NAME_ELSEWHERE, "fileName" to "film.rar", "packageId" to 1L))
-        assertEquals(0, count(ArchiveSets.SAME_NAME_ELSEWHERE, "fileName" to "film.rar", "packageId" to 2L))
-        // Ohne Paket: jedes Paket ist "anderes Paket"
-        assertEquals(1, count(ArchiveSets.SAME_NAME_ELSEWHERE, "fileName" to "film.rar", "packageId" to null))
-        bind("UPDATE downloads SET status = 'QUEUED' WHERE id = 2").use { it.executeUpdate() }
-        assertEquals(0, count(ArchiveSets.SAME_NAME_ELSEWHERE, "fileName" to "film.rar", "packageId" to 1L))
+        item(3, "film.part3.rar", DownloadStatus.QUEUED, packageId = null)
+        assertEquals(1, count(ArchiveSets.COUNT_KEY, "packageId" to 1L, "key" to "film"))
+        assertEquals(1, count(ArchiveSets.COUNT_KEY, "packageId" to 2L, "key" to "film"))
+        assertEquals(1, count(ArchiveSets.COUNT_KEY, "packageId" to null, "key" to "film"))
+        assertEquals(0, count(ArchiveSets.COUNT_KEY, "packageId" to 1L, "key" to "other"))
     }
 }

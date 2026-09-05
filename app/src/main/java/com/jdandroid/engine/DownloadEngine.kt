@@ -3,6 +3,7 @@ package com.jdandroid.engine
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.room.withTransaction
 import com.jdandroid.JdApp
 import com.jdandroid.core.ArchiveNames
 import com.jdandroid.core.Clock
@@ -187,14 +188,23 @@ class DownloadEngine(
     }
 
     suspend fun pause(id: Long) {
-        // Bus nur fuer den abgebrochenen Job leeren: ein Eintrag, der gerade
-        // entpackt wird, behaelt seinen Prozentwert (pauseIfActive greift dort nicht)
-        mutex.withLock { jobs.remove(id) }?.let { it.cancel(); ProgressBus.remove(id) }
-        // Nur RUNNING/QUEUED pausieren - ein Eintrag, der gerade fertig wird
-        // oder entpackt, bleibt unberuehrt (sonst Neudownload beim Fortsetzen).
-        // Unter der Abschluss-Sperre, damit ein laufender Abschluss zu Ende kommt
-        completionMutex.withLock { dao.pauseIfActive(id) }
+        cancelAndPause(listOf(id)) { dao.pauseIfActive(id) }
         pump()
+    }
+
+    /**
+     * Cancels the jobs of [ids] and runs [pauseRows] (RUNNING/QUEUED -> PAUSED)
+     * under [mutex], so the finally-pump of a cancelled job cannot start the
+     * next entry of the batch in between. Only cancelled jobs leave the bus
+     * (an extracting entry keeps its percentage); [pauseRows] runs under the
+     * completion lock so a finishing transfer is never paused after its file
+     * was moved.
+     */
+    private suspend fun cancelAndPause(ids: Collection<Long>, pauseRows: suspend () -> Unit) {
+        mutex.withLock {
+            ids.forEach { id -> jobs.remove(id)?.let { it.cancel(); ProgressBus.remove(id) } }
+            completionMutex.withLock { pauseRows() }
+        }
     }
 
     suspend fun cancelAndDelete(id: Long) {
@@ -205,32 +215,46 @@ class DownloadEngine(
         dao.delete(id)
         item?.let {
             tempFile(it).delete()
-            // Archivteile im App-Ordner mit entfernen, wenn kein anderer Eintrag
-            // (auch keines anderen Pakets - der Ordner ist flach) dasselbe
-            // Archiv referenziert; sonst bleiben sie unsichtbar liegen
+            // Archivteile im Paketordner mit entfernen, wenn kein anderer Eintrag
+            // des Pakets dasselbe Archiv referenziert; sonst bleiben sie unsichtbar liegen
             val key = it.archiveKey
-            if (key != null && dao.countByArchiveKey(key) == 0) {
-                storage.downloadDir().listFiles()
+            if (key != null && dao.countByArchiveKey(it.packageId, key) == 0) {
+                archives.archiveDir(it.packageId).listFiles()
                     ?.filter { f -> f.isFile && ArchiveNames.archiveBase(f.name) == key }
                     ?.forEach { f -> f.delete() }
             }
+            // The deleted entry may have been the last one a waiting archive set was blocked by
+            archives.retryWaitingSets(it.packageId)
         }
         pump()
     }
 
-    /** Alle Eintraege eines Pakets pausieren - ein Dienst-Aufruf statt einem je Eintrag. */
+    /** Pauses all entries of a package with one pump at the end. */
     suspend fun pausePackage(packageId: Long) {
-        dao.byPackage(packageId).forEach { pause(it.id) }
+        val ids = dao.byPackage(packageId).map { it.id }
+        cancelAndPause(ids) { dao.pauseActiveInPackage(packageId) }
+        pump()
     }
 
     /**
-     * Paket samt Eintraegen loeschen: erst jeden Eintrag (Job abbrechen, Dateien
-     * entfernen), dann die Paketzeile - so bleiben keine verwaisten Eintraege
-     * zurueck, deren Paket schon verschwunden ist.
+     * Deletes a package with its entries and files. Jobs are cancelled and the
+     * rows removed under [mutex], so no entry of the package gets started in
+     * between; the archive folder belongs to this package alone.
      */
     suspend fun deletePackage(packageId: Long) {
-        dao.byPackage(packageId).forEach { cancelAndDelete(it.id) }
-        app.db.packageDao().delete(packageId)
+        val items = mutex.withLock {
+            val items = dao.byPackage(packageId)
+            items.forEach { jobs.remove(it.id)?.cancel(); FreeDownloads.forget(it.id) }
+            ProgressBus.removeAll(items.map { it.id })
+            app.db.withTransaction {
+                dao.deletePackageItems(packageId)
+                app.db.packageDao().delete(packageId)
+            }
+            items
+        }
+        items.forEach { tempFile(it).delete() }
+        archives.archiveDir(packageId).deleteRecursively()
+        pump()
     }
 
     suspend fun pauseAll() {
@@ -257,10 +281,10 @@ class DownloadEngine(
     private suspend fun run(id: Long) {
         try {
             val item = dao.byId(id) ?: return
-            // Liegt das Archiv bereits vollstaendig im App-Ordner (z.B. nach
+            // Liegt das Archiv bereits vollstaendig im Paketordner (z.B. nach
             // Pause waehrend des Entpackens), nicht erneut laden
             item.fileName?.let { name ->
-                val existing = File(storage.downloadDir(), name)
+                val existing = File(archives.archiveDir(item.packageId), name)
                 if (item.fileSize > 0 && existing.isFile && existing.length() == item.fileSize) {
                     archives.completeDownload(id, existing, name)
                     return
@@ -286,16 +310,16 @@ class DownloadEngine(
             freeFlow.holdForCaptcha(id, e)
         } catch (e: HosterException) {
             if (e.permanent) {
-                dao.setStatus(id, DownloadStatus.FAILED, e.message)
+                fail(id, e.message)
             } else {
                 handleTransientFailure(id, e.message ?: Texts.t("engine_generic_error"))
             }
         } catch (e: com.jdandroid.data.Secrets.SecretsException) {
             // Zugangsdaten nicht entschluesselbar: Wiederholen ist sinnlos
-            dao.setStatus(id, DownloadStatus.FAILED, e.message)
+            fail(id, e.message)
         } catch (e: IllegalArgumentException) {
             // Unbrauchbare Download-Adresse (z.B. relativer Link): Wiederholen aendert nichts
-            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_invalid_download_url", e.message ?: ""))
+            fail(id, Texts.t("engine_invalid_download_url", e.message ?: ""))
         } catch (e: Exception) {
             // Abbruch (Pause/Loeschen) kommt von OkHttp als IOException("Canceled"):
             // nicht als voruebergehenden Fehler zaehlen, sondern sauber beenden
@@ -313,6 +337,16 @@ class DownloadEngine(
     }
 
     /**
+     * Marks the entry FAILED. A failed entry no longer counts as pending, so
+     * archive sets of its package that waited for it are checked again.
+     */
+    private suspend fun fail(id: Long, message: String?) {
+        val packageId = dao.byId(id)?.packageId
+        dao.setStatus(id, DownloadStatus.FAILED, message)
+        archives.retryWaitingSets(packageId)
+    }
+
+    /**
      * Vorübergehende Fehler (Netzwerkabbruch, Serverhänger) werden automatisch
      * wiederholt - mit exponentiell wachsender Wartezeit, damit ein dauerhaft
      * gestörter Hoster nicht dauerfeuert. Erst danach gilt der Download als
@@ -322,7 +356,7 @@ class DownloadEngine(
         val item = dao.byId(id) ?: return
         val attempts = item.attempts + 1
         if (attempts > MAX_ATTEMPTS) {
-            dao.setStatus(id, DownloadStatus.FAILED, Texts.t("engine_gave_up", message, MAX_ATTEMPTS))
+            fail(id, Texts.t("engine_gave_up", message, MAX_ATTEMPTS))
             return
         }
         val backoff = backoffMillis(attempts)
@@ -459,7 +493,7 @@ class DownloadEngine(
             ResponseKind.Continue -> Unit
         }
         val body = resp.body // ab OkHttp 5 nie null
-        val total = if (body.contentLength() >= 0) body.contentLength() + offset else item.fileSize
+        val total = transferTotal(body.contentLength(), offset, item.fileSize)
 
         // Speicherplatz vorab pruefen: sonst bricht der Download erst nach
         // Minuten mit einem nichtssagenden IO-Fehler ab.
@@ -571,23 +605,14 @@ class DownloadEngine(
      * Abweichung wird die Datei verworfen und der Download (voruebergehender
      * Fehler) automatisch wiederholt.
      */
-    private fun verifyHash(file: File, expected: String) {
+    private suspend fun verifyHash(file: File, expected: String) {
         val algorithm = when (expected.length) {
             32 -> "MD5"
             40 -> "SHA-1"
             64 -> "SHA-256"
             else -> return
         }
-        val digest = java.security.MessageDigest.getInstance(algorithm)
-        file.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        val actual = hashFile(file, algorithm)
         if (!actual.equals(expected, ignoreCase = true)) {
             file.delete()
             throw HosterException(Texts.t("engine_hash_mismatch", algorithm))
@@ -635,4 +660,22 @@ class DownloadEngine(
         /** Mindestabstand der Benachrichtigungs-Aktualisierung. */
         const val NOTIFY_MS = 1_000L
     }
+}
+
+/**
+ * Hex digest of [file]. Yields between chunks so a pause cancels the check
+ * instead of letting it run to the end over a multi-GiB file.
+ */
+internal suspend fun hashFile(file: File, algorithm: String): String {
+    val digest = java.security.MessageDigest.getInstance(algorithm)
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+            kotlinx.coroutines.yield()
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }

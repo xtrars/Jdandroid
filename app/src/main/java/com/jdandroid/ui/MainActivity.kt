@@ -261,7 +261,10 @@ fun MainScreen(
             showing = launch { messageHost.showSnackbar(JdMessage(message.text, message.kind)) }
         }
     }
-    var crashReport by remember { mutableStateOf(CrashReporter.lastCrash(context)) }
+    var crashReport by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        crashReport = withContext(Dispatchers.IO) { CrashReporter.lastCrash(context) }
+    }
     crashReport?.let { report ->
         CrashDialog(report = report, onDismiss = { crashReport = null })
     }

@@ -49,12 +49,18 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal fun isCaptchaHostAllowed(host: String?, siteHosts: Set<String>, pageHost: String?): Boolean {
     val h = host?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
-    val own = siteHosts.map { it.lowercase() } + listOfNotNull(pageHost?.lowercase()?.takeIf { it.isNotBlank() })
-    if (own.any { h == it || h.endsWith(".$it") }) return true
+    if (isHosterHost(h, siteHosts, pageHost)) return true
     return h == "challenges.cloudflare.com" || h.endsWith(".cloudflare.com") ||
         h == "www.google.com" || h == "www.gstatic.com" ||
         h == "recaptcha.net" || h.endsWith(".recaptcha.net") ||
         h == "hcaptcha.com" || h.endsWith(".hcaptcha.com")
+}
+
+/** Hoster domains including subdomains (file servers) and the page host itself. */
+internal fun isHosterHost(host: String?, siteHosts: Set<String>, pageHost: String?): Boolean {
+    val h = host?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
+    val own = siteHosts.map { it.lowercase() } + listOfNotNull(pageHost?.lowercase()?.takeIf { it.isNotBlank() })
+    return own.any { h == it || h.endsWith(".$it") }
 }
 
 /** Was die Captcha-Ansicht mit einer Anfrage der WebView tut. */
@@ -67,13 +73,18 @@ internal enum class CaptchaRequestAction { CAPTURE, LOAD, BLOCK }
  * sonst schloesse ein Werbe- oder Captcha-Skript, das eine Datei mit
  * passender Endung laedt, die Ansicht, bevor der Nutzer ein Captcha sah -
  * sondern nur gegen den Host-Filter geprueft.
+ *
+ * A direct link is captured only on a hoster host ([hosterHost]): the captured
+ * link is fetched with the hoster's cookies, which must not reach a foreign
+ * host (ad scripts navigate the main frame to arbitrary files).
  */
 internal fun captchaRequestAction(
     isMainFrame: Boolean,
     isDirectLink: Boolean,
+    hosterHost: Boolean,
     hostAllowed: Boolean
 ): CaptchaRequestAction = when {
-    isMainFrame && isDirectLink -> CaptchaRequestAction.CAPTURE
+    isMainFrame && isDirectLink && hosterHost -> CaptchaRequestAction.CAPTURE
     hostAllowed -> CaptchaRequestAction.LOAD
     else -> CaptchaRequestAction.BLOCK
 }
@@ -133,6 +144,7 @@ fun CaptchaScreen(
     }
 
     fun allowed(host: String?): Boolean = isCaptchaHostAllowed(host, siteHosts, pageHost)
+    fun hosterHost(host: String?): Boolean = isHosterHost(host, siteHosts, pageHost)
 
     /** Direktlink samt Cookies der Hoster-Seite (und des Fileservers) uebergeben. */
     fun capture(url: String) {
@@ -185,7 +197,9 @@ fun CaptchaScreen(
                         // Der Browser laedt nie selbst eine Datei: jeder Download
                         // (Content-Disposition, unbekannter Typ) wird als
                         // Direktlink uebernommen
-                        setDownloadListener { url, _, _, _, _ -> capture(url) }
+                        setDownloadListener { url, _, _, _, _ ->
+                            if (hosterHost(url.toUri().host)) capture(url)
+                        }
                         webViewClient = object : WebViewClient() {
                             // Nur Navigationen des Hauptrahmens
                             override fun shouldOverrideUrlLoading(
@@ -194,7 +208,10 @@ fun CaptchaScreen(
                             ): Boolean {
                                 val url = request?.url?.toString() ?: return false
                                 val host = request.url?.host
-                                return when (captchaRequestAction(true, isDirectDownloadUrl(url), allowed(host))) {
+                                val action = captchaRequestAction(
+                                    true, isDirectDownloadUrl(url), hosterHost(host), allowed(host)
+                                )
+                                return when (action) {
                                     CaptchaRequestAction.CAPTURE -> { capture(url); true }
                                     CaptchaRequestAction.LOAD -> false
                                     CaptchaRequestAction.BLOCK -> {
@@ -216,8 +233,9 @@ fun CaptchaScreen(
                                 request: WebResourceRequest?
                             ): WebResourceResponse? {
                                 val url = request?.url?.toString() ?: return empty()
+                                val host = request.url?.host
                                 val action = captchaRequestAction(
-                                    request.isForMainFrame, isDirectDownloadUrl(url), allowed(request.url?.host)
+                                    request.isForMainFrame, isDirectDownloadUrl(url), hosterHost(host), allowed(host)
                                 )
                                 return when (action) {
                                     CaptchaRequestAction.CAPTURE -> { captureLater(url); empty() }

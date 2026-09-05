@@ -184,7 +184,7 @@ class RapidgatorHoster : Hoster {
                     session?.fileName,
                     session?.fileSize ?: -1,
                     session?.hash,
-                    headers = freeHeaders(hints.cookies ?: session?.cookieHeader(direct))
+                    headers = freeHeaders(direct, hints.cookies ?: session?.cookieHeader(direct))
                 )
             }
 
@@ -232,7 +232,7 @@ class RapidgatorHoster : Hoster {
                     restarts.remove(id)
                     return@withContext ResolvedLink(
                         direct, session.fileName, session.fileSize, session.hash,
-                        headers = freeHeaders(session.cookieHeader(direct))
+                        headers = freeHeaders(direct, session.cookieHeader(direct))
                     )
                 }
                 if (RapidgatorFreePage.hasCaptchaForm(page.body)) {
@@ -317,12 +317,15 @@ class RapidgatorHoster : Hoster {
     /**
      * Header fuer den Dateiabruf: Browser-Kennung und Referer der Captcha-Seite
      * wie im Browser, dazu die Cookies (sdata__ gilt fuer alle Subdomains).
+     * Cookies only for the hoster's own hosts, never for a foreign [directUrl].
      */
-    internal fun freeHeaders(cookies: String?): Map<String, String> {
+    internal fun freeHeaders(directUrl: String, cookies: String?): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
         headers["User-Agent"] = browserUa
         headers["Referer"] = captchaPageUrl
-        cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        if (DirectLinks.isSiteHost(directUrl, siteHosts)) {
+            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
+        }
         return headers
     }
 
