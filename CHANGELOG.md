@@ -27,6 +27,19 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.3] – 2026-09-06
+
+### Behoben
+
+- NFS: Ordner, die die App anlegte („Neuer Ordner“ im NAS-Dialog, Paket-
+  und Unterordner beim Hochladen), bekamen vom Server den Modus 000, weil
+  die NFS-Bibliothek beim MKDIR keine Rechte mitschickt. Danach ließ sich
+  der Ordner nicht einmal auflisten („Zugriff verweigert“, „Diesen Ordner
+  wählen“ blieb grau). Die App legt Ordner jetzt mit 0755 an und setzt bei
+  einem solchen versiegelten Ordner beim Auflisten oder Hochladen die
+  Rechte selbst zurück; hochgeladene Dateien bekommen 0644 statt 0600,
+  damit andere NAS-Benutzer sie lesen können.
+
 ## [0.4.2] – 2026-09-06
 
 ### Behoben
@@ -830,6 +843,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.3]: https://github.com/xtrars/Jdandroid/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/xtrars/Jdandroid/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/xtrars/Jdandroid/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/xtrars/Jdandroid/compare/v0.3.0...v0.4.0

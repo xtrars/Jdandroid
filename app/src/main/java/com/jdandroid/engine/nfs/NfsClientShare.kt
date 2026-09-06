@@ -3,7 +3,9 @@ package com.jdandroid.engine.nfs
 import com.emc.ecs.nfsclient.mount.MountException
 import com.emc.ecs.nfsclient.mount.MountStatus
 import com.emc.ecs.nfsclient.nfs.NfsException
+import com.emc.ecs.nfsclient.nfs.NfsSetAttributes
 import com.emc.ecs.nfsclient.nfs.NfsStatus
+import com.emc.ecs.nfsclient.nfs.NfsType
 import com.emc.ecs.nfsclient.nfs.io.Nfs3File
 import com.emc.ecs.nfsclient.nfs.io.NfsFileInputStream
 import com.emc.ecs.nfsclient.nfs.io.NfsFileOutputStream
@@ -39,11 +41,11 @@ internal class NfsClientShare private constructor(
         nfs.newFile(NfsSettings.normalizePath("$mountRoot/$path"))
 
     override fun list(dir: String): List<String> = guard {
-        file(dir).list().filter { it != "." && it != ".." }
+        file(dir).repaired().list().filter { it != "." && it != ".." }
     }
 
     override fun entries(dir: String): List<NfsEntry> = guard {
-        file(dir).listFiles()
+        file(dir).repaired().listFiles()
             .filter { it.name != "." && it.name != ".." }
             .map { f ->
                 val isDir = f.isDirectory
@@ -53,9 +55,27 @@ internal class NfsClientShare private constructor(
 
     override fun exists(path: String): Boolean = guard { file(path).exists() }
 
+    /**
+     * Creates [dir] and its parents with an explicit mode. The library's own
+     * mkdir sends no attributes and Linux servers then create the directory
+     * with mode 000, which not even the owner can list.
+     */
     override fun mkdirs(dir: String) = guard {
-        val f = file(dir)
-        if (!f.exists()) f.mkdirs()
+        var current = ""
+        for (segment in NfsSettings.normalizePath("$mountRoot/$dir").split('/').filter { it.isNotEmpty() }) {
+            current = "$current/$segment"
+            val f = nfs.newFile(current)
+            if (f.exists()) f.repaired() else f.mkdir(NfsModes.attributes(NfsModes.DIR))
+        }
+    }
+
+    /** Gives a directory the app once created without a mode its bits back; the owner may chmod even a 000 directory. */
+    private fun Nfs3File.repaired(): Nfs3File {
+        val attributes = getAttributes()
+        if (attributes.type == NfsType.NFS_DIR && NfsModes.sealed(attributes.mode)) {
+            runCatching { setMode(NfsModes.DIR) }
+        }
+        return this
     }
 
     override fun upload(source: File, path: String, progress: ((Long) -> Unit)?) {
@@ -78,6 +98,8 @@ internal class NfsClientShare private constructor(
                     }
                 }
             }
+            // The stream creates files as 0600; other NAS users should read the downloads too.
+            runCatching { part.setMode(NfsModes.FILE) }
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("rename failed: $path")
         } catch (e: Exception) {

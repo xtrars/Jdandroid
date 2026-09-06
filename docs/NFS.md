@@ -140,6 +140,7 @@ Freigabeliste zusätzlich 111 (rpcbind) und der mountd-Port erreichbar.
 |---|---|---|
 | „NAS nicht erreichbar“ / Zeitüberschreitung | Gerät nicht im selben Netz, NAS aus, Firewall blockt 111/2049/mountd, Mobilfunk statt WLAN | WLAN prüfen, Ports in der NAS-Firewall freigeben, `showmount -e <server>` von einem Rechner im selben Netz testen |
 | „Zugriff verweigert beim Einhängen“ (`MNT3ERR_ACCES`) | Option `insecure` / „nicht-privilegierte Ports“ fehlt, oder die IP des Geräts passt nicht zur Host-Regel des Exports | Haken setzen, Host-Regel auf das WLAN-Subnetz erweitern; nach Änderungen an der Regel die Prüfung wiederholen |
+| „Zugriff verweigert“ in einem Ordner, den die App selbst angelegt hat | Versionen bis 0.4.2 legten Ordner ohne Modus an, der Server machte daraus 000 | Ab 0.4.3 setzt die App die Rechte beim Auflisten oder Hochladen selbst auf 0755; sonst auf dem NAS `chmod 755 <ordner>` |
 | „Zugriff verweigert beim Schreiben“ (`NFS3ERR_ACCES`) | Squash-Einstellung oder uid/gid ohne Schreibrecht im Zielordner | Squash auf ein schreibberechtigtes Konto setzen oder uid/gid an einen Benutzer mit Schreibrecht anpassen; Rechte des Ordners auf dem NAS prüfen |
 | „Export nicht gefunden“ (`MNT3ERR_NOENT`) | Export-Pfad falsch geschrieben oder Freigabe hat keine NFS-Regel | Mount-Pfad aus dem NFS-Dialog des NAS übernehmen (Groß-/Kleinschreibung beachten), `showmount -e` vergleichen |
 | „Wartet auf NAS“ an fertigen Downloads | NAS vorübergehend nicht erreichbar | Nichts zu tun: der Upload wird bei Netzwechsel und im Minutentakt wiederholt |
