@@ -50,8 +50,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // versionCode must grow with every release or the installer refuses the update.
-        versionCode = 49
-        versionName = "0.4.3"
+        versionCode = 50
+        versionName = "0.4.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

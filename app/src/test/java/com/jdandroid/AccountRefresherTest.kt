@@ -84,14 +84,30 @@ class AccountRefresherTest {
     fun voruebergehenderFehlerBehaeltGueltigkeitUndKontingent() {
         val updated = apply(premium, Result.failure(HosterException("HTTP 503", permanent = false)))
         assertTrue(updated.valid)
-        assertEquals("HTTP 503 (vorübergehend)", updated.statusText)
+        assertEquals("Premium · HTTP 503 (vorübergehend)", updated.statusText)
         assertEquals(premium.trafficLeft, updated.trafficLeft)
         assertEquals(premium.premiumUntil, updated.premiumUntil)
         assertEquals(now, updated.lastChecked)
         // Other exceptions (network) count as temporary too
         assertTrue(apply(premium, Result.failure(java.io.IOException("timeout"))).valid)
         // Without a message the generic text is used
-        assertEquals("Prüfung fehlgeschlagen (vorübergehend)", apply(premium, Result.failure(java.io.IOException())).statusText)
+        assertEquals("Premium · Prüfung fehlgeschlagen (vorübergehend)", apply(premium, Result.failure(java.io.IOException())).statusText)
+        // Without a previous status only the note remains
+        assertEquals("HTTP 503 (vorübergehend)", apply(premium.copy(statusText = null), Result.failure(HosterException("HTTP 503"))).statusText)
+    }
+
+    @Test
+    fun voruebergehenderFehlerBehaeltPremiumOhneAblaufdatum() {
+        // ddownload without a readable expiry: premium is read from the status prefix
+        val byStatus = premium.copy(premiumUntil = 0, statusText = "Ultimate · Kontingent nicht lesbar")
+        assertTrue(byStatus.hasPremium(now))
+        val first = apply(byStatus, Result.failure(HosterException("Cloudflare", permanent = false)))
+        assertEquals("Ultimate · Cloudflare (vorübergehend)", first.statusText)
+        assertTrue(first.hasPremium(now))
+        // A second failure does not stack notes
+        val second = apply(first, Result.failure(java.io.IOException("timeout")))
+        assertEquals("Ultimate · timeout (vorübergehend)", second.statusText)
+        assertTrue(second.hasPremium(now))
     }
 
     @Test

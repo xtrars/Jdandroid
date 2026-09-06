@@ -27,6 +27,20 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.4] – 2026-09-06
+
+### Behoben
+
+- Premium-Konto landete im Free-Modus: Ein vorübergehender Prüffehler
+  (Cloudflare, Netz) überschrieb den Kontostatus, und bei Konten ohne
+  lesbares Ablaufdatum (ddownload) ging damit das Kennzeichen „Premium“
+  verloren; die Engine hielt das Konto für Free und verlangte ein Captcha.
+  Der alte Status bleibt jetzt vorn stehen („Premium · … (vorübergehend)“).
+- Ein aus der Sicherung wiederhergestelltes oder länger nicht geprüftes
+  Konto wird vor der Entscheidung Premium/Free noch einmal geprüft, statt
+  bis zum nächsten Öffnen der Kontenansicht als Free zu gelten. Dauerhaft
+  ungültige Konten (falsches Passwort) werden nicht erneut angefragt.
+
 ## [0.4.3] – 2026-09-06
 
 ### Behoben
@@ -843,6 +857,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.4]: https://github.com/xtrars/Jdandroid/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/xtrars/Jdandroid/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/xtrars/Jdandroid/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/xtrars/Jdandroid/compare/v0.4.0...v0.4.1

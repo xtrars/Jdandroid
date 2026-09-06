@@ -4,6 +4,8 @@ import com.jdandroid.data.Account
 import com.jdandroid.engine.FreeFlow
 import com.jdandroid.engine.FreePath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -55,5 +57,15 @@ class FreeFlowTest {
         assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(status = "Premium"), freeMode = true, now = now))
         assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(status = "Ultimate"), freeMode = false, now = now))
         assertEquals(FreePath.NO_PREMIUM_ERROR, FreeFlow.choosePath(account(status = null), freeMode = false, now = now))
+    }
+
+    @Test
+    fun nachpruefungNurFuerUngeprueftesOderGueltigesAltesKonto() {
+        val minute = 60_000L
+        assertTrue(FreeFlow.needsRecheck(account(valid = false).copy(lastChecked = 0), now))
+        assertTrue(FreeFlow.needsRecheck(account().copy(lastChecked = now - 10 * minute), now))
+        assertFalse(FreeFlow.needsRecheck(account().copy(lastChecked = now - minute), now))
+        // Permanently invalid (wrong password): not hammered on every download
+        assertFalse(FreeFlow.needsRecheck(account(valid = false).copy(lastChecked = now - 10 * minute), now))
     }
 }

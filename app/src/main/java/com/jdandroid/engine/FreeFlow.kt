@@ -3,6 +3,7 @@ package com.jdandroid.engine
 import com.jdandroid.core.FreeMode
 import com.jdandroid.data.Account
 import com.jdandroid.data.AccountDao
+import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadDao
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.SettingsRepository
@@ -22,7 +23,8 @@ import com.jdandroid.hoster.ResolvedLink
 internal class FreeFlow(
     private val dao: DownloadDao,
     private val accountDao: AccountDao,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val recheck: suspend (Account) -> Unit = {}
 ) {
     /**
      * Only a premium account takes the premium path; a valid free account
@@ -30,7 +32,7 @@ internal class FreeFlow(
      * apply to this one attempt.
      */
     suspend fun resolve(id: Long, item: DownloadItem, hoster: Hoster): ResolvedLink {
-        val account = accountDao.validForHoster(item.hosterId)
+        val account = usableAccount(item.hosterId)
         return when (choosePath(account, settings.currentFreeMode())) {
             FreePath.PREMIUM -> hoster.resolve(item.url, account!!)
             FreePath.FREE -> hoster.resolveFree(item.url, FreeDownloads.takeHints(id) ?: FreeHints())
@@ -39,7 +41,27 @@ internal class FreeFlow(
         }
     }
 
+    /**
+     * A restored account (never checked) or one whose last check failed
+     * temporarily is checked again before the free path or an error decides;
+     * otherwise a paying user would land in the free flow until the accounts
+     * tab is opened. Permanently invalid accounts are left alone.
+     */
+    private suspend fun usableAccount(hosterId: String): Account? {
+        val account = accountDao.validForHoster(hosterId)
+        if (account?.hasPremium() == true) return account
+        val now = System.currentTimeMillis()
+        val stale = accountDao.byHoster(hosterId).firstOrNull { needsRecheck(it, now) } ?: return account
+        recheck(stale)
+        return accountDao.validForHoster(hosterId)
+    }
+
     internal companion object {
+        /** Never checked, or valid but not checked within the after-download interval. */
+        fun needsRecheck(account: Account, now: Long): Boolean =
+            account.lastChecked == 0L ||
+                (account.valid && account.lastChecked < now - AccountRefresher.AFTER_DOWNLOAD_MIN_INTERVAL_MS)
+
         /**
          * A premium account always wins, even with free mode on; a valid
          * account without premium is an error unless free mode is on.

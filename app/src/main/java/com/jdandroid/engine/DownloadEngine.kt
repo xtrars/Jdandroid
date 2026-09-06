@@ -13,6 +13,7 @@ import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
 import com.jdandroid.core.Texts
 import com.jdandroid.core.formatBytes
+import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
@@ -70,7 +71,7 @@ class DownloadEngine(
 
     private val storage = StorageTarget(context, app.settings)
     private val exportRetry = ExportRetry(dao, app.settings, storage, clock)
-    private val freeFlow = FreeFlow(dao, accountDao, app.settings)
+    private val freeFlow = FreeFlow(dao, accountDao, app.settings, recheck = { AccountRefresher.check(app, it.id) })
     private val archives = ArchiveCoordinator(
         app, dao, app.settings, storage, scope, clock, onStateChanged
     ) { scope.launch { pump() } }

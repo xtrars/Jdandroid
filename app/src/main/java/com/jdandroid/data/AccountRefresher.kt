@@ -76,14 +76,20 @@ object AccountRefresher {
         }
         val e = result.exceptionOrNull()
         val permanent = (e is HosterException && e.permanent) || e is Secrets.SecretsException
+        val message = e?.message ?: checkFailedText
         return account.copy(
             valid = if (permanent) false else account.valid,
-            statusText = (e?.message ?: checkFailedText).let {
-                if (!permanent && account.valid) temporaryText(it) else it
-            },
+            statusText = if (!permanent && account.valid) {
+                // The old hoster status stays in front: without an expiry date
+                // Account.hasPremium reads premium from that prefix.
+                statusWithUpgradeError(hosterStatus(account.statusText), temporaryText(message))
+            } else message,
             lastChecked = now
         )
     }
+
+    /** First part of a status line, before any appended error note. */
+    private fun hosterStatus(status: String?): String? = status?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
 
     /**
      * Re-encrypts plaintext credentials from installations before the Keystore
