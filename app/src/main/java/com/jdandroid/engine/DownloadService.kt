@@ -20,6 +20,7 @@ import com.jdandroid.container.CnlRequest
 import com.jdandroid.container.CnlStatus
 import com.jdandroid.core.AppLog
 import com.jdandroid.core.AppMessages
+import com.jdandroid.core.FreeMode
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.LinkSink
 import kotlinx.coroutines.CoroutineScope
@@ -140,7 +141,7 @@ class DownloadService : Service() {
             }
             ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
             ACTION_RESUME_ALL -> scope.launch {
-                (application as JdApp).db.downloadDao().requeuePausedAndFailed()
+                (application as JdApp).db.downloadDao().requeuePausedAndFailed(FreeMode.heldFrom())
                 engine.pump()
             }
             ACTION_START_CNL -> {

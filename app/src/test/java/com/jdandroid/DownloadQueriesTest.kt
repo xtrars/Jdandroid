@@ -112,8 +112,15 @@ class DownloadQueriesTest : SchemaDbTest() {
         execute("UPDATE downloads SET attempts = 3, retryAt = 99 WHERE id = 2")
         // Paused during a hoster wait: the wait must not survive the resume
         execute("UPDATE downloads SET attempts = 1, retryAt = 9999999999999 WHERE id = 1")
-        assertEquals(2, execute(DownloadQueries.REQUEUE_PAUSED_AND_FAILED))
-        assertEquals(listOf(1L, 2L), ids("SELECT id FROM downloads WHERE status = 'QUEUED' ORDER BY id"))
+        // Held for a captcha (retryAt beyond the horizon): released; a plain hoster wait stays
+        item(7, "g.bin", DownloadStatus.QUEUED, note = "FREE_CAPTCHA"); retryAt(7, 5_000_000)
+        item(8, "h.bin", DownloadStatus.QUEUED, note = "FREE_WAIT"); retryAt(8, 1_000_100)
+        assertEquals(3, execute(DownloadQueries.REQUEUE_PAUSED_AND_FAILED, "heldFrom" to 4_000_000L))
+        assertEquals(listOf(1L, 2L, 7L, 8L), ids("SELECT id FROM downloads WHERE status = 'QUEUED' ORDER BY id"))
+        assertNull(column(7, "errorMessage"))
+        assertEquals("0", column(7, "retryAt"))
+        assertEquals("FREE_WAIT", column(8, "errorMessage"))
+        assertEquals("1000100", column(8, "retryAt"))
         assertNull(column(1, "errorMessage"))
         assertEquals("0", column(1, "attempts"))
         assertEquals("0", column(1, "retryAt"))

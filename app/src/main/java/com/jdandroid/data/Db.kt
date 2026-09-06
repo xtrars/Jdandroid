@@ -296,12 +296,12 @@ interface DownloadDao {
     @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
     suspend fun resetAttempts(id: Long)
 
-    /** Manual restart, never for running entries (would start twice). */
+    /** Manual restart, also of a captcha hold (retryAt from [heldFrom]); never for running entries (would start twice). */
     @Query(
-        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
-            "retryAt = 0 WHERE id = :id AND status IN ('PAUSED', 'FAILED', 'OFFLINE')"
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0 " +
+            "WHERE id = :id AND (status IN ('PAUSED', 'FAILED', 'OFFLINE') OR (status = 'QUEUED' AND retryAt >= :heldFrom))"
     )
-    suspend fun requeue(id: Long)
+    suspend fun requeue(id: Long, heldFrom: Long)
 
     /** Releases a waiting entry at once (captcha solved); a paused or running entry stays untouched. */
     @Query(
@@ -311,7 +311,7 @@ interface DownloadDao {
     suspend fun releaseQueued(id: Long)
 
     @Query(DownloadQueries.REQUEUE_PAUSED_AND_FAILED)
-    suspend fun requeuePausedAndFailed()
+    suspend fun requeuePausedAndFailed(heldFrom: Long)
 
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: Long)
@@ -329,7 +329,7 @@ interface DownloadDao {
     suspend fun setCheckingAll(ids: List<Long>)
 
     @Query(PackageQueries.REQUEUE_PACKAGE)
-    suspend fun requeuePackage(packageId: Long)
+    suspend fun requeuePackage(packageId: Long, heldFrom: Long)
 
     @Query(PackageQueries.DELETE_COLLECTED_IN_PACKAGE)
     suspend fun deleteCollectedInPackage(packageId: Long): Int

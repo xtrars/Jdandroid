@@ -51,9 +51,10 @@ object DownloadQueries {
      * step, nothing else. retryAt and attempts are cleared, otherwise an entry
      * paused during a wait would sit in the queue without its countdown.
      */
+    /** Manual "start all": paused and failed entries, plus queued ones held for a captcha (retryAt from :heldFrom). */
     const val REQUEUE_PAUSED_AND_FAILED =
-        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, " +
-            "retryAt = 0 WHERE status IN ('PAUSED', 'FAILED')"
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0 " +
+            "WHERE status IN ('PAUSED', 'FAILED') OR (status = 'QUEUED' AND retryAt >= :heldFrom)"
 
     /**
      * Next time a waiting entry starts on its own: smallest future retryAt up

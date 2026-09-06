@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.5] – 2026-09-06
+
+### Behoben
+
+- „Alle starten“, der Start-Knopf am Paket und „Fortsetzen“ ließen Einträge
+  liegen, die auf ein Captcha warteten: Sie blieben mit der Meldung
+  „Captcha (Turnstile) – nur im Browser lösbar“ stehen, auch nachdem ein
+  Premium-Konto hinterlegt war. Ein manueller Start hebt den Captcha-Halt
+  jetzt auf, der Eintrag wird neu aufgelöst und nimmt mit Premium-Konto den
+  Premium-Weg. Laufende Wartezeiten der Hoster bleiben unangetastet.
+
 ## [0.4.4] – 2026-09-06
 
 ### Behoben
@@ -857,6 +868,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.5]: https://github.com/xtrars/Jdandroid/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/xtrars/Jdandroid/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/xtrars/Jdandroid/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/xtrars/Jdandroid/compare/v0.4.1...v0.4.2

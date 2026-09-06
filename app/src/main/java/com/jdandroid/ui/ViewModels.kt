@@ -12,6 +12,7 @@ import com.jdandroid.R
 import com.jdandroid.container.ContainerDecrypter
 import com.jdandroid.container.ContainerFiles
 import com.jdandroid.core.AppMessages
+import com.jdandroid.core.FreeMode
 import com.jdandroid.core.ArchiveNames
 import com.jdandroid.core.LiveProgress
 import com.jdandroid.core.ProgressBus
@@ -238,7 +239,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startPackage(packageId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.requeuePackage(packageId)
+            dao.requeuePackage(packageId, FreeMode.heldFrom())
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }
@@ -344,7 +345,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resume(item: DownloadItem) {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.requeue(item.id)
+            dao.requeue(item.id, FreeMode.heldFrom())
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }
@@ -392,7 +393,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resumeAll() {
         viewModelScope.launch(Dispatchers.IO) {
-            dao.requeuePausedAndFailed()
+            dao.requeuePausedAndFailed(FreeMode.heldFrom())
             DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
         }
     }

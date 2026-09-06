@@ -24,6 +24,9 @@ object FreeMode {
     /** A retryAt this far ahead means "waiting for user action"; such entries do not keep the service alive. */
     const val USER_ACTION_HORIZON_MS = 30L * 24 * 60 * 60 * 1000
 
+    /** Smallest retryAt at [now] that marks an entry as waiting for user action (captcha hold). */
+    fun heldFrom(now: Long = System.currentTimeMillis()): Long = now + USER_ACTION_HORIZON_MS
+
     fun disabledMessage(): String = Texts.t("engine_free_disabled")
 
     fun noPremiumMessage(): String = Texts.t("engine_free_no_premium")
