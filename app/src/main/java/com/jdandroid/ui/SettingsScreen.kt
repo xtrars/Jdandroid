@@ -19,14 +19,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -63,11 +64,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,16 +77,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.JdApp
 import com.jdandroid.R
-import com.jdandroid.core.formatBytes
 import com.jdandroid.container.ClickNLoadServer
 import com.jdandroid.container.CnlStatus
+import com.jdandroid.core.formatBytes
 import com.jdandroid.data.NfsSettings
 import com.jdandroid.data.SettingsRepository
 import com.jdandroid.engine.DownloadService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -641,6 +643,8 @@ private fun NfsWizardDialog(
     val server = state.server
     AlertDialog(
         onDismissRequest = runner::close,
+        modifier = Modifier.imePadding(),
+        properties = KeyboardAwareDialog,
         title = {
             Text(
                 when (step) {
@@ -768,7 +772,16 @@ private fun ColumnScope.NfsExportLevel(state: NfsDiscoveryState, host: String, r
 private fun ColumnScope.NfsFolderLevel(export: String, state: NfsBrowserState, runner: NfsWizardRunner) {
     var newFolderOpen by rememberSaveable { mutableStateOf(false) }
     var newFolderName by rememberSaveable { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
     val ready = !state.loading && state.error == null
+    val canCreate = ready && NfsSettings.isValidName(newFolderName.trim())
+    fun create() {
+        if (!canCreate) return
+        keyboard?.hide()
+        runner.createFolder(newFolderName)
+        newFolderName = ""
+        newFolderOpen = false
+    }
     Text(
         NfsSettings.normalizePath("$export/${state.path}"),
         style = MaterialTheme.typography.bodyMedium,
@@ -836,16 +849,12 @@ private fun ColumnScope.NfsFolderLevel(export: String, state: NfsBrowserState, r
                     autoCorrectEnabled = false,
                     imeAction = ImeAction.Done
                 ),
+                keyboardActions = KeyboardActions(onDone = { create() }),
                 modifier = Modifier.weight(1f)
             )
-            TextButton(
-                enabled = ready && NfsSettings.isValidName(newFolderName.trim()),
-                onClick = {
-                    runner.createFolder(newFolderName)
-                    newFolderName = ""
-                    newFolderOpen = false
-                }
-            ) { Text(stringResource(R.string.settings_nfs_browser_create)) }
+            TextButton(enabled = canCreate, onClick = ::create) {
+                Text(stringResource(R.string.settings_nfs_browser_create))
+            }
         }
     } else {
         TextButton(enabled = ready, onClick = { newFolderOpen = true }) {
@@ -1006,6 +1015,8 @@ private fun StringListEditor(
         var text by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { importOpen = false },
+            modifier = Modifier.imePadding(),
+            properties = KeyboardAwareDialog,
             title = { Text(importTitle) },
             text = {
                 OutlinedTextField(

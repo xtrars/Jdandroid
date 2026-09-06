@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
@@ -248,3 +249,11 @@ object JdIcons {
         )
     }
 }
+
+/**
+ * Window settings for dialogs with text fields: the window takes the keyboard
+ * inset itself, so `Modifier.imePadding()` keeps the buttons above the
+ * keyboard. With the default the keyboard covers the lower part of a centred
+ * dialog and stays open after the field is gone.
+ */
+val KeyboardAwareDialog = DialogProperties(decorFitsSystemWindows = false)

@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.2] – 2026-09-06
+
+### Behoben
+
+- NAS-Dialog: Nach „Neuer Ordner“ blieb die Tastatur offen und verdeckte
+  „Diesen Ordner wählen“, sobald man in den neuen, leeren Ordner ging.
+  „Anlegen“ (auch per Eingabetaste) schließt die Tastatur; alle Dialoge mit
+  Eingabefeldern (NAS, Konto, Links, Umbenennen, Listen-Import) weichen der
+  Tastatur jetzt aus, sodass ihre Knöpfe sichtbar bleiben.
+
 ## [0.4.1] – 2026-09-06
 
 ### Geändert
@@ -820,6 +830,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.2]: https://github.com/xtrars/Jdandroid/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/xtrars/Jdandroid/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/xtrars/Jdandroid/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/xtrars/Jdandroid/compare/v0.2.1...v0.3.0

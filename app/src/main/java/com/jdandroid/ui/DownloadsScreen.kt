@@ -1,6 +1,7 @@
 package com.jdandroid.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -126,6 +126,8 @@ fun RenamePackageDialog(
     val cleaned = cleanPackageName(name)
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.imePadding(),
+        properties = KeyboardAwareDialog,
         title = { Text(stringResource(R.string.downloads_rename_title)) },
         text = {
             OutlinedTextField(
