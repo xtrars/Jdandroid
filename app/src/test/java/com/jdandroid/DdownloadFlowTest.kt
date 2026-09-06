@@ -28,9 +28,8 @@ private fun epoch(year: Int, month: Int, day: Int): Long = GregorianCalendar(yea
 /**
  * ddownload against a local server: account page with the browser session,
  * premium download form with its redirect chain, and the free flow
- * (Turnstile, blocks, form errors). The API cannot run here: org.json is
- * only a stub on the JVM, its classification is tested through
- * [DdownloadHoster.apiFailure].
+ * (Turnstile, blocks, form errors). The API path (key) is covered by
+ * [DdownloadApiTest].
  */
 class DdownloadFlowTest {
 
@@ -215,6 +214,34 @@ class DdownloadFlowTest {
     }
 
     @Test
+    fun linkpruefungOhneSchluesselLiestDateiseite() = withServer { server, _, hoster ->
+        server.dispatcher = siteDispatcher(page = html(dateiseite()))
+        val info = runBlocking { hoster.checkLink(fileUrl, null) }
+        assertEquals(true, info.online)
+        assertEquals("scn-smps8-S37E02.rar", info.fileName)
+        assertTrue("${info.fileSize}", info.fileSize in (663L shl 20)..(664L shl 20))
+        assertEquals(Http.browserUa, server.takeRequest().getHeader("User-Agent"))
+    }
+
+    @Test
+    fun linkpruefungHinterCloudflareIstUnbekannt() = withServer { server, _, hoster ->
+        server.dispatcher = siteDispatcher(page = html("<html><head><title>Just a moment...</title></head></html>"))
+        val info = runBlocking { hoster.checkLink(fileUrl, null) }
+        assertNull(info.online)
+        assertEquals(Texts.t("hoster_cloudflare_check_unknown"), info.note)
+        assertEquals(Http.browserUa, server.takeRequest().getHeader("User-Agent"))
+    }
+
+    @Test
+    fun linkpruefungMitServerfehlerIstUnbekannt() = withServer { server, _, hoster ->
+        server.dispatcher = siteDispatcher(page = html("<html><body>Error</body></html>", 503))
+        val info = runBlocking { hoster.checkLink(fileUrl, null) }
+        assertNull(info.online)
+        assertEquals(Texts.t("hoster_http_status_unknown", 503), info.note)
+        assertEquals(Http.browserUa, server.takeRequest().getHeader("User-Agent"))
+    }
+
+    @Test
     fun formularantwortMitSperreOderServerfehlerIstVoruebergehend() {
         for (code in listOf(403, 429, 500, 503)) {
             withServer { server, _, hoster ->
@@ -256,7 +283,8 @@ class DdownloadFlowTest {
         withServer { server, base, hoster ->
             // After a redirect hop the fetched address is the link
             server.dispatcher = siteDispatcher(form = redirect("/cgi-bin/dl.cgi"), hops = mapOf("/cgi-bin/dl.cgi" to datei))
-            assertEquals("$base/cgi-bin/dl.cgi", runBlocking { hoster.resolve(fileUrl, session) }.directUrl)
+            // Premium links leave resolve() as HTTPS (cleartext is disabled in the app)
+            assertEquals("$base/cgi-bin/dl.cgi".replaceFirst("http://", "https://"), runBlocking { hoster.resolve(fileUrl, session) }.directUrl)
             assertEquals("$base/cgi-bin/dl.cgi", runBlocking { hoster.resolveFree(fileUrl, FreeHints()) }.directUrl)
         }
     }

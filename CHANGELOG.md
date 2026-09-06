@@ -27,6 +27,38 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.6] – 2026-09-06
+
+Gesamtprüfung auf dem Stand 0.4.5 mit Schwerpunkt Logikfehler in
+Zustandsübergängen (fünf Blickwinkel, 33 Funde, 11 nach doppelter
+Verifikation bestätigt, 10 behoben; die Aktualisierung der Bibliotheken
+wartet auf AGP 9 und compileSdk 37). 558 Unit-Tests.
+
+### Behoben
+
+- Mehrere Konten bei einem Hoster: Die Engine nahm ein beliebiges gültiges
+  Konto („LIMIT 1“), auch ein Free-Konto neben einem Premium-Konto. Jetzt
+  gewinnt das Premium-Konto, sonst das neueste gültige.
+- Direktlinks mit `http://` (Rapidgator, ddownload) werden auf HTTPS
+  angehoben; Klartext ist in der App gesperrt und der Download scheiterte.
+- ddownload-API: Eine Antwort ohne Direktlink gilt beim Auflösen wie beim
+  Kontocheck als vorübergehend, nicht mehr als dauerhafter Fehler.
+- Einstellungen: Alle Werte kommen aus einem Lesevorgang; der Tab zeigte
+  beim Öffnen einen Frame lang Standardwerte statt der gespeicherten.
+- Geschwindigkeitslimit: Dezimaltrennzeichen folgt der Sprache der
+  Oberfläche (Punkt in Englisch).
+- Fester Hell/Dunkel-Modus gilt ab Android 12 auch für Splash und
+  Fensterhintergrund (Nachtmodus der App wird mitgesetzt).
+- „Links hinzufügen“ und „Konto speichern“ lösen nur einmal aus; ein
+  schneller Doppeltipp legte Links oder Konten doppelt an.
+
+### Hinzugefügt
+
+- Tests: ddownload-API-Weg (Schlüssel) gegen MockWebServer, ddownload
+  checkLink ohne Schlüssel (Dateiseite, Cloudflare, 5xx), Rapidgator
+  checkLink mit Konto (online/offline, Token-Neuanmeldung), Kontowahl bei
+  mehreren Konten, Einstellungswerte, Geschwindigkeitsfeld, Nachtmodus.
+
 ## [0.4.5] – 2026-09-06
 
 ### Behoben
@@ -868,6 +900,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.6]: https://github.com/xtrars/Jdandroid/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/xtrars/Jdandroid/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/xtrars/Jdandroid/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/xtrars/Jdandroid/compare/v0.4.2...v0.4.3

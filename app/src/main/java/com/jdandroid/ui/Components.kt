@@ -21,6 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.window.DialogProperties
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
@@ -257,3 +261,16 @@ object JdIcons {
  * dialog and stays open after the field is gone.
  */
 val KeyboardAwareDialog = DialogProperties(decorFitsSystemWindows = false)
+
+/**
+ * Click handler that fires once for the lifetime of the composable, for
+ * dialog confirm buttons whose action is not idempotent (adds a record) and
+ * which close the dialog afterwards: a second tap before the dialog is gone
+ * must not add twice.
+ */
+@Composable
+fun singleShot(action: () -> Unit): () -> Unit {
+    val fired = remember { AtomicBoolean(false) }
+    val current by rememberUpdatedState(action)
+    return remember { { if (fired.compareAndSet(false, true)) current() } }
+}

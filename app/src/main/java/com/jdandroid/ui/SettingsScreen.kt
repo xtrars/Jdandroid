@@ -53,7 +53,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,18 +81,21 @@ import com.jdandroid.container.CnlStatus
 import com.jdandroid.core.formatBytes
 import com.jdandroid.data.NfsSettings
 import com.jdandroid.data.SettingsRepository
+import com.jdandroid.data.SettingsValues
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(modifier: Modifier = Modifier, vm: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val settings = (context.applicationContext as JdApp).settings
     val scope = rememberCoroutineScope()
+    val values by vm.values.collectAsStateWithLifecycle()
 
     // The persisted permission lets the download service write to the folder.
     val folderPicker = rememberLauncherForActivityResult(
@@ -113,6 +115,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { TopAppBar(title = { Text(stringResource(R.string.settings_title)) }, colors = jdTopBarColors()) }
     ) { padding ->
+        val s = values ?: return@Scaffold
         Column(
             Modifier
                 .padding(padding)
@@ -122,23 +125,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            AppearanceSection(settings)
+            AppearanceSection(settings, s)
 
             Spacer(Modifier.height(16.dp))
-            DownloadSection(settings, onChooseFolder = { folderPicker.launch(null) })
+            DownloadSection(settings, s, onChooseFolder = { folderPicker.launch(null) })
 
             Spacer(Modifier.height(12.dp))
-            NfsSection(settings)
+            NfsSection(settings, s, vm)
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-            ExtractSection(settings)
+            ExtractSection(settings, s)
 
             Spacer(Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
-            ClickNLoadSection(settings)
+            ClickNLoadSection(settings, s)
             BackupSection()
 
             Spacer(Modifier.height(24.dp))
@@ -164,9 +167,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AppearanceSection(settings: SettingsRepository) {
+private fun AppearanceSection(settings: SettingsRepository, s: SettingsValues) {
     val scope = rememberCoroutineScope()
-    val themeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = "system")
+    val themeKey = s.themeMode
     SectionTitle(stringResource(R.string.settings_section_appearance))
     SettingsGroup {
         Spacer(Modifier.height(6.dp))
@@ -187,25 +190,17 @@ private fun AppearanceSection(settings: SettingsRepository) {
 
 /** Limits, connection switches and the target folder. */
 @Composable
-private fun DownloadSection(settings: SettingsRepository, onChooseFolder: () -> Unit) {
+private fun DownloadSection(settings: SettingsRepository, s: SettingsValues, onChooseFolder: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val export by settings.exportToDownloads.collectAsStateWithLifecycle(initialValue = true)
-    val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle(initialValue = false)
-    val autoStart by settings.autoStartLinks.collectAsStateWithLifecycle(initialValue = false)
-    val freeMode by settings.freeMode.collectAsStateWithLifecycle(initialValue = true)
-    val treeUri by settings.downloadTreeUri.collectAsStateWithLifecycle(initialValue = null)
+    val export = s.exportToDownloads
+    val wifiOnly = s.wifiOnly
+    val autoStart = s.autoStartLinks
+    val freeMode = s.freeMode
+    val treeUri = s.downloadTreeUri
 
-    // Prefill from the stored values only once; edits survive rotation and tab switches.
-    var maxConcurrentText by rememberSaveable { mutableStateOf("") }
-    var speedLimitText by rememberSaveable { mutableStateOf("") }
-    var loaded by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!loaded) {
-            maxConcurrentText = settings.maxConcurrent.first().toString()
-            speedLimitText = formatMbit(settings.speedLimitMbit.first())
-            loaded = true
-        }
-    }
+    // Prefilled from the stored values once; edits survive rotation and tab switches.
+    var maxConcurrentText by rememberSaveable { mutableStateOf(s.maxConcurrent.toString()) }
+    var speedLimitText by rememberSaveable { mutableStateOf(SpeedLimitInput.format(s.speedLimitMbit)) }
 
     SectionTitle(stringResource(R.string.settings_section_downloads))
     Spacer(Modifier.height(4.dp))
@@ -214,7 +209,7 @@ private fun DownloadSection(settings: SettingsRepository, onChooseFolder: () -> 
         onValueChange = { value ->
             maxConcurrentText = value.filter { it.isDigit() }.take(2)
             maxConcurrentText.toIntOrNull()?.let { n ->
-                if (loaded && n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
+                if (n in 1..99) scope.launch { settings.setMaxConcurrent(n) }
             }
         },
         label = { Text(stringResource(R.string.settings_max_concurrent_label)) },
@@ -226,22 +221,13 @@ private fun DownloadSection(settings: SettingsRepository, onChooseFolder: () -> 
     OutlinedTextField(
         value = speedLimitText,
         onValueChange = { value ->
-            // Digits and a single decimal separator (comma or period).
-            val cleaned = buildString {
-                var separator = false
-                for (c in value) {
-                    if (c.isDigit()) append(c)
-                    else if ((c == ',' || c == '.') && !separator) { append(','); separator = true }
-                }
-            }.take(8)
+            val cleaned = SpeedLimitInput.clean(value)
             speedLimitText = cleaned
-            parseMbit(cleaned)?.let { n ->
-                if (loaded) scope.launch { settings.setSpeedLimitMbit(n) }
-            }
+            SpeedLimitInput.parse(cleaned)?.let { n -> scope.launch { settings.setSpeedLimitMbit(n) } }
         },
         label = { Text(stringResource(R.string.settings_speed_limit_label)) },
         supportingText = {
-            val bytes = parseMbit(speedLimitText)?.let { SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
+            val bytes = SpeedLimitInput.parse(speedLimitText)?.let { SettingsRepository.mbitToBytesPerSecond(it) } ?: 0L
             Text(
                 if (bytes > 0) stringResource(R.string.settings_speed_limit_hint_bytes, formatBytes(bytes))
                 else stringResource(R.string.settings_speed_limit_hint)
@@ -305,17 +291,17 @@ private fun DownloadSection(settings: SettingsRepository, onChooseFolder: () -> 
 
 /** Extraction switches plus the password and exclude lists. */
 @Composable
-private fun ExtractSection(settings: SettingsRepository) {
+private fun ExtractSection(settings: SettingsRepository, s: SettingsValues) {
     val scope = rememberCoroutineScope()
-    val autoExtract by settings.autoExtract.collectAsStateWithLifecycle(initialValue = true)
-    val deleteArchive by settings.deleteArchiveAfterExtract.collectAsStateWithLifecycle(initialValue = true)
-    val flatExtract by settings.flatExtract.collectAsStateWithLifecycle(initialValue = true)
-    val removeLinks by settings.removeLinksAfterExtract.collectAsStateWithLifecycle(initialValue = true)
-    val excludeText by settings.extractExcludeList.collectAsStateWithLifecycle(initialValue = "")
+    val autoExtract = s.autoExtract
+    val deleteArchive = s.deleteArchiveAfterExtract
+    val flatExtract = s.flatExtract
+    val removeLinks = s.removeLinksAfterExtract
+    val excludeText = s.extractExcludeList
     val excludes = remember(excludeText) {
         excludeText.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
-    val passwordText by settings.passwordList.collectAsStateWithLifecycle(initialValue = "")
+    val passwordText = s.passwordList
     val passwords = remember(passwordText) {
         passwordText.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
@@ -379,10 +365,10 @@ private fun ExtractSection(settings: SettingsRepository) {
 
 /** Click'n'Load switch with the live server status and self-test. */
 @Composable
-private fun ClickNLoadSection(settings: SettingsRepository) {
+private fun ClickNLoadSection(settings: SettingsRepository, s: SettingsValues) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val cnlEnabled by settings.clickNLoadEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val cnlEnabled = s.clickNLoadEnabled
     val cnlRunning by CnlStatus.running.collectAsStateWithLifecycle()
     val cnlError by CnlStatus.error.collectAsStateWithLifecycle()
     val cnlBoundTo by CnlStatus.boundTo.collectAsStateWithLifecycle()
@@ -454,32 +440,20 @@ private fun ClickNLoadSection(settings: SettingsRepository) {
 
 /** Collapsible NFS target: switch, connection fields and a single-line connection check. */
 @Composable
-private fun NfsSection(settings: SettingsRepository, vm: SettingsViewModel = viewModel()) {
+private fun NfsSection(settings: SettingsRepository, s: SettingsValues, vm: SettingsViewModel) {
     val scope = rememberCoroutineScope()
     val probing by vm.nfsProbe.probing.collectAsStateWithLifecycle()
     val outcome by vm.nfsProbe.outcome.collectAsStateWithLifecycle()
     val wizard by vm.nfsWizard.state.collectAsStateWithLifecycle(initialValue = null)
-    val nfs by settings.nfs.collectAsStateWithLifecycle(initialValue = NfsSettings())
+    val nfs = s.nfs
     var expanded by rememberSaveable { mutableStateOf(false) }
-    var serverText by rememberSaveable { mutableStateOf("") }
-    var exportText by rememberSaveable { mutableStateOf("") }
-    var subDirText by rememberSaveable { mutableStateOf("") }
-    var uidText by rememberSaveable { mutableStateOf("") }
-    var gidText by rememberSaveable { mutableStateOf("") }
-    var loaded by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!loaded) {
-            val current = settings.currentNfs()
-            serverText = current.server
-            exportText = current.export
-            subDirText = current.subDir
-            uidText = current.uid.toString()
-            gidText = current.gid.toString()
-            loaded = true
-        }
-    }
+    var serverText by rememberSaveable { mutableStateOf(nfs.server) }
+    var exportText by rememberSaveable { mutableStateOf(nfs.export) }
+    var subDirText by rememberSaveable { mutableStateOf(nfs.subDir) }
+    var uidText by rememberSaveable { mutableStateOf(nfs.uid.toString()) }
+    var gidText by rememberSaveable { mutableStateOf(nfs.gid.toString()) }
     fun update(change: NfsSettings.() -> NfsSettings) {
-        if (loaded) scope.launch { settings.setNfs(settings.currentNfs().change()) }
+        scope.launch { settings.setNfs(settings.currentNfs().change()) }
     }
 
     Row(
@@ -1068,11 +1042,26 @@ private fun SettingSwitch(
     }
 }
 
-/** Mbit/s for the input field: integers without decimals, otherwise with a comma. */
-private fun formatMbit(value: Double): String =
-    if (value == Math.floor(value)) value.toLong().toString()
-    else String.format(java.util.Locale.GERMANY, "%.2f", value).trimEnd('0').trimEnd(',')
+/** Text of the speed-limit field, with the decimal separator of the current locale. */
+internal object SpeedLimitInput {
+    private val defaultSeparator: Char
+        get() = DecimalFormatSymbols.getInstance().decimalSeparator
 
-/** Parses comma or period input; null for empty or incomplete text. */
-private fun parseMbit(text: String): Double? =
-    text.trim().replace(',', '.').takeIf { it.isNotEmpty() && it != "." }?.toDoubleOrNull()
+    /** Integers without decimals, otherwise at most two decimals. */
+    fun format(value: Double, separator: Char = defaultSeparator): String =
+        if (value == Math.floor(value)) value.toLong().toString()
+        else String.format(Locale.ROOT, "%.2f", value).trimEnd('0').trimEnd('.').replace('.', separator)
+
+    /** Keeps digits and the first decimal separator (comma or period typed). */
+    fun clean(text: String, separator: Char = defaultSeparator): String = buildString {
+        var seen = false
+        for (c in text) {
+            if (c.isDigit()) append(c)
+            else if ((c == ',' || c == '.') && !seen) { append(separator); seen = true }
+        }
+    }.take(8)
+
+    /** Parses comma or period input; null for empty or incomplete text. */
+    fun parse(text: String): Double? =
+        text.trim().replace(',', '.').takeIf { it.isNotEmpty() && it != "." }?.toDoubleOrNull()
+}

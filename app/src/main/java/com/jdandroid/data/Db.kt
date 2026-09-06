@@ -103,6 +103,15 @@ fun Account.hasPremium(now: Long = System.currentTimeMillis()): Boolean =
             (premiumUntil == 0L && statusText?.let { it.startsWith("Premium") || it.startsWith("Ultimate") } == true)
         )
 
+/**
+ * The account the engine uses for a hoster: a premium account beats a valid
+ * free one (an expired subscription stays valid), the newest wins otherwise.
+ */
+fun List<Account>.preferredValid(now: Long = System.currentTimeMillis()): Account? {
+    val valid = filter { it.valid }.sortedByDescending { it.id }
+    return valid.firstOrNull { it.hasPremium(now) } ?: valid.firstOrNull()
+}
+
 @Dao
 interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY addedAt DESC")
@@ -371,8 +380,8 @@ interface AccountDao {
     @Query("SELECT * FROM accounts ORDER BY hosterId")
     fun observeAll(): Flow<List<Account>>
 
-    @Query("SELECT * FROM accounts WHERE hosterId = :hosterId AND valid = 1 LIMIT 1")
-    suspend fun validForHoster(hosterId: String): Account?
+    /** Premium first; see [preferredValid]. */
+    suspend fun validForHoster(hosterId: String): Account? = byHoster(hosterId).preferredValid()
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun byId(id: Long): Account?

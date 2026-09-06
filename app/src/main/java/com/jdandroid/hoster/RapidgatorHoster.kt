@@ -117,7 +117,7 @@ class RapidgatorHoster internal constructor(
                 ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
             val pageUrl = "$siteBase/file/$id" + (nameSegment?.let { "/$it" } ?: "")
 
-            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
+            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { DirectLinks.https(it) }?.let { direct ->
                 val session = freeSessions.remove(id)
                 restarts.remove(id)
                 return@withContext ResolvedLink(
@@ -167,7 +167,7 @@ class RapidgatorHoster internal constructor(
                         Texts.t("hoster_rapidgator_captcha_page_unreachable", page.code), permanent = false
                     )
                 }
-                RapidgatorFreePage.directLink(page.body)?.let { direct ->
+                RapidgatorFreePage.directLink(page.body)?.let { DirectLinks.https(it) }?.let { direct ->
                     // No captcha required: the direct link is already there
                     freeSessions.remove(id)
                     restarts.remove(id)
@@ -460,7 +460,7 @@ class RapidgatorHoster internal constructor(
             val id = fileId(url)
             val attempt: (String) -> ResolvedLink = { token ->
                 val resp = call("file/download", mapOf("file_id" to id, "token" to token))
-                val direct = resp.optString("download_url")
+                val direct = DirectLinks.https(resp.optString("download_url"))
                 if (direct.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_no_download_url"), true)
                 // Name, size and MD5 for the integrity check; optional, an error
                 // here must not prevent the download.

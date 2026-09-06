@@ -120,6 +120,10 @@ object DirectLinks {
         return last.contains('.') && ext.isNotEmpty() && ext !in assetExtensions
     }
 
+    /** Cleartext is disabled in the app: file server links always via HTTPS. */
+    fun https(url: String): String =
+        if (url.startsWith("http://", ignoreCase = true)) "https://" + url.substring(7) else url
+
     /** True when the URL's host is one of [siteHosts] or a subdomain of one (file servers). */
     fun isSiteHost(url: String, siteHosts: Set<String>): Boolean {
         val host = url.toHttpUrlOrNull()?.host?.lowercase() ?: return false

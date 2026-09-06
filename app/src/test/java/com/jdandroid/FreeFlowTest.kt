@@ -1,6 +1,7 @@
 package com.jdandroid
 
 import com.jdandroid.data.Account
+import com.jdandroid.data.preferredValid
 import com.jdandroid.engine.FreeFlow
 import com.jdandroid.engine.FreePath
 import org.junit.Assert.assertEquals
@@ -67,5 +68,25 @@ class FreeFlowTest {
         assertFalse(FreeFlow.needsRecheck(account().copy(lastChecked = now - minute), now))
         // Permanently invalid (wrong password): not hammered on every download
         assertFalse(FreeFlow.needsRecheck(account(valid = false).copy(lastChecked = now - 10 * minute), now))
+    }
+
+    @Test
+    fun premiumKontoGewinntGegenAelteresGueltigesFreeKonto() {
+        val expired = account(premiumUntil = now - 1, status = "Premium").copy(id = 1)
+        val premium = account(premiumUntil = now + 1).copy(id = 2)
+        assertEquals(premium, listOf(expired, premium).preferredValid(now))
+        assertEquals(premium, listOf(premium, expired).preferredValid(now))
+        // Premium from the status text only, without an expiry date
+        val byStatus = account(status = "Ultimate").copy(id = 1)
+        assertEquals(byStatus, listOf(byStatus, account().copy(id = 2)).preferredValid(now))
+    }
+
+    @Test
+    fun ohnePremiumGiltDasNeuesteGueltigeKonto() {
+        val old = account().copy(id = 1)
+        val newer = account().copy(id = 2)
+        val invalid = account(valid = false, premiumUntil = now + 1).copy(id = 3)
+        assertEquals(newer, listOf(old, newer, invalid).preferredValid(now))
+        assertEquals(null, listOf(invalid).preferredValid(now))
     }
 }

@@ -96,7 +96,7 @@ fun AddLinksDialog(
         confirmButton = {
             TextButton(
                 enabled = recognized.isNotEmpty(),
-                onClick = {
+                onClick = singleShot {
                     onAdd(text, packageName.ifBlank { null })
                     onDismiss()
                 }

@@ -24,6 +24,7 @@ import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.LinkChecker
 import com.jdandroid.data.LinkSink
 import com.jdandroid.data.Secrets
+import com.jdandroid.data.SettingsValues
 import com.jdandroid.engine.nfs.NfsDiscovery
 import com.jdandroid.engine.DownloadService
 import com.jdandroid.engine.CaptchaPage
@@ -507,6 +508,13 @@ class AccountViewModel(app: Application) : AndroidViewModel(app) {
 
 /** State of the settings tab that has to outlive the composition. */
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
+    /**
+     * Stored settings as one value; null until the first read, so the tab never
+     * shows defaults for a frame before the real values arrive.
+     */
+    val values: StateFlow<SettingsValues?> = (app as JdApp).settings.values
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     internal val nfsProbe = NfsProbeRunner(viewModelScope)
     internal val nfsWizard = NfsWizardRunner(
         viewModelScope,

@@ -30,45 +30,19 @@ class SettingsRepository(private val context: Context) {
         if (e is IOException) emit(emptyPreferences()) else throw e
     }
 
-    private val keyMaxConcurrent = intPreferencesKey("max_concurrent")
-    private val keyExportToDownloads = booleanPreferencesKey("export_to_downloads")
-    private val keyAutoExtract = booleanPreferencesKey("auto_extract")
-    private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
-    private val keyFlatExtract = booleanPreferencesKey("flat_extract")
-    private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
-    private val keyPasswords = stringPreferencesKey("archive_passwords")
-    private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
-    /** Legacy key (KiB/s), only read for conversion to Mbit/s. */
-    private val keySpeedLimitKbps = intPreferencesKey("speed_limit_kbps")
-    private val keySpeedLimitMbit = doublePreferencesKey("speed_limit_mbit")
-    private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
-    private val keyWifiOnly = booleanPreferencesKey("wifi_only")
-    private val keyAutoStart = booleanPreferencesKey("auto_start_links")
-    private val keyFreeMode = booleanPreferencesKey("free_mode")
-    private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
-    private val keyThemeMode = stringPreferencesKey("theme_mode")
-    private val keyNfsEnabled = booleanPreferencesKey("nfs_enabled")
-    private val keyNfsServer = stringPreferencesKey("nfs_server")
-    private val keyNfsExport = stringPreferencesKey("nfs_export")
-    private val keyNfsUid = intPreferencesKey("nfs_uid")
-    private val keyNfsGid = intPreferencesKey("nfs_gid")
-    private val keyNfsSubDir = stringPreferencesKey("nfs_subdir")
+    /** All settings from one read of the store; the settings tab draws from this. */
+    val values: Flow<SettingsValues> = prefs.map { valuesOf(it) }
 
-    val maxConcurrent: Flow<Int> =
-        prefs.map { it[keyMaxConcurrent] ?: 2 }
+    val maxConcurrent: Flow<Int> = values.map { it.maxConcurrent }
 
-    val exportToDownloads: Flow<Boolean> =
-        prefs.map { it[keyExportToDownloads] ?: true }
+    val exportToDownloads: Flow<Boolean> = values.map { it.exportToDownloads }
 
-    val autoExtract: Flow<Boolean> =
-        prefs.map { it[keyAutoExtract] ?: true }
+    val autoExtract: Flow<Boolean> = values.map { it.autoExtract }
 
-    val deleteArchiveAfterExtract: Flow<Boolean> =
-        prefs.map { it[keyDeleteArchive] ?: true }
+    val deleteArchiveAfterExtract: Flow<Boolean> = values.map { it.deleteArchiveAfterExtract }
 
     /** Flat extraction: ignore folders inside the archive. */
-    val flatExtract: Flow<Boolean> =
-        prefs.map { it[keyFlatExtract] ?: true }
+    val flatExtract: Flow<Boolean> = values.map { it.flatExtract }
 
     suspend fun currentFlatExtract(): Boolean = flatExtract.first()
 
@@ -76,16 +50,13 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyFlatExtract] = value }
     }
 
-    val removeLinksAfterExtract: Flow<Boolean> =
-        prefs.map { it[keyRemoveAfterExtract] ?: true }
+    val removeLinksAfterExtract: Flow<Boolean> = values.map { it.removeLinksAfterExtract }
 
     /** One password per line. */
-    val passwordList: Flow<String> =
-        prefs.map { it[keyPasswords] ?: "" }
+    val passwordList: Flow<String> = values.map { it.passwordList }
 
     /** Files excluded from extraction (patterns with * and ?), one per line. */
-    val extractExcludeList: Flow<String> =
-        prefs.map { it[keyExtractExcludes] ?: "" }
+    val extractExcludeList: Flow<String> = values.map { it.extractExcludeList }
 
     suspend fun currentExtractExcludes(): List<String> =
         extractExcludeList.first().lines().map { it.trim() }.filter { it.isNotEmpty() }
@@ -115,24 +86,16 @@ class SettingsRepository(private val context: Context) {
      * Global limit in Mbit/s (1 Mbit = 1 000 000 bit), 0 = unlimited. A legacy
      * KiB/s value is converted until the user saves again.
      */
-    val speedLimitMbit: Flow<Double> =
-        prefs.map { p ->
-            p[keySpeedLimitMbit]
-                ?: p[keySpeedLimitKbps]?.let { kbps -> kbpsToMbit(kbps) }
-                ?: 0.0
-        }
+    val speedLimitMbit: Flow<Double> = values.map { it.speedLimitMbit }
 
     /** Downloads only over unmetered connections. */
-    val wifiOnly: Flow<Boolean> =
-        prefs.map { it[keyWifiOnly] ?: false }
+    val wifiOnly: Flow<Boolean> = values.map { it.wifiOnly }
 
     /** Start new links immediately instead of collecting them in the link grabber. */
-    val autoStartLinks: Flow<Boolean> =
-        prefs.map { it[keyAutoStart] ?: false }
+    val autoStartLinks: Flow<Boolean> = values.map { it.autoStartLinks }
 
     /** Free mode: download without an account (wait times, captcha in the embedded browser). */
-    val freeMode: Flow<Boolean> =
-        prefs.map { it[keyFreeMode] ?: true }
+    val freeMode: Flow<Boolean> = values.map { it.freeMode }
 
     suspend fun currentFreeMode(): Boolean = freeMode.first()
 
@@ -140,18 +103,8 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyFreeMode] = value }
     }
 
-    /** Target folder chosen via Storage Access Framework (tree URI), null = Downloads/JDAndroid. */
     /** NFS target; enabled only when server and export path are set. */
-    val nfs: Flow<NfsSettings> = prefs.map {
-        NfsSettings(
-            enabled = it[keyNfsEnabled] ?: false,
-            server = it[keyNfsServer].orEmpty().trim(),
-            export = it[keyNfsExport].orEmpty().trim(),
-            uid = it[keyNfsUid] ?: NfsSettings.DEFAULT_UID,
-            gid = it[keyNfsGid] ?: NfsSettings.DEFAULT_GID,
-            subDir = it[keyNfsSubDir].orEmpty().trim()
-        )
-    }
+    val nfs: Flow<NfsSettings> = values.map { it.nfs }
 
     suspend fun currentNfs(): NfsSettings = nfs.first()
 
@@ -166,11 +119,11 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    val downloadTreeUri: Flow<String?> =
-        prefs.map { it[keyDownloadTree]?.ifBlank { null } }
+    /** Target folder chosen via Storage Access Framework (tree URI), null = Downloads/JDAndroid. */
+    val downloadTreeUri: Flow<String?> = values.map { it.downloadTreeUri }
 
     /** "system", "light" or "dark". */
-    val themeMode: Flow<String> = prefs.map { it[keyThemeMode] ?: "system" }
+    val themeMode: Flow<String> = values.map { it.themeMode }
 
     suspend fun setThemeMode(value: String) {
         context.dataStore.edit { it[keyThemeMode] = value }
@@ -198,8 +151,7 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    val clickNLoadEnabled: Flow<Boolean> =
-        prefs.map { it[keyClickNLoad] ?: false }
+    val clickNLoadEnabled: Flow<Boolean> = values.map { it.clickNLoadEnabled }
 
     suspend fun currentMaxConcurrent(): Int = maxConcurrent.first()
 
@@ -230,6 +182,59 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
+        private val keyMaxConcurrent = intPreferencesKey("max_concurrent")
+        private val keyExportToDownloads = booleanPreferencesKey("export_to_downloads")
+        private val keyAutoExtract = booleanPreferencesKey("auto_extract")
+        private val keyDeleteArchive = booleanPreferencesKey("delete_archive_after_extract")
+        private val keyFlatExtract = booleanPreferencesKey("flat_extract")
+        private val keyRemoveAfterExtract = booleanPreferencesKey("remove_links_after_extract")
+        private val keyPasswords = stringPreferencesKey("archive_passwords")
+        private val keyExtractExcludes = stringPreferencesKey("extract_excludes")
+        /** Legacy key (KiB/s), only read for conversion to Mbit/s. */
+        private val keySpeedLimitKbps = intPreferencesKey("speed_limit_kbps")
+        private val keySpeedLimitMbit = doublePreferencesKey("speed_limit_mbit")
+        private val keyClickNLoad = booleanPreferencesKey("clicknload_enabled")
+        private val keyWifiOnly = booleanPreferencesKey("wifi_only")
+        private val keyAutoStart = booleanPreferencesKey("auto_start_links")
+        private val keyFreeMode = booleanPreferencesKey("free_mode")
+        private val keyDownloadTree = stringPreferencesKey("download_tree_uri")
+        private val keyThemeMode = stringPreferencesKey("theme_mode")
+        private val keyNfsEnabled = booleanPreferencesKey("nfs_enabled")
+        private val keyNfsServer = stringPreferencesKey("nfs_server")
+        private val keyNfsExport = stringPreferencesKey("nfs_export")
+        private val keyNfsUid = intPreferencesKey("nfs_uid")
+        private val keyNfsGid = intPreferencesKey("nfs_gid")
+        private val keyNfsSubDir = stringPreferencesKey("nfs_subdir")
+
+        /** Applies the defaults to a stored [Preferences] set. */
+        internal fun valuesOf(p: Preferences): SettingsValues = SettingsValues(
+            maxConcurrent = p[keyMaxConcurrent] ?: 2,
+            speedLimitMbit = p[keySpeedLimitMbit]
+                ?: p[keySpeedLimitKbps]?.let { kbps -> kbpsToMbit(kbps) }
+                ?: 0.0,
+            exportToDownloads = p[keyExportToDownloads] ?: true,
+            wifiOnly = p[keyWifiOnly] ?: false,
+            autoStartLinks = p[keyAutoStart] ?: false,
+            freeMode = p[keyFreeMode] ?: true,
+            downloadTreeUri = p[keyDownloadTree]?.ifBlank { null },
+            themeMode = p[keyThemeMode] ?: "system",
+            autoExtract = p[keyAutoExtract] ?: true,
+            deleteArchiveAfterExtract = p[keyDeleteArchive] ?: true,
+            flatExtract = p[keyFlatExtract] ?: true,
+            removeLinksAfterExtract = p[keyRemoveAfterExtract] ?: true,
+            passwordList = p[keyPasswords] ?: "",
+            extractExcludeList = p[keyExtractExcludes] ?: "",
+            clickNLoadEnabled = p[keyClickNLoad] ?: false,
+            nfs = NfsSettings(
+                enabled = p[keyNfsEnabled] ?: false,
+                server = p[keyNfsServer].orEmpty().trim(),
+                export = p[keyNfsExport].orEmpty().trim(),
+                uid = p[keyNfsUid] ?: NfsSettings.DEFAULT_UID,
+                gid = p[keyNfsGid] ?: NfsSettings.DEFAULT_GID,
+                subDir = p[keyNfsSubDir].orEmpty().trim()
+            )
+        )
+
         /** Upper bound of the stored password list; every extraction tries all entries. */
         const val MAX_STORED_PASSWORDS = 200
 
@@ -286,3 +291,23 @@ class SettingsRepository(private val context: Context) {
         }
     }
 }
+
+/** Every stored setting with its default applied, from one read of the store. */
+data class SettingsValues(
+    val maxConcurrent: Int,
+    val speedLimitMbit: Double,
+    val exportToDownloads: Boolean,
+    val wifiOnly: Boolean,
+    val autoStartLinks: Boolean,
+    val freeMode: Boolean,
+    val downloadTreeUri: String?,
+    val themeMode: String,
+    val autoExtract: Boolean,
+    val deleteArchiveAfterExtract: Boolean,
+    val flatExtract: Boolean,
+    val removeLinksAfterExtract: Boolean,
+    val passwordList: String,
+    val extractExcludeList: String,
+    val clickNLoadEnabled: Boolean,
+    val nfs: NfsSettings
+)

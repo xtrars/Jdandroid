@@ -67,6 +67,14 @@ class DirectLinksTest {
     }
 
     @Test
+    fun httpWirdAufHttpsAngehoben() {
+        assertEquals("https://pr5.rapidgator.net/x/name.rar", DirectLinks.https("http://pr5.rapidgator.net/x/name.rar"))
+        assertEquals("https://s12.example.com/name.rar", DirectLinks.https("HTTP://s12.example.com/name.rar"))
+        assertEquals("https://s12.example.com/name.rar", DirectLinks.https("https://s12.example.com/name.rar"))
+        assertEquals("", DirectLinks.https(""))
+    }
+
+    @Test
     fun siteHostErkenntHauptdomainUndSubdomains() {
         val hosts = hoster.siteHosts
         assertTrue(DirectLinks.isSiteHost("https://example.com/abc", hosts))

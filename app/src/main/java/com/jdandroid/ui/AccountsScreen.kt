@@ -443,7 +443,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(
                 enabled = valid,
-                onClick = {
+                onClick = singleShot {
                     hoster?.let { vm.addAccount(it, username, password, apiKey) }
                     onDismiss()
                 }

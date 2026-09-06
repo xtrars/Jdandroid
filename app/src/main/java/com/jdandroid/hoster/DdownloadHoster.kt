@@ -381,7 +381,7 @@ class DdownloadHoster internal constructor(
             }
             val fileName = pageName ?: pageFileName(page.body)
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
-            ResolvedLink(direct, fileName)
+            ResolvedLink(DirectLinks.https(direct), fileName)
         }
 
     /** Free flow (blocks, countdown, Turnstile), see [DdownloadFree]. */
@@ -485,14 +485,16 @@ class DdownloadHoster internal constructor(
             fileName = info?.optString("name")?.ifBlank { null }
             if (info?.optInt("status") == 404) throw FileOfflineException()
         }.onFailure { if (it is HosterException && it.permanent) throw it }
+        // Status 200 without result/url is an API hiccup or a changed
+        // response format (as in checkViaApi): retry, do not fail the entry.
         val result = apiCall("file/direct_link", mapOf("key" to key, "file_code" to code))
             .optJSONObject("result")
-            ?: throw HosterException(Texts.t("hoster_ddownload_no_download_url"), true)
+            ?: throw HosterException(Texts.t("hoster_ddownload_no_download_url"), permanent = false)
         val direct = result.optString("url")
         if (direct.isBlank()) {
-            throw HosterException(Texts.t("hoster_ddownload_no_download_url_premium"), true)
+            throw HosterException(Texts.t("hoster_ddownload_no_download_url_premium"), permanent = false)
         }
-        return ResolvedLink(direct, fileName, result.optLong("size", -1))
+        return ResolvedLink(DirectLinks.https(direct), fileName, result.optLong("size", -1))
     }
 
     private fun checkOffline(html: String) {

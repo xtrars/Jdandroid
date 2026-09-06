@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
             val modeKey by settings.themeMode.collectAsStateWithLifecycle(initialValue = initialMode)
             val mode = ThemeMode.fromKey(modeKey)
             val dark = isDarkFor(mode)
+            LaunchedEffect(mode) { applySystemNightMode(this@MainActivity, mode) }
             // System bars follow the chosen mode, even when it differs from the system.
             LaunchedEffect(dark) {
                 val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)

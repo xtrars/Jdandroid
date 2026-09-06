@@ -60,7 +60,7 @@ class RapidgatorPremiumFlowTest {
         private val loginReply: (String) -> MockResponse,
         private val download: (token: String) -> MockResponse,
         private val userInfo: (token: String) -> MockResponse = { MockResponse().setResponseCode(404) },
-        private val fileInfo: MockResponse
+        private val fileInfo: (token: String) -> MockResponse
     ) : Dispatcher() {
         var logins = 0
         override fun dispatch(request: RecordedRequest): MockResponse {
@@ -69,7 +69,7 @@ class RapidgatorPremiumFlowTest {
                 "/api/user/login" -> loginReply("T${++logins}")
                 "/api/file/download" -> download(form["token"].orEmpty())
                 "/api/user/info" -> userInfo(form["token"].orEmpty())
-                "/api/file/info" -> fileInfo
+                "/api/file/info" -> fileInfo(form["token"].orEmpty())
                 else -> MockResponse().setResponseCode(404)
             }
         }
@@ -86,7 +86,7 @@ class RapidgatorPremiumFlowTest {
                 if (token == "T2") json("""{"status":200,"details":null,"response":{"download_url":"https://pr5.rapidgator.net/x/archiv.part1.rar"}}""")
                 else error(401, "Session not exist")
             },
-            fileInfo = fileInfo
+            fileInfo = { fileInfo }
         )
         server.dispatcher = api
 
@@ -126,7 +126,7 @@ class RapidgatorPremiumFlowTest {
         val api = ApiDispatcher(
             loginReply = ::loginReply,
             download = { error(403, "Denied by IP") },
-            fileInfo = fileInfo
+            fileInfo = { fileInfo }
         )
         server.dispatcher = api
         runBlocking { hoster.checkAccount(account) }
@@ -144,7 +144,7 @@ class RapidgatorPremiumFlowTest {
         val api = ApiDispatcher(
             loginReply = ::loginReply,
             download = { error(401, "Session not exist") },
-            fileInfo = fileInfo
+            fileInfo = { fileInfo }
         )
         server.dispatcher = api
 
@@ -166,7 +166,7 @@ class RapidgatorPremiumFlowTest {
                 if (token == "T1") error(401, "Session not exist")
                 else json("""{"status":200,"details":null,"response":{"user":{"is_premium":false,"traffic":{"left":null,"total":null}}}}""")
             },
-            fileInfo = fileInfo
+            fileInfo = { fileInfo }
         )
         server.dispatcher = api
         runBlocking { hoster.checkAccount(account) }
@@ -199,12 +199,88 @@ class RapidgatorPremiumFlowTest {
         server.dispatcher = ApiDispatcher(
             loginReply = { error(401, "Login or password is wrong") },
             download = { MockResponse().setResponseCode(500) },
-            fileInfo = fileInfo
+            fileInfo = { fileInfo }
         )
         val fehler = failure { hoster.checkAccount(account) }
         assertTrue("$fehler", fehler is HosterException && fehler.permanent)
         assertEquals(Texts.t("hoster_rapidgator_api_error", "Login or password is wrong"), fehler!!.message)
         assertNull(runBlocking { hoster.checkLink(fileUrl, account) }.online)
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun linkpruefungLiefertNameUndGroesse() = withServer { server, hoster ->
+        val api = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { fileInfo }
+        )
+        server.dispatcher = api
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertEquals(true, info.online)
+        assertEquals("archiv.part1.rar", info.fileName)
+        assertEquals(1610612736L, info.fileSize)
+        assertEquals(1, api.logins)
+        assertEquals(2, server.requestCount)
+        server.takeRequest()
+        assertEquals(mapOf("file_id" to fileId, "token" to "T1"), server.takeRequest().form())
+    }
+
+    @Test
+    fun linkpruefungOhneDateiIstOffline() = withServer { server, hoster ->
+        server.dispatcher = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { json("""{"status":200,"details":null,"response":{}}""") }
+        )
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertEquals(false, info.online)
+        assertEquals(Texts.t("hoster_file_not_found"), info.note)
+    }
+
+    @Test
+    fun linkpruefungMeldetSichBeiAbgelaufenemTokenGenauEinmalNeuAn() = withServer { server, hoster ->
+        val api = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { token -> if (token == "T1") error(401, "Session not exist") else fileInfo }
+        )
+        server.dispatcher = api
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertEquals(true, info.online)
+        assertEquals("archiv.part1.rar", info.fileName)
+        assertEquals(2, api.logins)
+        // login, info(T1) 401, login, info(T2)
+        assertEquals(4, server.requestCount)
+        assertEquals("/api/user/login", server.takeRequest().path)
+        assertEquals(mapOf("file_id" to fileId, "token" to "T1"), server.takeRequest().form())
+        assertEquals("/api/user/login", server.takeRequest().path)
+        assertEquals(mapOf("file_id" to fileId, "token" to "T2"), server.takeRequest().form())
+    }
+
+    @Test
+    fun linkpruefungBeiSperreIstUnbestimmtOhneNeuenLogin() = withServer { server, hoster ->
+        val api = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { error(403, "Denied by IP") }
+        )
+        server.dispatcher = api
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertNull(info.online)
+        assertEquals(Texts.t("hoster_rapidgator_api_error", "Denied by IP"), info.note)
+        assertEquals(1, api.logins)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun direktlinkMitHttpWirdAufHttpsAngehoben() = withServer { server, hoster ->
+        server.dispatcher = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { json("""{"status":200,"details":null,"response":{"download_url":"http://pr5.rapidgator.net/x/archiv.part1.rar"}}""") },
+            fileInfo = { fileInfo }
+        )
+        val link = runBlocking { hoster.resolve(fileUrl, account) }
+        assertEquals("https://pr5.rapidgator.net/x/archiv.part1.rar", link.directUrl)
     }
 }

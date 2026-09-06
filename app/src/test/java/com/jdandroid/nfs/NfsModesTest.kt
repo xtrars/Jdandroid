@@ -28,7 +28,13 @@ class NfsModesTest {
 
     @Test
     fun attributeTragenNurDenModus() {
-        val text = NfsModes.attributes(NfsModes.DIR).toString()
-        assertTrue(text, text.contains("493") || text.contains("755"))
+        assertEquals(
+            " [mode :493 uid: null gid: null size: null atime: null mtime: null]",
+            NfsModes.attributes(NfsModes.DIR).toString(),
+        )
+        assertEquals(
+            " [mode :420 uid: null gid: null size: null atime: null mtime: null]",
+            NfsModes.attributes(NfsModes.FILE).toString(),
+        )
     }
 }

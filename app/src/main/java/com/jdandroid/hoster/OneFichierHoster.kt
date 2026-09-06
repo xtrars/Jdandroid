@@ -250,9 +250,7 @@ class OneFichierHoster internal constructor(
     private fun resolveLocation(base: String, location: String): String =
         base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
-    /** Cleartext is disabled in the app: file server links always via HTTPS. */
-    private fun secure(url: String): String =
-        if (url.startsWith("http://", ignoreCase = true)) "https://" + url.substring(7) else url
+    private fun secure(url: String): String = DirectLinks.https(url)
 
     /**
      * Headers for the file request in free mode: browser user agent, Referer

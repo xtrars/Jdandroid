@@ -1,5 +1,7 @@
 package com.jdandroid.ui
 
+import android.app.UiModeManager
+import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -14,13 +16,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /** Light/dark preference: follow the system or a fixed choice. */
-enum class ThemeMode(val key: String) {
-    SYSTEM("system"),
-    LIGHT("light"),
-    DARK("dark");
+enum class ThemeMode(val key: String, val systemNightMode: Int) {
+    SYSTEM("system", UiModeManager.MODE_NIGHT_AUTO),
+    LIGHT("light", UiModeManager.MODE_NIGHT_NO),
+    DARK("dark", UiModeManager.MODE_NIGHT_YES);
 
     companion object {
         fun fromKey(key: String?): ThemeMode = entries.firstOrNull { it.key == key } ?: SYSTEM
+    }
+}
+
+/**
+ * Mirrors the chosen mode into the app's night-mode override so the splash
+ * screen and window background (drawn from the XML theme before Compose
+ * runs) match it. Below API 31 they keep following the system.
+ */
+fun applySystemNightMode(context: Context, mode: ThemeMode) {
+    if (Build.VERSION.SDK_INT < 31) return
+    runCatching {
+        context.getSystemService(UiModeManager::class.java)?.setApplicationNightMode(mode.systemNightMode)
     }
 }
 
