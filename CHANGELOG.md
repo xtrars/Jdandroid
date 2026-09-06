@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.1] – 2026-09-06
+
+### Geändert
+
+- NFS: Die drei Knöpfe „Server suchen“, „Freigaben“ und „Ordner durchsuchen“
+  sind zu einem Knopf „NAS durchsuchen“ zusammengefasst. Ein Dialog führt in
+  drei Schritten von den gefundenen Servern über die Freigaben zum Ordner;
+  „Zurück“ geht eine Stufe hoch. Sind Server und Export-Pfad schon
+  eingetragen, öffnet der Dialog gleich beim Ordner, mit Server allein bei
+  den Freigaben.
+
 ## [0.4.0] – 2026-09-05
 
 ### Hinzugefügt
@@ -809,6 +820,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.1]: https://github.com/xtrars/Jdandroid/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/xtrars/Jdandroid/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/xtrars/Jdandroid/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/xtrars/Jdandroid/compare/v0.2.0...v0.2.1

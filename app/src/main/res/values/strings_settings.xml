@@ -126,8 +126,9 @@
         <item quantity="one">%d Eintrag</item>
         <item quantity="other">%d Einträge</item>
     </plurals>
+    <string name="settings_nfs_wizard">NAS durchsuchen</string>
+    <string name="settings_nfs_wizard_step" tools:ignore="PluralsCandidate">Schritt %1$d von 3: Server › Freigabe › Ordner</string>
     <string name="settings_nfs_probe_unreachable">NAS nicht erreichbar: %1$s</string>
-    <string name="settings_nfs_browse">Ordner durchsuchen</string>
     <string name="settings_nfs_browser_title">Ordner auf dem NAS</string>
     <string name="settings_nfs_browser_parent">Übergeordneter Ordner</string>
     <string name="settings_nfs_browser_empty">Leerer Ordner</string>
@@ -135,12 +136,10 @@
     <string name="settings_nfs_browser_folder_name">Ordnername</string>
     <string name="settings_nfs_browser_create">Anlegen</string>
     <string name="settings_nfs_browser_choose">Diesen Ordner wählen</string>
-    <string name="settings_nfs_discover">Server suchen</string>
     <string name="settings_nfs_discover_title">NFS-Server im Netzwerk</string>
     <string name="settings_nfs_discover_searching">Suche läuft …</string>
     <string name="settings_nfs_discover_none">Kein NFS-Server gefunden. Ist das Gerät im WLAN, NFS am NAS eingeschaltet und Port 2049 erreichbar?</string>
     <string name="settings_nfs_discover_again">Erneut suchen</string>
-    <string name="settings_nfs_exports">Freigaben</string>
     <string name="settings_nfs_exports_title">Freigaben auf %1$s</string>
     <string name="settings_nfs_exports_empty">Der Server meldet keine Freigaben.</string>
     <string name="settings_nfs_exports_use_server">Nur Server übernehmen, Pfad von Hand eintragen</string>

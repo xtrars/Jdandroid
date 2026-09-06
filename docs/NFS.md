@@ -107,23 +107,32 @@ Einstellungen → **NFS-Freigabe (NAS)**:
 **Verbindung prüfen** hängt den Export ein, listet den Zielordner und zeigt
 den freien Platz. Erst wenn das gelingt, lohnt sich das Einschalten.
 
-### Server suchen
+### NAS durchsuchen
 
-**Server suchen** neben dem Server-Feld findet NFS-Server im eigenen Netz,
-ohne dass IP oder Pfad getippt werden müssen. Die App fragt etwa vier
-Sekunden lang zwei Quellen ab: per mDNS/Bonjour nach dem Dienst
-`_nfs._tcp` (Synology, TrueNAS und viele Linux-Server melden ihn) und per
-kurzem Verbindungsversuch auf Port 2049 an jede Adresse des WLAN-Subnetzes
-(bei Netzen größer als /22 nur die 1024 Adressen rund um das Gerät). Gefunden
-wird alles, was auf 2049 antwortet, also auch Server ohne mDNS. Ein Tipp auf
-einen Treffer übernimmt die IP und lädt die Freigaben des Servers über das
-MOUNT-Protokoll (wie `showmount -e`); ein Tipp auf eine Freigabe trägt den
-Export-Pfad ein. **Freigaben** neben dem Export-Feld holt die Liste für den
-bereits eingetragenen Server. Voraussetzungen: Gerät im WLAN (oder per
-Ethernet) im selben Netz wie das NAS, NFS am NAS eingeschaltet, Port 2049
-und für die Freigabeliste zusätzlich 111 (rpcbind) und der mountd-Port
-erreichbar. Meldet der Server keine Freigaben oder scheitert die Liste,
-lässt sich der Server trotzdem übernehmen und der Pfad von Hand eintragen.
+**NAS durchsuchen** öffnet einen Dialog in drei Schritten, damit weder IP
+noch Pfad getippt werden müssen:
+
+1. **Server.** Die App fragt etwa vier Sekunden lang zwei Quellen ab: per
+   mDNS/Bonjour nach dem Dienst `_nfs._tcp` (Synology, TrueNAS und viele
+   Linux-Server melden ihn) und per kurzem Verbindungsversuch auf Port 2049
+   an jede Adresse des WLAN-Subnetzes (bei Netzen größer als /22 nur die
+   1024 Adressen rund um das Gerät). Gefunden wird alles, was auf 2049
+   antwortet, also auch Server ohne mDNS. „Erneut suchen“ startet die Suche
+   noch einmal.
+2. **Freigabe.** Ein Tipp auf einen Server lädt seine Freigaben über das
+   MOUNT-Protokoll (wie `showmount -e`). Meldet der Server keine oder
+   scheitert die Liste, übernimmt „Nur Server übernehmen“ die IP, und der
+   Pfad wird von Hand eingetragen.
+3. **Ordner.** Ein Tipp auf eine Freigabe zeigt die Ordner darunter;
+   Ordner öffnen sich mit einem Tipp, „..“ geht hoch, „Neuer Ordner“ legt
+   einen an, „Diesen Ordner wählen“ trägt Server, Export-Pfad und
+   Unterordner ein.
+
+„Zurück“ geht jeweils eine Stufe hoch. Sind Server und Export-Pfad schon
+eingetragen, beginnt der Dialog beim Ordner, mit Server allein bei den
+Freigaben. Voraussetzungen: Gerät im WLAN (oder per Ethernet) im selben
+Netz wie das NAS, NFS am NAS eingeschaltet, Port 2049 und für die
+Freigabeliste zusätzlich 111 (rpcbind) und der mountd-Port erreichbar.
 
 ## Fehlerbilder und Abhilfe
 
