@@ -143,15 +143,12 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
     suspend fun pausedCount(): Int
 
-    /** Notification progress sum; [except] are the entries whose live value comes from the ProgressBus. */
-    @Query(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT)
-    suspend fun openDownloadedBytesExcept(except: List<Long>): Long
+    /** Entries the engine works on or will start by itself. */
+    @Query("SELECT id FROM downloads WHERE status IN ('RUNNING', 'QUEUED')")
+    suspend fun openIds(): List<Long>
 
-    @Query(
-        "SELECT COALESCE(SUM(fileSize), 0) FROM downloads " +
-            "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED') AND fileSize > 0"
-    )
-    suspend fun openTotalBytes(): Long
+    @Query("SELECT * FROM downloads WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<Long>): List<DownloadItem>
 
     /** "Pause all" must include queued entries, otherwise pump() starts the next ones at once. */
     @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")

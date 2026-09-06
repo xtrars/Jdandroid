@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.4.7] – 2026-09-06
+
+### Behoben
+
+- Fortschrittsbalken in der Benachrichtigung sprang, sobald ein Download
+  fertig war oder ein neuer startete: Er rechnete nur über die noch offenen
+  Einträge, fertige fielen samt Größe aus der Summe. Jetzt zählt die
+  Sitzung seit dem Aufwachen des Dienstes; fertige Einträge behalten ihren
+  Anteil, der Balken läuft nur vorwärts und beginnt erst neu, wenn nichts
+  mehr läuft.
+
 ## [0.4.6] – 2026-09-06
 
 Gesamtprüfung auf dem Stand 0.4.5 mit Schwerpunkt Logikfehler in
@@ -900,6 +911,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.4.7]: https://github.com/xtrars/Jdandroid/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/xtrars/Jdandroid/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/xtrars/Jdandroid/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/xtrars/Jdandroid/compare/v0.4.3...v0.4.4

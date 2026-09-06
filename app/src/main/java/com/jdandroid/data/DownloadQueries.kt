@@ -65,14 +65,4 @@ object DownloadQueries {
     const val NEXT_RETRY_AT =
         "SELECT MIN(retryAt) FROM downloads WHERE status = 'QUEUED' " +
             "AND retryAt > :now AND retryAt <= :horizon"
-
-    /**
-     * Sum of downloaded bytes of open entries except :except, the ones whose
-     * live value lives in the ProgressBus while the database value may be up
-     * to 30 s old. Room expands the list; it must never be empty (callers
-     * append -1).
-     */
-    const val OPEN_DOWNLOADED_BYTES_EXCEPT =
-        "SELECT COALESCE(SUM(downloadedBytes), 0) FROM downloads " +
-            "WHERE status IN ('RUNNING', 'QUEUED', 'PAUSED') AND id NOT IN (:except)"
 }

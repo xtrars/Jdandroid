@@ -18,10 +18,6 @@ class DownloadQueriesTest : SchemaDbTest() {
             "archiveKey" to ArchiveNames.archiveKey(fileName), "fileSize" to fileSize
         )
 
-    /** Room expands (:except) to a placeholder list; here the values are inlined. */
-    private fun openDownloadedBytesExcept(except: List<Long>): Long =
-        long(DownloadQueries.OPEN_DOWNLOADED_BYTES_EXCEPT.replace(":except", except.joinToString(",")))
-
     /** MIN() without rows yields NULL, mapped to null. */
     private fun nextRetryAt(now: Long, horizon: Long): Long? =
         bind(DownloadQueries.NEXT_RETRY_AT, "now" to now, "horizon" to horizon).use { st ->
@@ -130,26 +126,6 @@ class DownloadQueriesTest : SchemaDbTest() {
         assertEquals("COMPLETED", column(4, "status"))
         assertEquals("COLLECTED", column(5, "status"))
         assertEquals("RUNNING", column(6, "status"))
-    }
-
-    @Test
-    fun `openDownloadedBytesExcept summiert offene Eintraege ohne die genannten`() {
-        item(1, "a.bin", DownloadStatus.RUNNING, downloadedBytes = 100)
-        item(2, "b.bin", DownloadStatus.QUEUED, downloadedBytes = 20)
-        item(3, "c.bin", DownloadStatus.PAUSED, downloadedBytes = 3)
-        item(4, "d.bin", DownloadStatus.COMPLETED, downloadedBytes = 1000)
-        item(5, "e.bin", DownloadStatus.EXTRACTING, downloadedBytes = 5000)
-        item(6, "f.bin", DownloadStatus.COLLECTED, downloadedBytes = 7)
-        // Like the engine: -1 as a never-existing id so the list is never empty
-        assertEquals(123L, openDownloadedBytesExcept(listOf(-1)))
-        assertEquals(23L, openDownloadedBytesExcept(listOf(1, -1)))
-        assertEquals(0L, openDownloadedBytesExcept(listOf(1, 2, 3)))
-    }
-
-    @Test
-    fun `openDownloadedBytesExcept ohne offene Eintraege liefert 0`() {
-        item(4, "d.bin", DownloadStatus.COMPLETED, downloadedBytes = 1000)
-        assertEquals(0L, openDownloadedBytesExcept(listOf(-1)))
     }
 
     private fun completeExported(id: Long, path: String, note: String? = null): Int =

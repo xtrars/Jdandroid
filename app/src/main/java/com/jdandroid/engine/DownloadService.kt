@@ -275,9 +275,8 @@ class DownloadService : Service() {
             if (cnlActive) parts += getString(R.string.service_status_cnl_on)
             parts.joinToString(" · ")
         }
-        val done = engine.openDownloadedBytes()
-        val total = dao.openTotalBytes()
-        val progress = if (active > 0 && total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else -1
+        val (done, total) = engine.sessionProgress()
+        val progress = if (active > 0) SessionProgress.percent(done, total) else -1
         val paused = dao.pausedCount()
         val manager = getSystemService(NotificationManager::class.java)
         runCatching {

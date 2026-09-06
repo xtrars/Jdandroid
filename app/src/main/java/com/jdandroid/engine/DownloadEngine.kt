@@ -106,18 +106,23 @@ class DownloadEngine(
     /** Nothing runs and nothing is due; under the lock so pump() cannot interleave. */
     suspend fun isIdle(): Boolean = mutex.withLock {
         // Entries held for a captcha need no running service: solving it restarts the service
-        jobs.isEmpty() && archives.activeCount == 0 && exportRetry.activeCount == 0 &&
+        val idle = jobs.isEmpty() && archives.activeCount == 0 && exportRetry.activeCount == 0 &&
             archives.exportingIds.isEmpty() &&
             dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
+        if (idle) session.clear()
+        idle
     }
 
     val totalSpeedBps: Long get() = ProgressBus.totalSpeedBps()
 
-    /** Downloaded bytes of all open entries: live bus values for running ones, database for the rest. */
-    suspend fun openDownloadedBytes(): Long {
-        val live = ProgressBus.state.value
-        val liveBytes = live.values.sumOf { it.downloadedBytes.coerceAtLeast(0) }
-        return dao.openDownloadedBytesExcept(live.keys.toList() + listOf(-1L)) + liveBytes
+    private val session = SessionProgress()
+
+    /** Done and total bytes of the session, see [SessionProgress]. */
+    suspend fun sessionProgress(): Pair<Long, Long> {
+        val ids = session.ids()
+        if (ids.isEmpty()) return 0L to 0L
+        val items = ids.chunked(SQL_IN_CHUNK).flatMap { dao.byIds(it) }
+        return SessionProgress.ratio(items, ProgressBus.state.value)
     }
 
     private fun notifyProgress() {
@@ -152,6 +157,7 @@ class DownloadEngine(
                 dao.setStatus(next.id, DownloadStatus.RUNNING)
                 jobs[next.id] = scope.launch { run(next.id) }
             }
+            session.add(dao.openIds())
         }
         armRetryTimer()
         onStateChanged()
@@ -619,6 +625,9 @@ class DownloadEngine(
 
         /** New progress after which the attempt counter is reset. */
         const val PROGRESS_RESET_BYTES = 4L * 1024 * 1024
+
+        /** SQLite allows 999 bound variables per statement. */
+        private const val SQL_IN_CHUNK = 500
 
         const val SAMPLE_MS = 500L
 
