@@ -54,7 +54,7 @@ Deutsch. Kommentare im Code sind Englisch.
 ## Gestaltungsregeln (vom Nutzer festgelegt)
 
 - Nur Material You: dynamisches Farbschema ab Android 12, darunter das
-  Material-Standardschema. Einzige Ausnahme ist der Gamermodus
+  Material-Standardschema. Einzige Ausnahme ist der Gamermodus (Schaltfläche „Space“)
   (`GamerColorScheme` in `ui/Theme.kt`, Neon auf Weltraumdunkel, plus
   Sternenhimmel/Neon-Rahmen/HUD-Schrift in `ui/GamerStyle.kt`, geschaltet
   über `LocalGamer`); sonst keine eigenen Farbpaletten.

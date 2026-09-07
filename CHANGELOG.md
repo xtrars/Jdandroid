@@ -27,6 +27,13 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.6.2] – 2026-09-07
+
+### Geändert
+
+- Das Farbschema „Gamer“ heißt in der Auswahl jetzt „Space“ (Deutsch und
+  Englisch); gespeicherter Schlüssel und Code bleiben unverändert.
+
 ## [0.6.1] – 2026-09-07
 
 ### Geändert
@@ -944,6 +951,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.6.2]: https://github.com/xtrars/Jdandroid/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/xtrars/Jdandroid/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/xtrars/Jdandroid/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/xtrars/Jdandroid/compare/v0.4.7...v0.5.0
