@@ -160,6 +160,8 @@ fun AccountsScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = jdScaffoldColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { TopAppBar(title = { Text(stringResource(R.string.accounts_title)) }, colors = jdTopBarColors()) }
     ) { padding ->

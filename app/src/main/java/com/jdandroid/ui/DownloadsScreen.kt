@@ -195,6 +195,8 @@ fun DownloadsScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = jdScaffoldColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         // The MainActivity's NavigationBar already handles the bottom inset.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -457,7 +459,7 @@ private fun DownloadRow(
             onDismiss = { confirmDelete = false }
         )
     }
-    RowCard(modifier) {
+    RowCard(modifier, active = item.status == DownloadStatus.RUNNING) {
         Column(Modifier.padding(start = 12.dp, end = 0.dp, top = 4.dp, bottom = 2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

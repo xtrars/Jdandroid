@@ -90,6 +90,8 @@ fun LinkGrabberScreen(
 
     Scaffold(
         modifier = modifier,
+        containerColor = jdScaffoldColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(

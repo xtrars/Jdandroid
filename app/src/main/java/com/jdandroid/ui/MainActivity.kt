@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.NavigationBar
@@ -123,10 +124,13 @@ class MainActivity : ComponentActivity() {
                     window.setBackgroundDrawable(background.toArgb().toDrawable())
                 }
                 Surface(color = background) {
-                    MainScreen(
-                        sharedText = sharedText.value,
-                        onSharedTextConsumed = { sharedText.value = null }
-                    )
+                    val main = @Composable {
+                        MainScreen(
+                            sharedText = sharedText.value,
+                            onSharedTextConsumed = { sharedText.value = null }
+                        )
+                    }
+                    if (LocalGamer.current) GamerBackdrop { main() } else main()
                 }
             }
         }
@@ -285,7 +289,10 @@ fun MainScreen(
     }
 
     val horizontalInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    val gamer = LocalGamer.current
     Scaffold(
+        containerColor = jdScaffoldColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         // Inner screens (own TopAppBar) and the NavigationBar handle the insets;
         // otherwise the padding would be applied twice.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -307,25 +314,30 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach { t ->
-                    val label = stringResource(t.labelRes)
-                    NavigationBarItem(
-                        selected = tab == t,
-                        onClick = { tab = t },
-                        icon = {
-                            Icon(
-                                when (t) {
-                                    Tab.Downloads -> JdIcons.Download
-                                    Tab.Collector -> JdIcons.Link
-                                    Tab.Accounts -> Icons.Default.Person
-                                    Tab.Settings -> Icons.Default.Settings
-                                },
-                                contentDescription = label
-                            )
-                        },
-                        label = { Text(label) }
-                    )
+            Column {
+                if (gamer) NeonLine()
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer.let { if (gamer) it.copy(alpha = 0.9f) else it }
+                ) {
+                    Tab.entries.forEach { t ->
+                        val label = stringResource(t.labelRes)
+                        NavigationBarItem(
+                            selected = tab == t,
+                            onClick = { tab = t },
+                            icon = {
+                                Icon(
+                                    when (t) {
+                                        Tab.Downloads -> JdIcons.Download
+                                        Tab.Collector -> JdIcons.Link
+                                        Tab.Accounts -> Icons.Default.Person
+                                        Tab.Settings -> Icons.Default.Settings
+                                    },
+                                    contentDescription = label
+                                )
+                            },
+                            label = { Text(label) }
+                        )
+                    }
                 }
             }
         }

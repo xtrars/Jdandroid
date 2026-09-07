@@ -1,6 +1,7 @@
 package com.jdandroid.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -49,11 +50,12 @@ fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
         Tone.WARNING -> scheme.secondaryContainer to scheme.onSecondaryContainer
         Tone.ERROR -> scheme.errorContainer to scheme.onErrorContainer
     }
+    val gamer = LocalGamer.current
     Text(
         text,
         modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(bg)
+            .then(if (gamer) Modifier.border(1.dp, fg.copy(alpha = 0.8f), RoundedCornerShape(6.dp)) else Modifier.background(bg))
             .padding(horizontal = 8.dp, vertical = 2.dp),
         style = MaterialTheme.typography.labelSmall,
         color = fg,
@@ -61,24 +63,32 @@ fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
     )
 }
 
-/** Package header card, visually raised above its rows. */
+/** Package header card, visually raised above its rows; a neon HUD frame in the gamer scheme. */
 @Composable
 fun PackageCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val gamer = LocalGamer.current
     Card(
-        modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier.fillMaxWidth().then(if (gamer) Modifier.neonFrame(shape, neonAlpha(false), corners = true) else Modifier),
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.let { if (gamer) it.copy(alpha = 0.88f) else it }
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) { Column { content() } }
 }
 
-/** Row card inside a package. */
+/** Row card inside a package; [active] pulses the neon frame of a transferring entry in the gamer scheme. */
 @Composable
-fun RowCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun RowCard(modifier: Modifier = Modifier, active: Boolean = false, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    val gamer = LocalGamer.current
     Card(
-        modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier.fillMaxWidth().then(if (gamer) Modifier.neonFrame(shape, neonAlpha(active), glow = if (active) 10.dp else 4.dp) else Modifier),
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.let { if (gamer) it.copy(alpha = 0.82f) else it }
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) { Column { content() } }
 }
@@ -86,6 +96,10 @@ fun RowCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 /** Thin rounded progress bar; null means indeterminate. */
 @Composable
 fun ThinProgress(fraction: Float?, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
+    if (LocalGamer.current) {
+        NeonProgress(fraction, modifier)
+        return
+    }
     val m = modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp))
     if (fraction == null) LinearProgressIndicator(modifier = m, color = color)
     else LinearProgressIndicator(progress = { fraction.coerceIn(0f, 1f) }, modifier = m, color = color)
@@ -94,14 +108,14 @@ fun ThinProgress(fraction: Float?, modifier: Modifier = Modifier, color: Color =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun jdTopBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(
-    containerColor = MaterialTheme.colorScheme.surface,
+    containerColor = if (LocalGamer.current) Color.Transparent else MaterialTheme.colorScheme.surface,
     titleContentColor = MaterialTheme.colorScheme.onSurface
 )
 
 @Composable
 fun SectionTitle(text: String) {
     Text(
-        text.uppercase(),
+        (if (LocalGamer.current) "// " else "") + text.uppercase(),
         Modifier.padding(top = 8.dp, bottom = 6.dp),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.primary

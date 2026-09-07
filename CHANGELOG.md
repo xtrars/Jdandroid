@@ -27,6 +27,19 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.6.0] – 2026-09-07
+
+### Hinzugefügt
+
+- Farbschema „Gamer“ als vollständiges Design: animierter Sternenhimmel mit
+  driftenden Nebeln und Horizontraster hinter allen Ansichten (nur solange
+  die App im Vordergrund ist), Karten mit Neon-Farbverlaufsrahmen,
+  farbigem Leuchtschein und HUD-Eckmarken, pulsierender Rahmen an laufenden
+  Downloads, Fortschrittsbalken als Farbverlauf mit Lauflicht,
+  Neon-Trennlinie über der Navigationsleiste, durchscheinende Leisten und
+  Karten, Statuschips als Neon-Umrisse, Monospace-HUD-Typografie für Titel
+  und Beschriftungen, Abschnittstitel mit „//“.
+
 ## [0.5.0] – 2026-09-07
 
 ### Hinzugefügt
@@ -921,6 +934,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.6.0]: https://github.com/xtrars/Jdandroid/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/xtrars/Jdandroid/compare/v0.4.7...v0.5.0
 [0.4.7]: https://github.com/xtrars/Jdandroid/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/xtrars/Jdandroid/compare/v0.4.5...v0.4.6
