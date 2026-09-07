@@ -48,7 +48,7 @@ commons-compress = { group = "org.apache.commons", name = "commons-compress", ve
 xz = { group = "org.tukaani", name = "xz", version = "1.12" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # JVM tests of the SQL queries (ArchiveSetsTest); same version as the Room compiler
-sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.53.4.0" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 # Real org.json for JVM tests: android.jar only carries a stub that throws "not mocked"
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
