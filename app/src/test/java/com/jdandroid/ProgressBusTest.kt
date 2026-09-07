@@ -38,11 +38,44 @@ class ProgressBusTest {
     }
 
     @Test
-    fun drosselungGiltJeEintrag() {
+    fun drosselungGiltJeEintragDieAusgabeGemeinsam() {
         ProgressBus.update(1, LiveProgress(100, 10), now = 1_000)
-        // Another entry is not throttled by the first
+        // Another entry is accepted, but the map is emitted at most every 500 ms
         assertTrue(ProgressBus.update(2, LiveProgress(5, 1), now = 1_100))
-        assertEquals(2, ProgressBus.state.value.size)
+        assertEquals(setOf(1L), ProgressBus.state.value.keys)
+        assertTrue(ProgressBus.update(3, LiveProgress(7, 2), now = 1_499))
+        assertEquals(setOf(1L), ProgressBus.state.value.keys)
+        // The next accepted update after the window carries everything pending
+        assertTrue(ProgressBus.update(1, LiveProgress(150, 12), now = 1_500))
+        assertEquals(
+            mapOf(1L to LiveProgress(150, 12), 2L to LiveProgress(5, 1), 3L to LiveProgress(7, 2)),
+            ProgressBus.state.value
+        )
+    }
+
+    @Test
+    fun vieleEintraegeErgebenHoechstensZweiAusgabenProSekunde() = runBlocking {
+        var emissions = 0
+        val collector = launch(Dispatchers.Unconfined) { ProgressBus.state.collect { emissions++ } }
+        try {
+            // 20 entries, each publishing every 500 ms with its own offset, over 5 s
+            for (tick in 0 until 10) for (id in 1L..20L) {
+                ProgressBus.update(id, LiveProgress(tick * 100L + id, id), now = 1_000 + tick * 500L + id * 20)
+            }
+        } finally {
+            collector.cancel()
+        }
+        // Initial empty map plus one per 500 ms window
+        assertTrue("emissions=$emissions", emissions <= 1 + 11)
+        assertEquals(20, ProgressBus.state.value.size)
+    }
+
+    @Test
+    fun entfernenVeroeffentlichtAusstehendeWerteDerAnderen() {
+        ProgressBus.update(1, LiveProgress(100, 10), now = 1_000)
+        ProgressBus.update(2, LiveProgress(5, 1), now = 1_100)
+        ProgressBus.remove(1)
+        assertEquals(mapOf(2L to LiveProgress(5, 1)), ProgressBus.state.value)
     }
 
     @Test

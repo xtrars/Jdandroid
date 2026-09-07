@@ -18,7 +18,10 @@ data class LiveProgress(
  * In-memory bus for progress values. Writing them to Room would invalidate
  * the whole table on every update and make the UI regroup the list, so the
  * database only sees real state changes and an occasional byte snapshot.
- * Each entry publishes at most every [MIN_INTERVAL_MS]; removal is immediate.
+ * Each entry publishes at most every [MIN_INTERVAL_MS], and the map itself
+ * is emitted at most that often as well: with many entries transferring at
+ * once, their updates are coalesced into one emission instead of one per
+ * entry. Removal is immediate.
  */
 object ProgressBus {
     const val MIN_INTERVAL_MS = 500L
@@ -27,19 +30,23 @@ object ProgressBus {
     val state: StateFlow<Map<Long, LiveProgress>> = _state
 
     private val lastPublished = HashMap<Long, Long>()
+    private val pending = HashMap<Long, LiveProgress>()
+    private var lastEmit = Long.MIN_VALUE / 2
     private val lock = Any()
 
     /**
      * Publishes unless the entry was published less than [MIN_INTERVAL_MS]
-     * ago; returns true when accepted. [now] is monotonic milliseconds ([Clock]).
+     * ago; returns true when accepted. An accepted value becomes visible with
+     * the next emission, at the latest [MIN_INTERVAL_MS] after the previous
+     * one. [now] is monotonic milliseconds ([Clock]).
      */
     fun update(id: Long, progress: LiveProgress, now: Long = Clock.SYSTEM.nowMillis()): Boolean {
         synchronized(lock) {
             val last = lastPublished[id]
             if (last != null && now - last < MIN_INTERVAL_MS) return false
             lastPublished[id] = now
-            if (_state.value[id] == progress) return true
-            _state.value = _state.value + (id to progress)
+            pending[id] = progress
+            if (now - lastEmit >= MIN_INTERVAL_MS) flush(now)
             return true
         }
     }
@@ -50,18 +57,30 @@ object ProgressBus {
     fun removeAll(ids: Collection<Long>) {
         if (ids.isEmpty()) return
         synchronized(lock) {
-            ids.forEach { lastPublished.remove(it) }
-            if (ids.none { it in _state.value }) return
-            _state.value = _state.value - ids.toSet()
+            ids.forEach { lastPublished.remove(it); pending.remove(it) }
+            val next = _state.value - ids.toSet() + pending
+            pending.clear()
+            if (next != _state.value) _state.value = next
         }
     }
 
-    fun totalSpeedBps(): Long = _state.value.values.sumOf { it.speedBps }
+    /** Sum over emitted and still pending entries, so the notification never lags the coalescing. */
+    fun totalSpeedBps(): Long = synchronized(lock) { (_state.value + pending).values.sumOf { it.speedBps } }
+
+    private fun flush(now: Long) {
+        lastEmit = now
+        if (pending.isEmpty()) return
+        val next = _state.value + pending
+        pending.clear()
+        if (next != _state.value) _state.value = next
+    }
 
     /** Test use only. */
     internal fun clear() {
         synchronized(lock) {
             lastPublished.clear()
+            pending.clear()
+            lastEmit = Long.MIN_VALUE / 2
             _state.value = emptyMap()
         }
     }

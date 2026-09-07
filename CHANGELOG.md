@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.6.3] – 2026-09-07
+
+### Behoben
+
+- Bei vielen gleichzeitig laufenden Downloads in einem Paket zappelten
+  Fortschritt, Geschwindigkeit und Zeitangaben: Jeder Eintrag löste seine
+  eigene Aktualisierung der Liste aus, bei zwanzig Einträgen bis zu vierzig
+  pro Sekunde. Der Fortschrittsbus fasst die Werte jetzt zusammen und gibt
+  die Liste höchstens alle 500 ms neu aus, unabhängig von der Zahl der
+  Einträge.
+
 ## [0.6.2] – 2026-09-07
 
 ### Geändert
@@ -951,6 +962,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.6.3]: https://github.com/xtrars/Jdandroid/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/xtrars/Jdandroid/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/xtrars/Jdandroid/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/xtrars/Jdandroid/compare/v0.5.0...v0.6.0
