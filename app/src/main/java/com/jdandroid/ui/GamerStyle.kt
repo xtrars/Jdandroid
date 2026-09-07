@@ -14,10 +14,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.view.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -51,29 +61,33 @@ internal object Neon {
     val gradient = listOf(cyan, magenta, lime)
 }
 
-/** One star of the backdrop; coordinates are fractions of the canvas. */
-internal data class Star(val x: Float, val y: Float, val radius: Float, val speed: Float, val phase: Float)
+/**
+ * One star of the backdrop; coordinates are fractions of the canvas, [depth]
+ * 0 (far) to 1 (near) scales radius, drift and parallax.
+ */
+internal data class Star(val x: Float, val y: Float, val depth: Float, val phase: Float) {
+    val radius: Float get() = 0.6f + depth * 1.6f
+}
 
 /**
- * Deterministic star field: [count] stars drifting downwards at their own
- * speed, twinkling with their own phase. Positions are pure functions of the
- * animation time so the canvas redraws without keeping state.
+ * Deterministic star field: [count] stars creeping downwards, near ones
+ * faster, all twinkling with their own phase. Tilting the device shifts the
+ * field like a window into space: near stars move more than far ones.
+ * Positions are pure functions of time and tilt, so the canvas keeps no state.
  */
 internal class Starfield(count: Int = 140, seed: Int = 7) {
     val stars: List<Star> = Random(seed).let { r ->
-        List(count) {
-            Star(
-                x = r.nextFloat(),
-                y = r.nextFloat(),
-                radius = 0.6f + r.nextFloat() * 1.6f,
-                speed = 0.02f + r.nextFloat() * 0.08f,
-                phase = r.nextFloat()
-            )
-        }
+        List(count) { Star(x = r.nextFloat(), y = r.nextFloat(), depth = r.nextFloat(), phase = r.nextFloat()) }
     }
 
-    /** Vertical position after [time] seconds, wrapped into 0..1. */
-    fun yAt(star: Star, time: Float): Float = ((star.y + star.speed * time) % 1f + 1f) % 1f
+    /** Horizontal position for a tilt of -1..1, wrapped into 0..1. */
+    fun xAt(star: Star, tiltX: Float): Float = wrap(star.x - tiltX * PARALLAX * (0.2f + star.depth))
+
+    /** Vertical position after [time] seconds and a tilt of -1..1, wrapped into 0..1. */
+    fun yAt(star: Star, time: Float, tiltY: Float = 0f): Float =
+        wrap(star.y + (DRIFT_MIN + star.depth * DRIFT_RANGE) * time - tiltY * PARALLAX * (0.2f + star.depth))
+
+    private fun wrap(v: Float): Float = ((v % 1f) + 1f) % 1f
 
     /** Twinkle alpha in 0.35..1. */
     fun alphaAt(star: Star, time: Float): Float =
@@ -82,6 +96,64 @@ internal class Starfield(count: Int = 140, seed: Int = 7) {
 
 /** Seconds of one drift loop; long enough that the wrap is invisible. */
 private const val LOOP_SECONDS = 120f
+
+/** Canvas fractions per second a far and the nearest star creep; slow enough not to read as snowfall. */
+private const val DRIFT_MIN = 0.002f
+private const val DRIFT_RANGE = 0.008f
+
+/** Canvas fraction the nearest stars shift at full tilt. */
+private const val PARALLAX = 0.12f
+
+/**
+ * Device tilt from the gravity sensor as screen-relative -1..1 (x right, y
+ * down), low-pass filtered, mapped through the display rotation. Listens only
+ * while the activity is started; zero without a sensor.
+ */
+@Composable
+fun rememberTilt(): State<Offset> {
+    val context = LocalContext.current
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val tilt = remember { mutableStateOf(Offset.Zero) }
+    val listening = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    DisposableEffect(listening) {
+        if (!listening) return@DisposableEffect onDispose {}
+        val manager = context.getSystemService(SensorManager::class.java)
+        val sensor = manager?.getDefaultSensor(Sensor.TYPE_GRAVITY) ?: manager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (manager == null || sensor == null) return@DisposableEffect onDispose {}
+        val rotation = { ContextCompat.getDisplayOrDefault(context).rotation }
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val target = Tilt.fromGravity(event.values[0], event.values[1], rotation())
+                tilt.value = tilt.value + (target - tilt.value) * 0.12f
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        onDispose { manager.unregisterListener(listener) }
+    }
+    return tilt
+}
+
+/** Gravity vector to screen tilt; pure so the rotation mapping is testable. */
+internal object Tilt {
+    private const val G = 9.81f
+
+    /**
+     * [gx], [gy] are the device-frame gravity components; [rotation] is the
+     * display rotation (Surface.ROTATION_*). Result x is positive when the
+     * screen's right edge is lower, y when its bottom edge is lower.
+     */
+    fun fromGravity(gx: Float, gy: Float, rotation: Int): Offset {
+        val (sx, sy) = when (rotation) {
+            Surface.ROTATION_90 -> gy to gx
+            Surface.ROTATION_180 -> gx to -gy
+            Surface.ROTATION_270 -> -gy to -gx
+            else -> -gx to gy
+        }
+        return Offset((sx / G).coerceIn(-1f, 1f), (sy / G).coerceIn(-1f, 1f))
+    }
+}
 
 /**
  * Space backdrop behind the whole app: two drifting nebula glows, a faint
@@ -101,17 +173,18 @@ fun GamerBackdrop(modifier: Modifier = Modifier, content: @Composable () -> Unit
         )
         t
     } else 0f
+    val tilt by rememberTilt()
     val background = MaterialTheme.colorScheme.background
     Box(modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(background)
-            drawNebula(time)
+            drawNebula(time, tilt)
             drawHorizonGrid()
             for (star in field.stars) {
                 drawCircle(
                     Color.White.copy(alpha = field.alphaAt(star, time)),
                     radius = star.radius.dp.toPx(),
-                    center = Offset(star.x * size.width, field.yAt(star, time) * size.height)
+                    center = Offset(field.xAt(star, tilt.x) * size.width, field.yAt(star, time, tilt.y) * size.height)
                 )
             }
         }
@@ -119,20 +192,22 @@ fun GamerBackdrop(modifier: Modifier = Modifier, content: @Composable () -> Unit
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Float) {
+/** Nebulae sit far back: a slow drift plus a small share of the tilt parallax. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Float, tilt: Offset) {
     val drift = sin(2f * PI.toFloat() * time / LOOP_SECONDS)
     val radius = size.maxDimension * 0.55f
+    val shift = Offset(-tilt.x * PARALLAX * 0.25f * size.width, -tilt.y * PARALLAX * 0.25f * size.height)
+    val magenta = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f) + shift
+    val cyan = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f) + shift
     drawCircle(
-        Brush.radialGradient(listOf(Neon.magenta.copy(alpha = 0.22f), Color.Transparent), radius = radius,
-            center = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f)),
+        Brush.radialGradient(listOf(Neon.magenta.copy(alpha = 0.22f), Color.Transparent), radius = radius, center = magenta),
         radius = radius,
-        center = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f)
+        center = magenta
     )
     drawCircle(
-        Brush.radialGradient(listOf(Neon.cyan.copy(alpha = 0.18f), Color.Transparent), radius = radius,
-            center = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f)),
+        Brush.radialGradient(listOf(Neon.cyan.copy(alpha = 0.18f), Color.Transparent), radius = radius, center = cyan),
         radius = radius,
-        center = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f)
+        center = cyan
     )
 }
 

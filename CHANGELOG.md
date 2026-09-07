@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.6.1] – 2026-09-07
+
+### Geändert
+
+- Gamermodus: Der Sternenhimmel reagiert auf die Lage des Geräts. Der
+  Schwerkraftsensor verschiebt das Feld wie ein Fenster ins All, nahe
+  Sterne stärker als ferne, die Nebel schwach; die Drift ist deutlich
+  langsamer und tiefenabhängig, damit es nicht mehr wie Schneefall wirkt.
+  Der Sensor läuft nur, solange die App im Vordergrund ist.
+
 ## [0.6.0] – 2026-09-07
 
 ### Hinzugefügt
@@ -934,6 +944,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.6.1]: https://github.com/xtrars/Jdandroid/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/xtrars/Jdandroid/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/xtrars/Jdandroid/compare/v0.4.7...v0.5.0
 [0.4.7]: https://github.com/xtrars/Jdandroid/compare/v0.4.6...v0.4.7
