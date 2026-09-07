@@ -880,6 +880,7 @@ private fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.SYSTEM -> R.string.settings_theme_system
     ThemeMode.LIGHT -> R.string.settings_theme_light
     ThemeMode.DARK -> R.string.settings_theme_dark
+    ThemeMode.GAMER -> R.string.settings_theme_gamer
 }
 
 /**

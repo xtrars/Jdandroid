@@ -63,9 +63,11 @@ Dienst an (`DownloadService.send`) bzw. die Linkprüfung.
   eine Meldung, die vor dem Aufbau der Oberfläche entsteht (etwa „keine
   DLC-Datei“ beim Kaltstart per Intent), nicht verloren geht. Fehler sollen als
   eine klare Meldung erscheinen, nie als Protokoll.
-- `Theme.kt`: ausschließlich Material You – `dynamicLightColorScheme` /
+- `Theme.kt`: Material You – `dynamicLightColorScheme` /
   `dynamicDarkColorScheme` ab Android 12, darunter das
-  Material-Standardschema. Hell/Dunkel folgt dem System oder der Einstellung.
+  Material-Standardschema. Hell/Dunkel folgt dem System oder der Einstellung;
+  `GamerColorScheme` ist die einzige eigene Palette (Neon auf Weltraumdunkel,
+  Kontraste per `ThemeModeTest` gesichert).
   Der gespeicherte Modus wird beim Start einmal mit `runBlocking` gelesen,
   damit der erste Frame nicht im falschen Schema erscheint; das ist der
   einzige blockierende Aufruf in der App.

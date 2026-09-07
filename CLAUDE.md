@@ -54,7 +54,9 @@ Deutsch. Kommentare im Code sind Englisch.
 ## Gestaltungsregeln (vom Nutzer festgelegt)
 
 - Nur Material You: dynamisches Farbschema ab Android 12, darunter das
-  Material-Standardschema. Keine eigenen Farbpaletten.
+  Material-Standardschema. Einzige Ausnahme ist der Gamermodus
+  (`GamerColorScheme` in `ui/Theme.kt`, Neon auf Weltraumdunkel); sonst
+  keine eigenen Farbpaletten.
 - Alle Schaltflächen müssen auf dem Bildschirm sichtbar bleiben (Insets,
   Tastatur). Zeilen nicht mit Symbolen überladen: pro Zeile ein
   Drei-Punkte-Aktionsmenü, am Paket zusätzlich Start/Pause direkt.

@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.5.0] – 2026-09-07
+
+### Hinzugefügt
+
+- Farbschema „Gamer“ neben System, Hell und Dunkel: Weltraumdunkle
+  Flächen mit Neon-Akzenten in Cyan, Magenta und Limette. Die einzige
+  Palette, die nicht Material You ist; alle Text-/Flächenpaare halten
+  mindestens 4,5:1 Kontrast (per Test gesichert). Die Einstellung heißt
+  jetzt „Farbschema“.
+
 ## [0.4.7] – 2026-09-06
 
 ### Behoben
@@ -911,6 +921,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.5.0]: https://github.com/xtrars/Jdandroid/compare/v0.4.7...v0.5.0
 [0.4.7]: https://github.com/xtrars/Jdandroid/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/xtrars/Jdandroid/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/xtrars/Jdandroid/compare/v0.4.4...v0.4.5

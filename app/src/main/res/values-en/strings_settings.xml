@@ -5,10 +5,11 @@
 
     <!-- Appearance -->
     <string name="settings_section_appearance">Appearance</string>
-    <string name="settings_theme_label">Light / Dark</string>
+    <string name="settings_theme_label">Colour scheme</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_gamer">Gamer</string>
 
     <!-- Downloads -->
     <string name="settings_section_downloads">Downloads</string>
