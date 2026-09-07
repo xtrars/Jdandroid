@@ -1,8 +1,8 @@
 [versions]
 nfsClient = "1.1.0"
-kotlinxSerialization = "1.8.1"
+kotlinxSerialization = "1.11.0"
 agp = "8.13.2"
-kotlin = "2.3.21"
+kotlin = "2.4.10"
 ksp = "2.3.11"
 coreKtx = "1.18.0"
 lifecycle = "2.10.0"
