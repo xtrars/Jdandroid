@@ -208,10 +208,15 @@ internal class StorageTarget(
      * Downloads/JDAndroid/[base]/... and returns the display path; without
      * export they stay in [dir].
      */
-    suspend fun exportDirectory(dir: File, base: String, progress: ((done: Long, total: Long) -> Unit)? = null): Placed {
+    suspend fun exportDirectory(
+        dir: File,
+        base: String,
+        progress: ((done: Long, total: Long) -> Unit)? = null,
+        replace: Boolean = false
+    ): Placed {
         val nfsSettings = settings.currentNfs()
         if (nfsSettings.isUsable) {
-            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base, progress)) {
+            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base, progress, replace)) {
                 is NfsTarget.Outcome.Done -> Placed(outcome.displayPath)
                 is NfsTarget.Outcome.Failed -> Placed.local(dir.absolutePath, outcome.failure)
             }
@@ -319,6 +324,34 @@ internal class StorageTarget(
                         }
                     }
             }
+        }
+        return false
+    }
+
+    /**
+     * Removes the exported copy behind a stored display path (NAS, SAF folder,
+     * Downloads/JDAndroid or the app folder), for a re-download that must not
+     * leave the corrupt copy behind. Best effort; false when nothing was removed.
+     */
+    suspend fun deleteExported(displayPath: String): Boolean {
+        val name = storedName(displayPath)
+        if (name.isBlank()) return false
+        val local = File(displayPath)
+        if (local.isAbsolute) return local.isFile && local.startsWith(downloadDir()) && local.delete()
+        if (displayPath.startsWith("nfs://")) {
+            val nfsSettings = settings.currentNfs()
+            return nfsSettings.isUsable && nfs.deleteExported(nfsSettings, name)
+        }
+        targetTree()?.let { root -> TreeDir(root.uri, null).fileUri(name) }?.let { uri ->
+            return runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
+        }
+        if (Build.VERSION.SDK_INT >= 29 && displayPath.startsWith("${Environment.DIRECTORY_DOWNLOADS}/JDAndroid/")) {
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
+            val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid/")
+            return runCatching {
+                context.contentResolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, selection, args) > 0
+            }.getOrDefault(false)
         }
         return false
     }

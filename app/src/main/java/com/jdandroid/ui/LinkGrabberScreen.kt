@@ -262,12 +262,7 @@ private fun CollectorRow(item: DownloadItem, vm: DownloadViewModel, modifier: Mo
             OnlineIcon(item.online)
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    item.fileName ?: item.url,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                ExpandableName(item.fileName ?: item.url, MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(2.dp))
                 val stateText = stringResource(
                     when (item.online) {

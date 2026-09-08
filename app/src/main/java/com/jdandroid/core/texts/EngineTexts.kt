@@ -33,6 +33,8 @@ object EngineTexts {
 
         // DownloadEngine, archives
         "engine_first_volume_missing" to "Erstes Archiv-Teil fehlt",
+        "engine_redownload_after_extract" to "Erneut laden erst nach dem Entpacken möglich",
+        "engine_redownload_after_upload" to "Erneut laden erst nach dem Verschieben möglich",
         "engine_entry_not_found" to "Eintrag nicht gefunden",
         "engine_already_extracting" to "Wird bereits entpackt",
         "engine_only_completed_extractable" to "Nur fertige Downloads lassen sich entpacken",

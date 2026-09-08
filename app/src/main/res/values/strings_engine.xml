@@ -29,6 +29,8 @@
 
     <!-- Archives and extraction -->
     <string name="engine_first_volume_missing">Erstes Archiv-Teil fehlt</string>
+    <string name="engine_redownload_after_extract">Erneut laden erst nach dem Entpacken möglich</string>
+    <string name="engine_redownload_after_upload">Erneut laden erst nach dem Verschieben möglich</string>
     <string name="engine_entry_not_found">Eintrag nicht gefunden</string>
     <string name="engine_already_extracting">Wird bereits entpackt</string>
     <string name="engine_only_completed_extractable">Nur fertige Downloads lassen sich entpacken</string>

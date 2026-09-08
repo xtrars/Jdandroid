@@ -139,10 +139,31 @@ class NfsTargetTest {
         File(dir, "b.bin").writeBytes(ByteArray(100))
         val seen = mutableListOf<Pair<Long, Long>>()
 
-        target.exportDirectory(settings, dir, "Paket") { done, total -> seen += done to total }
+        target.exportDirectory(settings, dir, "Paket", progress = { done, total -> seen += done to total })
 
         assertTrue(seen.all { it.second == 400L })
         assertEquals(400L, seen.last().first)
         assertEquals(seen.map { it.first }, seen.map { it.first }.sorted())
+    }
+
+    @Test
+    fun `Ersetzen beim Export ueberschreibt gleichnamige Dateien statt (2)`() = runBlocking {
+        val dir = tmp.newFolder("Paket")
+        File(dir, "a.txt").writeText("neu")
+        share.files["Paket/a.txt"] = "kaputt".toByteArray()
+
+        val outcome = target.exportDirectory(settings, dir, "Paket", replace = true)
+
+        assertEquals(NfsTarget.Outcome.Done("nfs://nas.local/volume1/media/jd/Paket"), outcome)
+        assertEquals(setOf("Paket/a.txt"), share.files.keys)
+        assertEquals("neu", String(share.files.getValue("Paket/a.txt")))
+    }
+
+    @Test
+    fun `deleteExported entfernt nur eine vorhandene Datei`() = runBlocking {
+        share.files["film.mkv"] = "x".toByteArray()
+        assertTrue(target.deleteExported(settings, "film.mkv"))
+        assertFalse("film.mkv" in share.files)
+        assertFalse(target.deleteExported(settings, "film.mkv"))
     }
 }

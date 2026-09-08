@@ -51,6 +51,12 @@ object DownloadQueries {
      * step, nothing else. retryAt and attempts are cleared, otherwise an entry
      * paused during a wait would sit in the queue without its countdown.
      */
+    /** Re-download from scratch: back to the queue without bytes, path or note; never a running or extracting entry. */
+    const val REQUEUE_FOR_REDOWNLOAD =
+        "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0, " +
+            "downloadedBytes = 0, localPath = NULL " +
+            "WHERE id = :id AND status IN ('COMPLETED', 'FAILED', 'OFFLINE', 'PAUSED', 'QUEUED')"
+
     /** Manual "start all": paused and failed entries, plus queued ones held for a captcha (retryAt from :heldFrom). */
     const val REQUEUE_PAUSED_AND_FAILED =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0 " +

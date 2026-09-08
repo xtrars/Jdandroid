@@ -43,8 +43,11 @@
     <string name="downloads_menu_rename">Rename</string>
     <string name="downloads_menu_extract_archives">Extract archives</string>
     <string name="downloads_menu_delete_package">Delete package</string>
-    <string name="downloads_delete_after_extracting">Delete after extraction finishes</string>
-    <string name="downloads_delete_after_uploading">Delete after the move to the NAS finishes</string>
+    <string name="downloads_after_extracting">Available after extraction finishes</string>
+    <string name="downloads_after_uploading">Available after the move to the NAS finishes</string>
+    <string name="downloads_redownload_title">Download again?</string>
+    <string name="downloads_redownload_text">The file is fetched again from the hoster. The existing copy is discarded: the local file, a partial download and the copy on the NAS or in the target folder.</string>
+    <string name="downloads_redownload_text_archive">The archive part is fetched again from the hoster; missing parts of the archive are fetched too. The archive is then extracted again and replaces extracted files of the same name on the NAS.</string>
     <string name="downloads_delete_package_title">Delete package?</string>
     <plurals name="downloads_delete_package_text">
         <item quantity="one">\"%1$s\" with %2$d download will be removed. Partially downloaded files will be deleted.</item>

@@ -156,4 +156,25 @@ class DownloadQueriesTest : SchemaDbTest() {
         assertEquals("EXTRACTING", column(2, "status"))
         assertEquals("Fehler", column(3, "errorMessage"))
     }
+
+    @Test
+    fun `requeueForRedownload setzt Bytes, Pfad und Vermerk zurueck, nie laufende Eintraege`() {
+        item(1, "a.bin", DownloadStatus.COMPLETED, note = "x", downloadedBytes = 500)
+        item(2, "b.bin", DownloadStatus.RUNNING, downloadedBytes = 20)
+        item(3, "c.bin", DownloadStatus.EXTRACTING)
+        item(4, "d.bin", DownloadStatus.FAILED, note = "Fehler")
+        execute("UPDATE downloads SET localPath = '/x/a.bin', attempts = 3, retryAt = 9 WHERE id = 1")
+
+        assertEquals(1, execute(DownloadQueries.REQUEUE_FOR_REDOWNLOAD, "id" to 1L))
+        assertEquals("QUEUED", column(1, "status"))
+        assertEquals("0", column(1, "downloadedBytes"))
+        assertNull(column(1, "localPath"))
+        assertNull(column(1, "errorMessage"))
+        assertEquals("0", column(1, "attempts"))
+        assertEquals("0", column(1, "retryAt"))
+        assertEquals(0, execute(DownloadQueries.REQUEUE_FOR_REDOWNLOAD, "id" to 2L))
+        assertEquals(0, execute(DownloadQueries.REQUEUE_FOR_REDOWNLOAD, "id" to 3L))
+        assertEquals(1, execute(DownloadQueries.REQUEUE_FOR_REDOWNLOAD, "id" to 4L))
+        assertEquals("RUNNING", column(2, "status"))
+    }
 }

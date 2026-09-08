@@ -301,6 +301,9 @@ interface DownloadDao {
     )
     suspend fun requeueCompleted(id: Long)
 
+    @Query(DownloadQueries.REQUEUE_FOR_REDOWNLOAD)
+    suspend fun requeueForRedownload(id: Long): Int
+
     /** After real progress the attempt counter starts over. */
     @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
     suspend fun resetAttempts(id: Long)

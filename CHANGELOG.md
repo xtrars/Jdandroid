@@ -27,6 +27,24 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.8.0] – 2026-09-08
+
+### Hinzugefügt
+
+- „Erneut laden“ im Zeilenmenü für fertige, gescheiterte, pausierte und
+  wartende Einträge: lädt die Datei neu vom Hoster und verwirft vorher
+  jede Kopie, die beschädigt sein könnte (angefangener Teil, Archiv-Teil,
+  lokale Datei, Kopie auf dem NAS, im Zielordner oder unter
+  Downloads/JDAndroid). Bei Archiven werden fehlende Teile mitgeladen, das
+  Set wird neu entpackt und ersetzt gleichnamige entpackte Dateien auf dem
+  NAS statt „(2)“ anzulegen. Ein Bestätigungsdialog erklärt das; während
+  Entpacken oder Verschieben ist die Aktion gesperrt.
+
+### Geändert
+
+- Lange Namen: Datei- und Paketnamen zeigen zwei Zeilen statt einer und
+  klappen mit einem Tipp auf den Namen vollständig auf.
+
 ## [0.7.1] – 2026-09-08
 
 ### Geändert
@@ -996,6 +1014,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.8.0]: https://github.com/xtrars/Jdandroid/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/xtrars/Jdandroid/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/xtrars/Jdandroid/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/xtrars/Jdandroid/compare/v0.6.3...v0.6.4

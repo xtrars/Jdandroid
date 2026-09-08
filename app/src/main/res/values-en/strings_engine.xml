@@ -28,6 +28,8 @@
 
     <!-- Archives and extraction -->
     <string name="engine_first_volume_missing">First archive part missing</string>
+    <string name="engine_redownload_after_extract">Re-download only after extraction</string>
+    <string name="engine_redownload_after_upload">Re-download only after the move to the NAS</string>
     <string name="engine_entry_not_found">Entry not found</string>
     <string name="engine_already_extracting">Already being extracted</string>
     <string name="engine_only_completed_extractable">Only finished downloads can be extracted</string>

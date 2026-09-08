@@ -134,6 +134,7 @@ class DownloadService : Service() {
             ACTION_PUMP -> scope.launch { engine.pump() }
             ACTION_PAUSE -> scope.launch { engine.pause(id) }
             ACTION_DELETE -> scope.launch { engine.cancelAndDelete(id) }
+            ACTION_REDOWNLOAD -> scope.launch { engine.redownload(id)?.let { AppMessages.error(it) } }
             ACTION_PAUSE_PACKAGE -> scope.launch { engine.pausePackage(id) }
             ACTION_DELETE_PACKAGE -> scope.launch { engine.deletePackage(id) }
             ACTION_EXTRACT -> scope.launch {
@@ -419,6 +420,7 @@ class DownloadService : Service() {
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
         const val ACTION_PAUSE = "com.jdandroid.action.PAUSE"
         const val ACTION_DELETE = "com.jdandroid.action.DELETE"
+        const val ACTION_REDOWNLOAD = "com.jdandroid.action.REDOWNLOAD"
         /** Package-wide actions: [EXTRA_ID] carries the package id. */
         const val ACTION_PAUSE_PACKAGE = "com.jdandroid.action.PAUSE_PACKAGE"
         const val ACTION_DELETE_PACKAGE = "com.jdandroid.action.DELETE_PACKAGE"

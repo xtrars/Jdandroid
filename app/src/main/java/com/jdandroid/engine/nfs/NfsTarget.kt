@@ -44,7 +44,8 @@ internal class NfsTarget(private val factory: () -> NfsShareFactory = { NfsShare
         settings: NfsSettings,
         dir: File,
         base: String,
-        progress: ((done: Long, total: Long) -> Unit)? = null
+        progress: ((done: Long, total: Long) -> Unit)? = null,
+        replace: Boolean = false
     ): Outcome =
         withContext(Dispatchers.IO) {
             attempt(settings) { share ->
@@ -60,7 +61,9 @@ internal class NfsTarget(private val factory: () -> NfsShareFactory = { NfsShare
                         share.mkdirs(remoteDir)
                         share.list(remoteDir).toHashSet()
                     }
-                    val name = FileNames.uniqueName(file.name) { it in taken }
+                    // After a re-download the corrupt copies are replaced instead of getting "(2)"
+                    if (replace && file.name in taken) share.delete("$remoteDir/${file.name}")
+                    val name = if (replace) file.name else FileNames.uniqueName(file.name) { it in taken }
                     share.upload(file, "$remoteDir/$name") { done -> progress?.invoke(uploaded + done, total) }
                     uploaded += file.length()
                     progress?.invoke(uploaded, total)
@@ -71,6 +74,15 @@ internal class NfsTarget(private val factory: () -> NfsShareFactory = { NfsShare
                 displayPath(settings, base)
             }
         }
+
+    /** Removes the file [name] from the target folder; false if absent or unreachable. */
+    suspend fun deleteExported(settings: NfsSettings, name: String): Boolean = withContext(Dispatchers.IO) {
+        attempt(settings) { share ->
+            if (!share.exists(name)) return@attempt null
+            share.delete(name)
+            name
+        } is Outcome.Done
+    }
 
     /** Copies the file [name] from the target folder back to [dest]; false if absent or unreachable. */
     suspend fun restoreExported(settings: NfsSettings, name: String, dest: File): Boolean =

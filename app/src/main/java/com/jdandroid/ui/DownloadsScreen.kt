@@ -67,7 +67,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jdandroid.R
@@ -84,12 +83,12 @@ private const val SEPARATOR = " · "
  * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
  * foreign texts such as hoster messages pass through unchanged.
  */
-/** Menu label for deleting; while blocked it names the phase to wait for. */
+/** Menu label of an action; while blocked it names the phase to wait for instead. */
 @Composable
-private fun deleteLabel(labelRes: Int, block: DeleteBlock?): String = when (block) {
+private fun blockedLabel(labelRes: Int, block: DeleteBlock?): String = when (block) {
     null -> stringResource(labelRes)
-    DeleteBlock.EXTRACTING -> stringResource(R.string.downloads_delete_after_extracting)
-    DeleteBlock.UPLOADING -> stringResource(R.string.downloads_delete_after_uploading)
+    DeleteBlock.EXTRACTING -> stringResource(R.string.downloads_after_extracting)
+    DeleteBlock.UPLOADING -> stringResource(R.string.downloads_after_uploading)
 }
 
 @Composable
@@ -106,7 +105,8 @@ fun ConfirmDeleteDialog(
     title: String,
     text: String,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    confirmLabel: String = stringResource(R.string.common_delete)
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -114,7 +114,7 @@ fun ConfirmDeleteDialog(
         text = { Text(text) },
         confirmButton = {
             TextButton(onClick = { onConfirm(); onDismiss() }) {
-                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                Text(confirmLabel, color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
@@ -327,12 +327,7 @@ private fun PackageHeader(
                     )
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        group.pkg.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    ExpandableName(group.pkg.name, MaterialTheme.typography.titleSmall)
                     val parts = buildList {
                         add(pluralStringResource(R.plurals.downloads_file_count, group.items.size, group.items.size))
                         add(pluralStringResource(R.plurals.downloads_summary_finished, group.finished, group.finished))
@@ -393,7 +388,7 @@ private fun PackageHeader(
                             }
                             val block = DeleteGuard.forGroup(group)
                             DropdownMenuItem(
-                                text = { Text(deleteLabel(R.string.downloads_menu_delete_package, block)) },
+                                text = { Text(blockedLabel(R.string.downloads_menu_delete_package, block)) },
                                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                                 enabled = block == null,
                                 onClick = { menuOpen = false; confirmDelete = true }
@@ -458,6 +453,18 @@ private fun DownloadRow(
 ) {
     val hosterName = HosterRegistry.byId(item.hosterId)?.displayName ?: item.hosterId
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmRedownload by rememberSaveable { mutableStateOf(false) }
+    if (confirmRedownload) {
+        ConfirmDeleteDialog(
+            title = stringResource(R.string.downloads_redownload_title),
+            text = stringResource(
+                if (item.archiveKey != null) R.string.downloads_redownload_text_archive else R.string.downloads_redownload_text
+            ),
+            confirmLabel = stringResource(R.string.downloads_menu_redownload),
+            onConfirm = { vm.redownload(item) },
+            onDismiss = { confirmRedownload = false }
+        )
+    }
     // Free mode: live countdown of the wait time.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val freeWaiting = item.status == DownloadStatus.QUEUED && FreeMode.isWaitMessage(item.errorMessage)
@@ -484,13 +491,7 @@ private fun DownloadRow(
     RowCard(modifier, active = item.status == DownloadStatus.RUNNING) {
         Column(Modifier.padding(start = 12.dp, end = 0.dp, top = 4.dp, bottom = 2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    item.fileName ?: item.url,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+                ExpandableName(item.fileName ?: item.url, MaterialTheme.typography.bodyMedium, Modifier.weight(1f))
                 Spacer(Modifier.size(8.dp))
                 val (pillRes, tone) = when {
                     uploadPercent >= 0 -> R.string.downloads_status_uploading to Tone.ACTIVE
@@ -535,23 +536,24 @@ private fun DownloadRow(
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 onClick = { menuOpen = false; vm.retry(item) }
                             )
-                            DownloadStatus.COMPLETED -> {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.common_extract)) },
-                                    leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
-                                    onClick = { menuOpen = false; vm.extract(item.id) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.downloads_menu_redownload)) },
-                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
-                                    onClick = { menuOpen = false; vm.redownload(item) }
-                                )
-                            }
+                            DownloadStatus.COMPLETED -> DropdownMenuItem(
+                                text = { Text(stringResource(R.string.common_extract)) },
+                                leadingIcon = { Icon(JdIcons.Unarchive, contentDescription = null) },
+                                onClick = { menuOpen = false; vm.extract(item.id) }
+                            )
                             DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
                         }
                         val block = DeleteGuard.forItem(item, uploadPercent)
+                        if (item.status != DownloadStatus.COLLECTED && item.status != DownloadStatus.RUNNING) {
+                            DropdownMenuItem(
+                                text = { Text(blockedLabel(R.string.downloads_menu_redownload, block)) },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                enabled = block == null,
+                                onClick = { menuOpen = false; confirmRedownload = true }
+                            )
+                        }
                         DropdownMenuItem(
-                            text = { Text(deleteLabel(R.string.common_delete, block)) },
+                            text = { Text(blockedLabel(R.string.common_delete, block)) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                             enabled = block == null,
                             onClick = { menuOpen = false; confirmDelete = true }

@@ -68,6 +68,13 @@ internal class ArchiveCoordinator(
 
     fun archiveDir(packageId: Long?): File = archiveDir(storage.downloadDir(), packageId)
 
+    /** Sets whose next export replaces same-named files instead of adding "(2)"; filled by a re-download. */
+    private val replaceSets = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    fun markReplaceOnExtract(packageId: Long?, base: String) {
+        replaceSets += setKey(packageId, base)
+    }
+
     /**
      * Completes a download: archives are extracted once all parts are present
      * (if enabled), everything else is exported directly. NonCancellable: a
@@ -348,7 +355,11 @@ internal class ArchiveCoordinator(
                         flat = settings.currentFlatExtract(),
                         progress = listener
                     )
-                    val exported = storage.exportDirectory(extractDir, folder) { done, total -> publishUpload(setIds, done, total) }
+                    val replace = replaceSets.remove(set.key)
+                    val exported = storage.exportDirectory(
+                        extractDir, folder, replace = replace,
+                        progress = { done, total -> publishUpload(setIds, done, total) }
+                    )
                     if (settings.currentDeleteArchive()) {
                         archiveDir(packageId).listFiles()
                             ?.filter { ArchiveNames.archiveBase(it.name) == base }

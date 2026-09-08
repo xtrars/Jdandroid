@@ -367,12 +367,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun retry(item: DownloadItem) = resume(item)
 
     /** Downloads a completed item again (e.g. file deleted by accident). */
-    fun redownload(item: DownloadItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            dao.requeueCompleted(item.id)
-            DownloadService.send(getApplication(), DownloadService.ACTION_PUMP)
-        }
-    }
+    /** Fresh download that discards the existing copies, see [com.jdandroid.engine.DownloadEngine.redownload]. */
+    fun redownload(item: DownloadItem) = DownloadService.send(getApplication(), DownloadService.ACTION_REDOWNLOAD, item.id)
 
     fun extract(id: Long) = DownloadService.send(getApplication(), DownloadService.ACTION_EXTRACT, id)
 

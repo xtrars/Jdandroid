@@ -43,8 +43,11 @@
     <string name="downloads_menu_rename">Umbenennen</string>
     <string name="downloads_menu_extract_archives">Archive entpacken</string>
     <string name="downloads_menu_delete_package">Paket löschen</string>
-    <string name="downloads_delete_after_extracting">Löschen erst nach dem Entpacken</string>
-    <string name="downloads_delete_after_uploading">Löschen erst nach dem Verschieben</string>
+    <string name="downloads_after_extracting">Erst nach dem Entpacken möglich</string>
+    <string name="downloads_after_uploading">Erst nach dem Verschieben möglich</string>
+    <string name="downloads_redownload_title">Erneut laden?</string>
+    <string name="downloads_redownload_text">Die Datei wird neu vom Hoster geladen. Die vorhandene Kopie wird verworfen: die lokale Datei, ein angefangener Teil und die Kopie auf dem NAS oder im Zielordner.</string>
+    <string name="downloads_redownload_text_archive">Das Archiv-Teil wird neu vom Hoster geladen; fehlende Teile des Archivs werden mitgeladen. Danach wird das Archiv neu entpackt und ersetzt gleichnamige entpackte Dateien auf dem NAS.</string>
     <string name="downloads_delete_package_title">Paket löschen?</string>
     <plurals name="downloads_delete_package_text">
         <item quantity="one">\"%1$s\" mit %2$d Download wird entfernt. Bereits geladene Teildateien werden gelöscht.</item>

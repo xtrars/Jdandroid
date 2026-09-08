@@ -236,6 +236,41 @@ class DownloadEngine(
         pump()
     }
 
+    /**
+     * Downloads an entry again from scratch and discards every copy that may
+     * be corrupt: the partial file, the archive volume, the local result and
+     * the exported copy. An archive set is re-extracted afterwards, replacing
+     * same-named extracted files; parts whose volume is gone are re-downloaded
+     * too. Returns a message when the entry is busy extracting or uploading.
+     */
+    suspend fun redownload(id: Long): String? {
+        startGate.await()
+        val item = dao.byId(id) ?: return null
+        if (item.status == DownloadStatus.EXTRACTING) return Texts.t("engine_redownload_after_extract")
+        if (id in archives.exportingIds) return Texts.t("engine_redownload_after_upload")
+        mutex.withLock { jobs.remove(id) }?.cancel()
+        ProgressBus.remove(id)
+        FreeDownloads.forget(id)
+        tempFile(item).delete()
+        item.fileName?.let { File(archives.archiveDir(item.packageId), it).delete() }
+        val key = item.archiveKey
+        if (key == null) {
+            item.localPath?.let { runCatching { storage.deleteExported(it) } }
+        } else {
+            archives.markReplaceOnExtract(item.packageId, key)
+            // The other volumes must be present for the re-extraction; gone ones are loaded again
+            dao.completedParts(item.packageId, key)
+                .filter { part -> part.id != id && part.fileName?.let { !File(archives.archiveDir(part.packageId), it).isFile } == true }
+                .forEach { part ->
+                    tempFile(part).delete()
+                    dao.requeueForRedownload(part.id)
+                }
+        }
+        completionMutex.withLock { dao.requeueForRedownload(id) }
+        pump()
+        return null
+    }
+
     /** Pauses all entries of a package with one pump at the end. */
     suspend fun pausePackage(packageId: Long) {
         val ids = dao.byPackage(packageId).map { it.id }
