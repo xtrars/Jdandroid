@@ -27,6 +27,24 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.8.1] – 2026-09-08
+
+Gesamtprüfung auf dem Stand 0.7.1 mit Schwerpunkt Aktionen in der falschen
+Phase (drei Blickwinkel, 19 Funde, 4 nach doppelter Verifikation bestätigt
+und behoben). 580 Unit-Tests.
+
+### Behoben
+
+- ZIP-Container wie APK, JAR, DOCX, EPUB oder CBZ wurden anhand der
+  Magic-Bytes als Archiv erkannt, umbenannt, entpackt und gelöscht. Dateien
+  mit brauchbarer Endung behalten sie jetzt; nur namenlose Inhalte (Seitentitel
+  als Name) bekommen die Endung aus dem Inhalt.
+- Einträge im Captcha-Halt starteten bei jedem Öffnen der App (auch beim
+  Drehen) den Vordergrunddienst, der sofort wieder endete und nur kurz eine
+  Benachrichtigung zeigte. Der Dienst startet nur noch für fällige Einträge.
+- Nach dem Wiederherstellen einer Sicherung zeigten die Eingabefelder der
+  Einstellungen (Limits, NFS) weiter die alten Werte.
+
 ## [0.8.0] – 2026-09-08
 
 ### Hinzugefügt
@@ -1014,6 +1032,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.8.1]: https://github.com/xtrars/Jdandroid/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/xtrars/Jdandroid/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/xtrars/Jdandroid/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/xtrars/Jdandroid/compare/v0.6.4...v0.7.0
