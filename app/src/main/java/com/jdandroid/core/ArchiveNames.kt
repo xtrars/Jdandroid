@@ -45,6 +45,19 @@ object ArchiveNames {
         return words.joinToString(".") + "." + ext
     }
 
+    /**
+     * True when [fileName] already carries a real extension ("app.apk"), so
+     * the content must not be re-labelled as an archive: ZIP containers such as
+     * APK, JAR, DOCX or EPUB share the ZIP magic bytes. Generic suffixes count
+     * as no extension.
+     */
+    fun hasUsableExtension(fileName: String): Boolean {
+        val ext = fileName.substringAfterLast('.', "")
+        return ext.isNotEmpty() && ext.length <= 10 && !ext.contains(' ') && ext.lowercase() !in genericExtensions
+    }
+
+    private val genericExtensions = setOf("bin", "dat", "tmp")
+
     /** Common base name of all parts, e.g. "film.part2.rar" -> "film"; null if not an archive. */
     fun archiveBase(fileName: String): String? {
         val lower = fileName.lowercase()

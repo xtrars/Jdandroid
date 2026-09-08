@@ -53,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -203,6 +204,8 @@ private fun DownloadSection(settings: SettingsRepository, s: SettingsValues, onC
     // Prefilled from the stored values once; edits survive rotation and tab switches.
     var maxConcurrentText by rememberSaveable { mutableStateOf(s.maxConcurrent.toString()) }
     var speedLimitText by rememberSaveable { mutableStateOf(SpeedLimitInput.format(s.speedLimitMbit)) }
+    LaunchedEffect(s.maxConcurrent) { maxConcurrentText = SettingsFieldSync.maxConcurrent(maxConcurrentText, s.maxConcurrent) }
+    LaunchedEffect(s.speedLimitMbit) { speedLimitText = SettingsFieldSync.speedLimit(speedLimitText, s.speedLimitMbit) }
 
     SectionTitle(stringResource(R.string.settings_section_downloads))
     Spacer(Modifier.height(4.dp))
@@ -454,6 +457,13 @@ private fun NfsSection(settings: SettingsRepository, s: SettingsValues, vm: Sett
     var subDirText by rememberSaveable { mutableStateOf(nfs.subDir) }
     var uidText by rememberSaveable { mutableStateOf(nfs.uid.toString()) }
     var gidText by rememberSaveable { mutableStateOf(nfs.gid.toString()) }
+    LaunchedEffect(nfs) {
+        serverText = SettingsFieldSync.text(serverText, nfs.server)
+        exportText = SettingsFieldSync.text(exportText, nfs.export)
+        subDirText = SettingsFieldSync.text(subDirText, nfs.subDir)
+        uidText = SettingsFieldSync.id(uidText, nfs.uid, NfsSettings.DEFAULT_UID)
+        gidText = SettingsFieldSync.id(gidText, nfs.gid, NfsSettings.DEFAULT_GID)
+    }
     fun update(change: NfsSettings.() -> NfsSettings) {
         scope.launch { settings.setNfs(settings.currentNfs().change()) }
     }
@@ -876,6 +886,25 @@ internal object NfsSettingsUi {
 
     /** Numeric uid/gid or [fallback] for empty or overflowing input. */
     fun parseId(text: String, fallback: Int): Int = text.trim().toIntOrNull()?.takeIf { it >= 0 } ?: fallback
+}
+
+/**
+ * Keeps a prefilled text field in step with the stored value when the store changes
+ * behind the field (backup restore). A field whose text already means the stored
+ * value is left alone, so partial input such as "1," or a trailing space survives.
+ */
+internal object SettingsFieldSync {
+    fun maxConcurrent(text: String, stored: Int): String =
+        if (text.toIntOrNull() == stored) text else stored.toString()
+
+    fun speedLimit(text: String, stored: Double, separator: Char? = null): String =
+        if (SpeedLimitInput.parse(text) == stored) text
+        else separator?.let { SpeedLimitInput.format(stored, it) } ?: SpeedLimitInput.format(stored)
+
+    fun text(text: String, stored: String): String = if (text.trim() == stored) text else stored
+
+    fun id(text: String, stored: Int, fallback: Int): String =
+        if (NfsSettingsUi.parseId(text, fallback) == stored) text else stored.toString()
 }
 
 private fun ThemeMode.labelRes(): Int = when (this) {

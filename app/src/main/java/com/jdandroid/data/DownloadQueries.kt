@@ -57,6 +57,16 @@ object DownloadQueries {
             "WHERE status IN ('PAUSED', 'FAILED') OR (status = 'QUEUED' AND retryAt >= :heldFrom)"
 
     /**
+     * Entries the service has work for right now: running or extracting
+     * ones (stuck after a process death, the service resets them) and queued
+     * ones due before :before. Captcha waiters lie beyond it; starting the
+     * service for them only shows a notification that ends at once.
+     */
+    const val OPEN_COUNT_DUE =
+        "SELECT COUNT(*) FROM downloads WHERE status IN ('RUNNING', 'EXTRACTING') " +
+            "OR (status = 'QUEUED' AND retryAt <= :before)"
+
+    /**
      * Next time a waiting entry starts on its own: smallest future retryAt up
      * to :horizon (captcha entries lie beyond it), NULL if nothing is pending.
      * The engine arms its timer from this, also after a service restart whose

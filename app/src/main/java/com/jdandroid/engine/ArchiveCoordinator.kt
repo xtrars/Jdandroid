@@ -86,8 +86,8 @@ internal class ArchiveCoordinator(
                 base = ArchiveNames.archiveBase(fileName)
             }
         }
-        if (base == null) {
-            // Archive content without an archive extension: add it from the magic bytes
+        if (base == null && !ArchiveNames.hasUsableExtension(fileName)) {
+            // Archive content without an extension (page title as name): add it from the magic bytes
             Extractor.sniffExtension(temp)?.let { ext ->
                 fileName = "$fileName.$ext"
                 dao.renameFile(id, fileName)
