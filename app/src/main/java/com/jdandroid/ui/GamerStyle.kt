@@ -156,12 +156,25 @@ internal object Tilt {
 }
 
 /**
- * Space backdrop behind the whole app: two drifting nebula glows, a faint
- * horizon grid and the twinkling star field. Animates only while the
- * activity is started, so a backgrounded app costs nothing.
+ * Space backdrop behind the whole app, drawn only while [enabled]. The
+ * content sits at the same slot either way, so switching the scheme keeps
+ * the screen state (chosen tab, scroll positions) instead of rebuilding it.
  */
 @Composable
-fun GamerBackdrop(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(modifier.fillMaxSize()) {
+        if (enabled) SpaceCanvas()
+        content()
+    }
+}
+
+/**
+ * Two drifting nebula glows, a faint horizon grid and the twinkling star
+ * field. Animates only while the activity is started, so a backgrounded
+ * app costs nothing.
+ */
+@Composable
+private fun SpaceCanvas() {
     val field = remember { Starfield() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val time = if (lifecycle.isAtLeast(Lifecycle.State.STARTED)) {
@@ -175,20 +188,17 @@ fun GamerBackdrop(modifier: Modifier = Modifier, content: @Composable () -> Unit
     } else 0f
     val tilt by rememberTilt()
     val background = MaterialTheme.colorScheme.background
-    Box(modifier.fillMaxSize()) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawRect(background)
-            drawNebula(time, tilt)
-            drawHorizonGrid()
-            for (star in field.stars) {
-                drawCircle(
-                    Color.White.copy(alpha = field.alphaAt(star, time)),
-                    radius = star.radius.dp.toPx(),
-                    center = Offset(field.xAt(star, tilt.x) * size.width, field.yAt(star, time, tilt.y) * size.height)
-                )
-            }
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(background)
+        drawNebula(time, tilt)
+        drawHorizonGrid()
+        for (star in field.stars) {
+            drawCircle(
+                Color.White.copy(alpha = field.alphaAt(star, time)),
+                radius = star.radius.dp.toPx(),
+                center = Offset(field.xAt(star, tilt.x) * size.width, field.yAt(star, time, tilt.y) * size.height)
+            )
         }
-        content()
     }
 }
 

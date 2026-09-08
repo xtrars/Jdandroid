@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.8.2] – 2026-09-08
+
+### Behoben
+
+- Wechsel nach oder von „Space“ sprang zur Download-Ansicht: Die
+  Sternenhimmel-Hülle wurde ein- oder ausgehängt und die Hauptansicht dabei
+  neu aufgebaut. Die Hülle bleibt jetzt immer, nur der Sternenhimmel darin
+  wird geschaltet; Tab, Suche und Scrollstand bleiben wie bei den anderen
+  Schemawechseln erhalten.
+
 ## [0.8.1] – 2026-09-08
 
 Gesamtprüfung auf dem Stand 0.7.1 mit Schwerpunkt Aktionen in der falschen
@@ -1032,6 +1042,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.8.2]: https://github.com/xtrars/Jdandroid/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/xtrars/Jdandroid/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/xtrars/Jdandroid/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/xtrars/Jdandroid/compare/v0.7.0...v0.7.1

@@ -125,13 +125,12 @@ class MainActivity : ComponentActivity() {
                     window.setBackgroundDrawable(background.toArgb().toDrawable())
                 }
                 Surface(color = background) {
-                    val main = @Composable {
+                    GamerBackdrop(enabled = LocalGamer.current) {
                         MainScreen(
                             sharedText = sharedText.value,
                             onSharedTextConsumed = { sharedText.value = null }
                         )
                     }
-                    if (LocalGamer.current) GamerBackdrop { main() } else main()
                 }
             }
         }
