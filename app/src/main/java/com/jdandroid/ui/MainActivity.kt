@@ -57,6 +57,7 @@ import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
 import com.jdandroid.R
 import com.jdandroid.core.AppMessages
+import com.jdandroid.core.FreeMode
 import com.jdandroid.engine.DownloadService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,8 +95,8 @@ class MainActivity : ComponentActivity() {
             if (app.settings.currentClickNLoadEnabled()) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
             }
-            // openCount includes stuck RUNNING/EXTRACTING entries; the service resets them.
-            if (withContext(Dispatchers.IO) { app.db.downloadDao().openCount() } > 0) {
+            // Stuck RUNNING/EXTRACTING entries count too; the service resets them.
+            if (withContext(Dispatchers.IO) { app.db.downloadDao().openCountDue(FreeMode.heldFrom()) } > 0) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
             }
         }

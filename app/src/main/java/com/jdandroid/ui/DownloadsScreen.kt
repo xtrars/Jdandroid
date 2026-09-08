@@ -79,10 +79,6 @@ import com.jdandroid.hoster.HosterRegistry
 
 private const val SEPARATOR = " · "
 
-/**
- * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
- * foreign texts such as hoster messages pass through unchanged.
- */
 /** Menu label of an action; while blocked it names the phase to wait for instead. */
 @Composable
 private fun blockedLabel(labelRes: Int, block: DeleteBlock?): String = when (block) {
@@ -91,6 +87,14 @@ private fun blockedLabel(labelRes: Int, block: DeleteBlock?): String = when (blo
     DeleteBlock.UPLOADING -> stringResource(R.string.downloads_after_uploading)
 }
 
+/**
+ * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
+ * foreign texts such as hoster messages pass through unchanged.
+ */
+/**
+ * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
+ * foreign texts such as hoster messages pass through unchanged.
+ */
 @Composable
 private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String = when (note) {
     DownloadNotes.WAITING_PARTS -> stringResource(R.string.downloads_waiting_for_parts)

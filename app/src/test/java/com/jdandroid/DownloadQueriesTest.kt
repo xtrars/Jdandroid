@@ -63,6 +63,23 @@ class DownloadQueriesTest : SchemaDbTest() {
     }
 
     @Test
+    fun `openCountDue zaehlt laufende und faellige Eintraege - nicht die Captcha-Wartenden`() {
+        val now = 1_000_000L
+        val heldFrom = now + 30L * 24 * 3600 * 1000
+        fun open() = count(DownloadQueries.OPEN_COUNT_DUE, "before" to heldFrom)
+        assertEquals(0, open())
+        item(1, "a.rar", DownloadStatus.QUEUED); retryAt(1, heldFrom + 1)   // Captcha: nur der Nutzer startet ihn
+        item(2, "b.rar", DownloadStatus.PAUSED)
+        item(3, "c.rar", DownloadStatus.COMPLETED)
+        assertEquals(0, open())
+        item(4, "d.rar", DownloadStatus.QUEUED); retryAt(4, now + 3_600_000)   // Free-Wartezeit: der Dienst wartet
+        assertEquals(1, open())
+        item(5, "e.rar", DownloadStatus.RUNNING)                                // nach Prozesstod: der Dienst raeumt auf
+        item(6, "f.rar", DownloadStatus.EXTRACTING)
+        assertEquals(3, open())
+    }
+
+    @Test
     fun `applyCheck ohne Namen laesst Name und archiveKey stehen`() {
         item(1, "film.part1.rar", DownloadStatus.COLLECTED)
         applyCheck(1, OnlineState.OFFLINE, "Datei offline", null)

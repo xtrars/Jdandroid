@@ -1,12 +1,15 @@
 package com.jdandroid
 
+import com.jdandroid.core.ArchiveNames
 import com.jdandroid.core.FileNames
+import com.jdandroid.engine.Extractor
 import com.jdandroid.engine.ArchiveCoordinator
 import com.jdandroid.engine.ExtractionRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -96,6 +99,21 @@ class ArchiveCoordinatorTest {
         ExtractionRegistry.finish("2/film", listOf(8))
         assertTrue(ExtractionRegistry.isActive("1/other"))
         assertEquals(listOf(3L), ExtractionRegistry.activeIds())
+    }
+
+    @Test
+    fun zipContainerMitEigenerEndungWirdNichtAlsArchivUmbenannt() {
+        // APK, JAR, DOCX, EPUB ... all start with the ZIP magic
+        val apk = tmp.newFile("app.apk").apply { writeBytes(byteArrayOf(0x50, 0x4B, 3, 4, 0, 0, 0, 0)) }
+        assertEquals("zip", Extractor.sniffExtension(apk))
+        for (name in listOf("app.apk", "lib.jar", "brief.docx", "buch.epub", "heft.cbz", "app.ipa")) {
+            assertNull(ArchiveNames.archiveBase(name))
+            assertTrue(name, ArchiveNames.hasUsableExtension(name))
+        }
+        // Only names without a real extension are sniffed: page titles, generic suffixes, dots in sentences
+        for (name in listOf("Filmtitel", "Download name", "daten.bin", "x.dat", "teil.tmp", "Titel. Ein Satz", "a.verylongsuffix")) {
+            assertFalse(name, ArchiveNames.hasUsableExtension(name))
+        }
     }
 
     @Test

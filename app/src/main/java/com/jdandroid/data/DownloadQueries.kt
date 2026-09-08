@@ -46,11 +46,6 @@ object DownloadQueries {
         "SELECT * FROM downloads WHERE status = 'QUEUED' AND retryAt <= :now " +
             "AND id NOT IN (:running) ORDER BY addedAt ASC LIMIT 1"
 
-    /**
-     * "Resume all" (screen and notification): paused and failed entries in one
-     * step, nothing else. retryAt and attempts are cleared, otherwise an entry
-     * paused during a wait would sit in the queue without its countdown.
-     */
     /** Re-download from scratch: back to the queue without bytes, path or note; never a running or extracting entry. */
     const val REQUEUE_FOR_REDOWNLOAD =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0, " +
@@ -61,6 +56,16 @@ object DownloadQueries {
     const val REQUEUE_PAUSED_AND_FAILED =
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0 " +
             "WHERE status IN ('PAUSED', 'FAILED') OR (status = 'QUEUED' AND retryAt >= :heldFrom)"
+
+    /**
+     * Entries the service has work for right now: running or extracting
+     * ones (stuck after a process death, the service resets them) and queued
+     * ones due before :before. Captcha waiters lie beyond it; starting the
+     * service for them only shows a notification that ends at once.
+     */
+    const val OPEN_COUNT_DUE =
+        "SELECT COUNT(*) FROM downloads WHERE status IN ('RUNNING', 'EXTRACTING') " +
+            "OR (status = 'QUEUED' AND retryAt <= :before)"
 
     /**
      * Next time a waiting entry starts on its own: smallest future retryAt up

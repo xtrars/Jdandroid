@@ -127,8 +127,9 @@ interface DownloadDao {
     @Query(DownloadQueries.NEXT_QUEUED)
     suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
 
-    @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('QUEUED', 'RUNNING', 'EXTRACTING')")
-    suspend fun openCount(): Int
+    /** See [DownloadQueries.OPEN_COUNT_DUE]. */
+    @Query(DownloadQueries.OPEN_COUNT_DUE)
+    suspend fun openCountDue(before: Long): Int
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
     suspend fun queuedCount(): Int
