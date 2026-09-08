@@ -28,7 +28,6 @@
     <string name="engine_hash_mismatch">Prüfsumme (%1$s) stimmt nicht – Datei wird erneut geladen</string>
 
     <!-- Archives and extraction -->
-    <string name="engine_first_volume_missing_not_extracted">Erstes Archiv-Teil fehlt, nicht entpackt</string>
     <string name="engine_first_volume_missing">Erstes Archiv-Teil fehlt</string>
     <string name="engine_entry_not_found">Eintrag nicht gefunden</string>
     <string name="engine_already_extracting">Wird bereits entpackt</string>

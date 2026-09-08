@@ -220,6 +220,9 @@ interface DownloadDao {
     )
     suspend fun completeExtractingSet(ids: List<Long>, path: String?, note: String?)
 
+    @Query(ArchiveSets.COMPLETE_SET_KEEP_PATH)
+    suspend fun completeExtractingSetKeepPath(ids: List<Long>, note: String?)
+
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
     suspend fun pauseIfActive(id: Long)
 

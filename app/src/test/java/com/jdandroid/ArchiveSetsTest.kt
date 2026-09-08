@@ -178,4 +178,30 @@ class ArchiveSetsTest : SchemaDbTest() {
         assertEquals(1, count(ArchiveSets.COUNT_KEY, "packageId" to null, "key" to "film"))
         assertEquals(0, count(ArchiveSets.COUNT_KEY, "packageId" to 1L, "key" to "other"))
     }
+
+    @Test
+    fun `Set ohne erstes Teil geht mit eigenem Pfad je Teil zurueck auf fertig`() {
+        item(1, "film.part1.rar", DownloadStatus.FAILED)
+        item(2, "film.part2.rar", DownloadStatus.EXTRACTING)
+        item(3, "film.part3.rar", DownloadStatus.EXTRACTING)
+        item(4, "film.part4.rar", DownloadStatus.COMPLETED, note = "x")
+        execute("UPDATE downloads SET localPath = '/a/film.part2.rar', attempts = 2, retryAt = 5 WHERE id = 2")
+        execute("UPDATE downloads SET localPath = '/a/film.part3.rar' WHERE id = 3")
+
+        // Room expands (:ids) to a placeholder list; here the values are inlined
+        val sql = ArchiveSets.COMPLETE_SET_KEEP_PATH.replace("(:ids)", "(2, 3, 4)")
+        assertEquals(2, execute(sql, "note" to "FIRST_VOLUME_MISSING"))
+
+        assertEquals("/a/film.part2.rar", column(2, "localPath"))
+        assertEquals("/a/film.part3.rar", column(3, "localPath"))
+        assertEquals("COMPLETED", column(2, "status"))
+        assertEquals("FIRST_VOLUME_MISSING", column(3, "errorMessage"))
+        assertEquals("0", column(2, "attempts"))
+        assertEquals("0", column(2, "retryAt"))
+        // Already completed parts are not touched, failed ones neither
+        assertEquals("x", column(4, "errorMessage"))
+        assertEquals("FAILED", column(1, "status"))
+        // Both notes are found by the waiting query, so the set is retried once part1 arrives
+        assertEquals(listOf(2L, 3L), ids(ArchiveSets.WAITING_PARTS, "packageId" to 1L, "note" to "FIRST_VOLUME_MISSING"))
+    }
 }

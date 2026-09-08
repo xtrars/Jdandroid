@@ -32,7 +32,6 @@ object EngineTexts {
         "engine_hash_mismatch" to "Prüfsumme (%1\$s) stimmt nicht – Datei wird erneut geladen",
 
         // DownloadEngine, archives
-        "engine_first_volume_missing_not_extracted" to "Erstes Archiv-Teil fehlt, nicht entpackt",
         "engine_first_volume_missing" to "Erstes Archiv-Teil fehlt",
         "engine_entry_not_found" to "Eintrag nicht gefunden",
         "engine_already_extracting" to "Wird bereits entpackt",

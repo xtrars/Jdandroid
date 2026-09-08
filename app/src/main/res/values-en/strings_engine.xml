@@ -27,7 +27,6 @@
     <string name="engine_hash_mismatch">Checksum (%1$s) does not match – file will be downloaded again</string>
 
     <!-- Archives and extraction -->
-    <string name="engine_first_volume_missing_not_extracted">First archive part missing, not extracted</string>
     <string name="engine_first_volume_missing">First archive part missing</string>
     <string name="engine_entry_not_found">Entry not found</string>
     <string name="engine_already_extracting">Already being extracted</string>

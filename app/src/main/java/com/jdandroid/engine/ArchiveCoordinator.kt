@@ -155,14 +155,15 @@ internal class ArchiveCoordinator(
 
     /**
      * Extracts a complete set that is already EXTRACTING. Without a first
-     * volume the whole set goes back to completed, otherwise the other parts
-     * would stay EXTRACTING forever.
+     * volume the whole set goes back to completed with [FIRST_VOLUME_NOTE],
+     * each part keeping its own path, and is retried once that volume arrives;
+     * otherwise the other parts would stay EXTRACTING forever.
      */
     private suspend fun startExtraction(set: ArchiveSet, archiveFile: File) {
         val primary = Extractor.findPrimaryVolume(archiveDir(set.packageId), set.base)
         if (primary == null) {
             dao.byId(set.id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
-            dao.completeExtractingSet(archiveSetIds(set), archiveFile.absolutePath, Texts.t("engine_first_volume_missing_not_extracted"))
+            dao.completeExtractingSetKeepPath(archiveSetIds(set), FIRST_VOLUME_NOTE)
             return
         }
         // Own job: frees the download slot at once instead of blocking the queue behind a large RAR
@@ -170,14 +171,15 @@ internal class ArchiveCoordinator(
     }
 
     /**
-     * Re-checks completed parts carrying [WAITING_NOTE] in the package: when the
+     * Re-checks completed parts carrying [WAITING_NOTE] or [FIRST_VOLUME_NOTE] in the package: when the
      * last pending entry gets a name or completes as a non-archive, nothing
      * else would trigger the extraction.
      */
     suspend fun retryWaitingSets(packageId: Long?) = withContext(NonCancellable) {
         if (packageId == null) return@withContext
         val ready = completionMutex.withLock {
-            dao.waitingParts(packageId, WAITING_NOTE).groupBy { it.archiveKey!! }
+            (dao.waitingParts(packageId, WAITING_NOTE) + dao.waitingParts(packageId, FIRST_VOLUME_NOTE))
+                .groupBy { it.archiveKey!! }
                 .mapNotNull { (base, parts) ->
                     val self = parts.first()
                     val set = ArchiveSet(self.id, packageId, base)
@@ -364,7 +366,7 @@ internal class ArchiveCoordinator(
                     failure = e.message ?: e.javaClass.simpleName
                 } finally {
                     if (!finished) {
-                        runCatching { dao.completeExtractingSet(setIds, archiveFile.absolutePath, failure) }
+                        runCatching { dao.completeExtractingSetKeepPath(setIds, failure) }
                     }
                     runCatching { ProgressBus.removeAll(setIds) }
                 }
@@ -396,6 +398,9 @@ internal class ArchiveCoordinator(
          * the UI translates it (`downloads_waiting_for_parts`).
          */
         const val WAITING_NOTE = DownloadNotes.WAITING_PARTS
+
+        /** Note on completed parts of a set without its first volume; the UI translates it. */
+        const val FIRST_VOLUME_NOTE = DownloadNotes.FIRST_VOLUME_MISSING
 
         /** [ExtractionRegistry] key of a set; entries without a package count as package 0. */
         fun setKey(packageId: Long?, base: String): String = "${packageId ?: 0}/$base"

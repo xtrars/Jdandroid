@@ -56,6 +56,14 @@ object ArchiveSets {
     const val COMPLETED_ARCHIVES =
         "SELECT * FROM downloads WHERE packageId = :packageId AND status = 'COMPLETED' AND archiveKey IS NOT NULL ORDER BY addedAt"
 
+    /**
+     * Set back to completed with a note, every part keeping its own file path;
+     * for sets that could not be extracted (first volume missing, error).
+     */
+    const val COMPLETE_SET_KEEP_PATH =
+        "UPDATE downloads SET status = 'COMPLETED', errorMessage = :note, attempts = 0, retryAt = 0 " +
+            "WHERE id IN (:ids) AND status = 'EXTRACTING'"
+
     /** Does any entry of the package still reference the archive files of :key? */
     const val COUNT_KEY = "SELECT COUNT(*) FROM downloads WHERE packageId IS :packageId AND archiveKey = :key"
 }

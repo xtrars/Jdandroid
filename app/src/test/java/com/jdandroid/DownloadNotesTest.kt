@@ -25,6 +25,8 @@ class DownloadNotesTest : SchemaDbTest() {
         assertEquals("Warte auf weitere Archiv-Teile", DownloadNotes.LEGACY_WAITING_PARTS)
         assertEquals("Wartet auf WLAN", DownloadNotes.LEGACY_WAITING_WIFI)
         assertEquals(DownloadNotes.WAITING_PARTS, ArchiveCoordinator.WAITING_NOTE)
+        assertEquals("FIRST_VOLUME_MISSING", DownloadNotes.FIRST_VOLUME_MISSING)
+        assertEquals(DownloadNotes.FIRST_VOLUME_MISSING, ArchiveCoordinator.FIRST_VOLUME_NOTE)
     }
 
     @Test
