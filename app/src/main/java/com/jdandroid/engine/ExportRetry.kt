@@ -1,6 +1,8 @@
 package com.jdandroid.engine
 
 import com.jdandroid.core.Clock
+import com.jdandroid.core.LiveProgress
+import com.jdandroid.core.ProgressBus
 import com.jdandroid.data.DownloadDao
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadNotes
@@ -76,13 +78,24 @@ internal class ExportRetry(
     private suspend fun upload(path: String, items: List<DownloadItem>) {
         val local = File(path)
         val ids = items.map { it.id }
-        val placed = when {
-            local.isDirectory -> storage.exportDirectory(local, local.name)
-            local.isFile -> storage.finish(local, items.first().fileName ?: local.name)
-            // Removed by the user meanwhile: nothing left to upload
-            else -> { dao.setExported(ids, path, null); return }
+        val progress = { done: Long, total: Long ->
+            if (total > 0) {
+                val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+                val now = clock.nowMillis()
+                ids.forEach { ProgressBus.update(it, LiveProgress(uploadPercent = percent), now) }
+            }
         }
-        if (placed.pending) return
-        dao.setExported(ids, placed.path, placed.error)
+        try {
+            val placed = when {
+                local.isDirectory -> storage.exportDirectory(local, local.name, progress)
+                local.isFile -> storage.finish(local, items.first().fileName ?: local.name, progress)
+                // Removed by the user meanwhile: nothing left to upload
+                else -> { dao.setExported(ids, path, null); return }
+            }
+            if (placed.pending) return
+            dao.setExported(ids, placed.path, placed.error)
+        } finally {
+            ProgressBus.removeAll(ids)
+        }
     }
 }

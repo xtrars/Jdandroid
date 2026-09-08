@@ -47,7 +47,9 @@ data class DownloadGroup(
     val pkg: DownloadPackage,
     val items: List<DownloadItem>,
     /** Extraction percent per item id, live from the [ProgressBus]; absent = unknown. */
-    val extractPercents: Map<Long, Int> = emptyMap()
+    val extractPercents: Map<Long, Int> = emptyMap(),
+    /** NAS upload percent per item id, live from the [ProgressBus]; absent = not uploading. */
+    val uploadPercents: Map<Long, Int> = emptyMap()
 ) {
     /** Sum of the known file sizes. */
     val total: Long
@@ -60,6 +62,10 @@ data class DownloadGroup(
     val extracting: Boolean
     /** Extraction percent of the package, -1 = unknown. */
     val extractPercent: Int
+    /** True while any entry is being moved to the NAS. */
+    val uploading: Boolean = uploadPercents.isNotEmpty()
+    /** Upload percent of the package (smallest entry), -1 = not uploading. */
+    val uploadPercent: Int = uploadPercents.values.minOrNull() ?: -1
 
     // Computed once per instance: the header reads these fields on every recomposition.
     init {
@@ -101,6 +107,9 @@ data class DownloadGroup(
 
     /** Extraction percent of one item, -1 = unknown. */
     fun extractPercent(item: DownloadItem): Int = extractPercents[item.id] ?: -1
+
+    /** NAS upload percent of one item, -1 = not uploading. */
+    fun uploadPercent(item: DownloadItem): Int = uploadPercents[item.id] ?: -1
 }
 
 /**
@@ -117,8 +126,12 @@ internal fun groupDownloads(
     val byPackage = items.groupBy { it.packageId }
     fun group(pkg: DownloadPackage, members: List<DownloadItem>): DownloadGroup {
         val percents = HashMap<Long, Int>()
-        members.forEach { m -> live[m.id]?.extractPercent?.takeIf { it >= 0 }?.let { percents[m.id] = it } }
-        return DownloadGroup(pkg, members, percents)
+        val uploads = HashMap<Long, Int>()
+        members.forEach { m ->
+            live[m.id]?.extractPercent?.takeIf { it >= 0 }?.let { percents[m.id] = it }
+            live[m.id]?.uploadPercent?.takeIf { it >= 0 }?.let { uploads[m.id] = it }
+        }
+        return DownloadGroup(pkg, members, percents, uploads)
     }
     val known = packages.mapNotNull { pkg ->
         byPackage[pkg.id]?.let { group(pkg, it.sortedBy { i -> i.addedAt }) }

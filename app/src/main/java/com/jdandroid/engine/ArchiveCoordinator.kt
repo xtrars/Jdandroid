@@ -143,11 +143,12 @@ internal class ArchiveCoordinator(
             row.packageId
         }
         try {
-            val placed = storage.finish(temp, fileName)
+            val placed = storage.finish(temp, fileName) { done, total -> publishUpload(listOf(id), done, total) }
             dao.byId(id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
             dao.completeExported(id, placed.path, placed.note)
         } finally {
             ExtractionRegistry.finishExport(id)
+            ProgressBus.remove(id)
         }
         // A waiting archive set of the same package may be complete now
         retryWaitingSets(packageId)
@@ -347,7 +348,7 @@ internal class ArchiveCoordinator(
                         flat = settings.currentFlatExtract(),
                         progress = listener
                     )
-                    val exported = storage.exportDirectory(extractDir, folder)
+                    val exported = storage.exportDirectory(extractDir, folder) { done, total -> publishUpload(setIds, done, total) }
                     if (settings.currentDeleteArchive()) {
                         archiveDir(packageId).listFiles()
                             ?.filter { ArchiveNames.archiveBase(it.name) == base }
@@ -372,6 +373,14 @@ internal class ArchiveCoordinator(
                 }
             }
         }
+
+    /** NAS upload percent for all [ids]; the bus throttles per entry. */
+    private fun publishUpload(ids: List<Long>, done: Long, total: Long) {
+        if (total <= 0) return
+        val percent = (done * 100 / total).toInt().coerceIn(0, 100)
+        val now = clock.nowMillis()
+        ids.forEach { ProgressBus.update(it, LiveProgress(uploadPercent = percent), now) }
+    }
 
     /** Removes the completed entries of the archive from the list and cleans up empty packages. */
     private suspend fun removeExtractedEntries(set: ArchiveSet) {

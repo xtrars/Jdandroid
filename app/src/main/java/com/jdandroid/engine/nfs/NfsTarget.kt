@@ -40,12 +40,20 @@ internal class NfsTarget(private val factory: () -> NfsShareFactory = { NfsShare
      * deleting each local file after its upload and the folder at the end.
      * On failure the remaining files stay for a later retry.
      */
-    suspend fun exportDirectory(settings: NfsSettings, dir: File, base: String): Outcome =
+    suspend fun exportDirectory(
+        settings: NfsSettings,
+        dir: File,
+        base: String,
+        progress: ((done: Long, total: Long) -> Unit)? = null
+    ): Outcome =
         withContext(Dispatchers.IO) {
             attempt(settings) { share ->
                 val listings = HashMap<String, HashSet<String>>()
                 share.mkdirs(base)
-                FileTrees.regularFiles(dir).sortedBy { it.path }.forEach { file ->
+                val files = FileTrees.regularFiles(dir).sortedBy { it.path }
+                val total = files.sumOf { it.length() }
+                var uploaded = 0L
+                files.forEach { file ->
                     val relDir = file.parentFile!!.relativeTo(dir).path.replace(File.separatorChar, '/')
                     val remoteDir = if (relDir.isEmpty()) base else "$base/$relDir"
                     val taken = listings.getOrPut(remoteDir) {
@@ -53,7 +61,9 @@ internal class NfsTarget(private val factory: () -> NfsShareFactory = { NfsShare
                         share.list(remoteDir).toHashSet()
                     }
                     val name = FileNames.uniqueName(file.name) { it in taken }
-                    share.upload(file, "$remoteDir/$name")
+                    share.upload(file, "$remoteDir/$name") { done -> progress?.invoke(uploaded + done, total) }
+                    uploaded += file.length()
+                    progress?.invoke(uploaded, total)
                     taken += name
                     file.delete()
                 }

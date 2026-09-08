@@ -153,4 +153,20 @@ class DownloadGroupingTest {
         assertTrue(groupDownloads(emptyList(), listOf(DownloadPackage(id = 1, name = "A")), LOOSE).isEmpty())
         assertTrue(groupDownloads(emptyList(), emptyList(), LOOSE).isEmpty())
     }
+
+    @Test
+    fun uploadProzentKommtLiveUndDasPaketZeigtDenKleinsten() {
+        val packages = listOf(DownloadPackage(id = 1, name = "A"))
+        val items = listOf(item(10, 1), item(11, 1), item(12, 1))
+        val live = mapOf(10L to LiveProgress(uploadPercent = 40), 11L to LiveProgress(uploadPercent = 90), 12L to LiveProgress(extractPercent = 50))
+        val group = groupDownloads(items, packages, LOOSE, live).single()
+        assertTrue(group.uploading)
+        assertEquals(40, group.uploadPercent)
+        assertEquals(40, group.uploadPercent(items[0]))
+        assertEquals(-1, group.uploadPercent(items[2]))
+        assertEquals(50, group.extractPercent(items[2]))
+        val idle = groupDownloads(items, packages, LOOSE).single()
+        assertFalse(idle.uploading)
+        assertEquals(-1, idle.uploadPercent)
+    }
 }

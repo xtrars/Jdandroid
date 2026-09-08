@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.StateFlow
 data class LiveProgress(
     val downloadedBytes: Long = -1,
     val speedBps: Long = 0,
-    val extractPercent: Int = -1
+    val extractPercent: Int = -1,
+    /** Upload to the NAS in percent, -1 = not uploading. */
+    val uploadPercent: Int = -1
 )
 
 /**

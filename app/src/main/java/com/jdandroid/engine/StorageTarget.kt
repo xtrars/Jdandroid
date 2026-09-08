@@ -151,11 +151,13 @@ internal class StorageTarget(
         }
     }
 
-    /** Moves a finished file to its target and returns where it went. */
-    suspend fun finish(temp: File, fileName: String): Placed {
+    /** Moves a finished file to its target and returns where it went; [progress] reports NAS uploads only. */
+    suspend fun finish(temp: File, fileName: String, progress: ((done: Long, total: Long) -> Unit)? = null): Placed {
         val nfsSettings = settings.currentNfs()
         if (nfsSettings.isUsable) {
-            return when (val outcome = nfs.finish(nfsSettings, temp, fileName)) {
+            val total = temp.length()
+            val outcome = nfs.finish(nfsSettings, temp, fileName, progress?.let { p -> { done: Long -> p(done, total) } })
+            return when (outcome) {
                 is NfsTarget.Outcome.Done -> { temp.delete(); Placed(outcome.displayPath) }
                 is NfsTarget.Outcome.Failed -> Placed.local(storeLocally(temp, fileName), outcome.failure)
             }
@@ -206,10 +208,10 @@ internal class StorageTarget(
      * Downloads/JDAndroid/[base]/... and returns the display path; without
      * export they stay in [dir].
      */
-    suspend fun exportDirectory(dir: File, base: String): Placed {
+    suspend fun exportDirectory(dir: File, base: String, progress: ((done: Long, total: Long) -> Unit)? = null): Placed {
         val nfsSettings = settings.currentNfs()
         if (nfsSettings.isUsable) {
-            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base)) {
+            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base, progress)) {
                 is NfsTarget.Outcome.Done -> Placed(outcome.displayPath)
                 is NfsTarget.Outcome.Failed -> Placed.local(dir.absolutePath, outcome.failure)
             }

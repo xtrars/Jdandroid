@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.7.0] – 2026-09-08
+
+### Hinzugefügt
+
+- Das Verschieben auf das NAS ist ein eigener Zustand mit eigenem Balken:
+  Zeile und Paket zeigen „Wird auf das NAS verschoben … %“ mit Prozent in
+  der Tertiärfarbe, der Chip lautet „NAS“. Beim Entpacken stand der Balken
+  während des Uploads bei 99 Prozent. Gilt für einzelne Dateien, entpackte
+  Ordner (alle Teile des Archivs) und die Wiederholung wartender Uploads.
+
 ## [0.6.4] – 2026-09-08
 
 ### Behoben
@@ -976,6 +986,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.7.0]: https://github.com/xtrars/Jdandroid/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/xtrars/Jdandroid/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/xtrars/Jdandroid/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/xtrars/Jdandroid/compare/v0.6.1...v0.6.2

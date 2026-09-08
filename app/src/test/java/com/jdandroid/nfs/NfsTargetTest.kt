@@ -131,4 +131,18 @@ class NfsTargetTest {
         val s = NfsSettings(enabled = true, server = " nas ", export = "volume1//media/")
         assertEquals("nfs://nas/volume1/media/a.bin", NfsTarget.displayPath(s, "a.bin"))
     }
+
+    @Test
+    fun `Ordner-Upload meldet den Fortschritt ueber alle Dateien`() = runBlocking {
+        val dir = tmp.newFolder("Paket")
+        File(dir, "a.bin").writeBytes(ByteArray(300))
+        File(dir, "b.bin").writeBytes(ByteArray(100))
+        val seen = mutableListOf<Pair<Long, Long>>()
+
+        target.exportDirectory(settings, dir, "Paket") { done, total -> seen += done to total }
+
+        assertTrue(seen.all { it.second == 400L })
+        assertEquals(400L, seen.last().first)
+        assertEquals(seen.map { it.first }, seen.map { it.first }.sorted())
+    }
 }

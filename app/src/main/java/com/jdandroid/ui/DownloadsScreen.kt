@@ -283,7 +283,7 @@ fun DownloadsScreen(
                     }
                     if (!isCollapsed) {
                         items(group.items, key = { it.id }) { item ->
-                            DownloadRow(item, group.extractPercent(item), vm, Modifier.padding(start = 10.dp))
+                            DownloadRow(item, group.extractPercent(item), group.uploadPercent(item), vm, Modifier.padding(start = 10.dp))
                         }
                     }
                     item(key = "gap-${group.pkg.id}") { Spacer(Modifier.height(6.dp)) }
@@ -338,7 +338,9 @@ private fun PackageHeader(
                             )
                         }
                         if (group.speed > 0) add(stringResource(R.string.downloads_speed, formatBytes(group.speed)))
-                        if (group.extracting) {
+                        if (group.uploading) {
+                            add(stringResource(R.string.downloads_summary_uploading_percent, group.uploadPercent))
+                        } else if (group.extracting) {
                             add(
                                 if (group.extractPercent >= 0) {
                                     stringResource(R.string.downloads_summary_extracting_percent, group.extractPercent)
@@ -390,7 +392,14 @@ private fun PackageHeader(
                     }
                 }
             }
-            if (group.extracting) {
+            if (group.uploading) {
+                Spacer(Modifier.height(6.dp))
+                ThinProgress(
+                    group.uploadPercent / 100f,
+                    Modifier.padding(horizontal = 12.dp),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            } else if (group.extracting) {
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(
                     if (group.extractPercent >= 0) group.extractPercent / 100f else null,
@@ -432,6 +441,8 @@ private fun DownloadRow(
     item: DownloadItem,
     /** Live extraction percent, -1 = unknown. */
     extractPercent: Int,
+    /** Live NAS upload percent, -1 = not uploading. */
+    uploadPercent: Int,
     vm: DownloadViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -471,7 +482,9 @@ private fun DownloadRow(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.size(8.dp))
-                val (pillRes, tone) = when (item.status) {
+                val (pillRes, tone) = when {
+                    uploadPercent >= 0 -> R.string.downloads_status_uploading to Tone.ACTIVE
+                    else -> when (item.status) {
                     DownloadStatus.RUNNING -> R.string.downloads_status_running to Tone.ACTIVE
                     DownloadStatus.QUEUED -> R.string.downloads_status_queued to Tone.NEUTRAL
                     DownloadStatus.COLLECTED -> R.string.downloads_status_collected to Tone.NEUTRAL
@@ -480,6 +493,7 @@ private fun DownloadRow(
                     DownloadStatus.COMPLETED -> R.string.downloads_status_completed to Tone.SUCCESS
                     DownloadStatus.FAILED -> R.string.downloads_status_failed to Tone.ERROR
                     DownloadStatus.OFFLINE -> R.string.downloads_status_offline to Tone.ERROR
+                    }
                 }
                 StatusPill(stringResource(pillRes), tone)
                 var menuOpen by remember { mutableStateOf(false) }
@@ -534,7 +548,9 @@ private fun DownloadRow(
                 }
             }
             Spacer(Modifier.height(3.dp))
-            val statusLine = when (item.status) {
+            val statusLine = if (uploadPercent >= 0) {
+                stringResource(R.string.downloads_uploading_nas_percent, uploadPercent)
+            } else when (item.status) {
                 DownloadStatus.RUNNING -> {
                     val progress = stringResource(
                         R.string.downloads_bytes_of_total,
@@ -575,7 +591,10 @@ private fun DownloadRow(
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 hosterId = item.hosterId
             )
-            if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.PAUSED) {
+            if (uploadPercent >= 0) {
+                Spacer(Modifier.height(6.dp))
+                ThinProgress(uploadPercent / 100f, Modifier.padding(end = 8.dp), color = MaterialTheme.colorScheme.tertiary)
+            } else if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.PAUSED) {
                 Spacer(Modifier.height(6.dp))
                 if (item.fileSize > 0) {
                     ThinProgress(item.downloadedBytes.toFloat() / item.fileSize, Modifier.padding(end = 8.dp))
@@ -583,7 +602,7 @@ private fun DownloadRow(
                     ThinProgress(null, Modifier.padding(end = 8.dp))
                 }
             }
-            if (item.status == DownloadStatus.EXTRACTING) {
+            if (item.status == DownloadStatus.EXTRACTING && uploadPercent < 0) {
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(
                     if (extractPercent >= 0) extractPercent / 100f else null,
