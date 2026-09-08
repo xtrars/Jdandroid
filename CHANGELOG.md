@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.7.1] – 2026-09-08
+
+### Geändert
+
+- „Löschen“ ist während des Entpackens und des Verschiebens auf das NAS
+  gesperrt, für einzelne Einträge wie für das Paket; der Menüpunkt nennt
+  die Phase („Löschen erst nach dem Entpacken/Verschieben“). Vorher lief
+  beides nach dem Löschen weiter und hinterließ verwaiste Dateien oder eine
+  Datei auf dem NAS ohne Eintrag.
+
 ## [0.7.0] – 2026-09-08
 
 ### Hinzugefügt
@@ -986,6 +996,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.7.1]: https://github.com/xtrars/Jdandroid/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/xtrars/Jdandroid/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/xtrars/Jdandroid/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/xtrars/Jdandroid/compare/v0.6.2...v0.6.3

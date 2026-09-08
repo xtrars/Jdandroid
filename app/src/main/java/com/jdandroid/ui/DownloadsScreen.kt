@@ -84,6 +84,14 @@ private const val SEPARATOR = " · "
  * Resolves stored note codes ([DownloadNotes], [FreeMode]) at display time;
  * foreign texts such as hoster messages pass through unchanged.
  */
+/** Menu label for deleting; while blocked it names the phase to wait for. */
+@Composable
+private fun deleteLabel(labelRes: Int, block: DeleteBlock?): String = when (block) {
+    null -> stringResource(labelRes)
+    DeleteBlock.EXTRACTING -> stringResource(R.string.downloads_delete_after_extracting)
+    DeleteBlock.UPLOADING -> stringResource(R.string.downloads_delete_after_uploading)
+}
+
 @Composable
 private fun noteText(note: String, retryAt: Long = 0L, now: Long = 0L): String = when (note) {
     DownloadNotes.WAITING_PARTS -> stringResource(R.string.downloads_waiting_for_parts)
@@ -383,9 +391,11 @@ private fun PackageHeader(
                                     onClick = { menuOpen = false; vm.extractPackage(group.pkg.id) }
                                 )
                             }
+                            val block = DeleteGuard.forGroup(group)
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.downloads_menu_delete_package)) },
+                                text = { Text(deleteLabel(R.string.downloads_menu_delete_package, block)) },
                                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                enabled = block == null,
                                 onClick = { menuOpen = false; confirmDelete = true }
                             )
                         }
@@ -539,9 +549,11 @@ private fun DownloadRow(
                             }
                             DownloadStatus.EXTRACTING, DownloadStatus.COLLECTED -> {}
                         }
+                        val block = DeleteGuard.forItem(item, uploadPercent)
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.common_delete)) },
+                            text = { Text(deleteLabel(R.string.common_delete, block)) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            enabled = block == null,
                             onClick = { menuOpen = false; confirmDelete = true }
                         )
                     }

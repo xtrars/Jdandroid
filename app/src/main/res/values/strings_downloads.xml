@@ -43,6 +43,8 @@
     <string name="downloads_menu_rename">Umbenennen</string>
     <string name="downloads_menu_extract_archives">Archive entpacken</string>
     <string name="downloads_menu_delete_package">Paket löschen</string>
+    <string name="downloads_delete_after_extracting">Löschen erst nach dem Entpacken</string>
+    <string name="downloads_delete_after_uploading">Löschen erst nach dem Verschieben</string>
     <string name="downloads_delete_package_title">Paket löschen?</string>
     <plurals name="downloads_delete_package_text">
         <item quantity="one">\"%1$s\" mit %2$d Download wird entfernt. Bereits geladene Teildateien werden gelöscht.</item>
