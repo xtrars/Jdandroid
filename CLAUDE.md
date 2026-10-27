@@ -91,10 +91,10 @@ Deutsch. Kommentare im Code sind Englisch.
 
 ## Hoster-Besonderheiten
 
-- ddownload: Browser-Login (Cloudflare Turnstile), Kontoseite zeigt
-  Kontingent falsch beschriftet („197040 GB“ = MB), daher Plausibilitätsgrenze
-  ab 16 TiB; API `premium_traffic_left` in MB; Dateiseite ersetzt Punkte in
-  Namen durch Leerzeichen („name part1 rar“), `Extractor.repairName()`
+- ddownload: nur Browser-Login (Cloudflare Turnstile, keine API), Kontoseite
+  zeigt Kontingent falsch beschriftet („197040 GB“ = MB), daher
+  Plausibilitätsgrenze ab 16 TiB; Dateiseite ersetzt Punkte in Namen durch
+  Leerzeichen („name part1 rar“), `Extractor.repairName()`
   stellt sie her; Download-Formular antwortet mit Weiterleitungsketten, die
   ohne Dateiladen verfolgt werden. WebView-Kennung für die Session nutzen
   (cf_clearance ist daran gebunden). Free: Download-Formular verlangt ein

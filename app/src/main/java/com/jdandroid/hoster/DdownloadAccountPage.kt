@@ -6,9 +6,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * Pure parsing of the ddownload account page and the API account values (no
- * network, no Android): expiry date, premium detection, quota with plausibility
- * limit, API key. Keeps every rule testable against real page snippets.
+ * Pure parsing of the ddownload account page (no network, no Android): expiry
+ * date, premium detection, quota with plausibility limit. Keeps every rule
+ * testable against real page snippets.
  */
 internal object DdownloadAccountPage {
 
@@ -22,25 +22,20 @@ internal object DdownloadAccountPage {
      */
     private val MAX_PLAUSIBLE_QUOTA = 16L shl 40
 
-    /** Lenient parsing of the API expiry date: several formats or Unix time; 0 = unknown. */
-    fun parseExpire(raw: String?): Long {
-        val value = raw?.trim().orEmpty()
-        if (value.isEmpty() || value.equals("null", true)) return 0L
-        value.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000 }
-        val formats = listOf(
-            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd",
-            "dd MMMM yyyy", "dd MMM yyyy", "dd.MM.yyyy", "MM/dd/yyyy"
-        )
-        for (fmt in formats) {
+    /**
+     * Parses a day-month-year date as written on the account page
+     * ("2 December 2026", "02 Dec 2026", "2 Dezember 2026"); 0 = unknown.
+     */
+    fun parseExpire(raw: String): Long {
+        val value = raw.trim()
+        if (value.isEmpty()) return 0L
+        for (fmt in listOf("dd MMMM yyyy", "dd MMM yyyy")) {
             for (locale in listOf(Locale.US, Locale.GERMAN)) {
                 runCatching { SimpleDateFormat(fmt, locale).parse(value)?.time }.getOrNull()?.let { return it }
             }
         }
         return 0L
     }
-
-    /** The API reports premium_traffic_left in megabytes (docs: 102400 = 100 GB). */
-    fun quotaToBytes(raw: Double): Long = (raw * (1L shl 20)).toLong()
 
     /** Corrects a mislabelled unit: divide by 1024 until the value is plausible. */
     fun plausibleQuota(bytes: Long): Long {
@@ -144,10 +139,6 @@ internal object DdownloadAccountPage {
         left = if (parsed.left >= 0) plausibleQuota(parsed.left) else parsed.left,
         total = if (parsed.total > 0) plausibleQuota(parsed.total) else parsed.total
     )
-
-    /** API key from the account page (XFS shows it under "API"), only in an unambiguous form. */
-    fun apiKeyFromPage(html: String): String? =
-        Regex("""(?i)api[\s_-]*key[\s\S]{0,300}?value=["']([a-z0-9]{16,64})["']""").find(html)?.groupValues?.get(1)
 
     fun toBytes(value: String, unit: String): Long = parseSize(value, unit)
 }

@@ -21,9 +21,7 @@ object HosterTexts {
         "hoster_unknown_error" to "Unbekannter Fehler",
         "hoster_unexpected_response" to "Unerwartete Antwort",
         "hoster_empty_server_response" to "Leere Antwort vom Server",
-        "hoster_api_no_response" to "Keine Antwort der API",
         "hoster_http_status" to "HTTP %1\$d",
-        "hoster_status_code" to "Status %1\$d",
         "hoster_http_status_unknown" to "HTTP %1\$d – Status unbekannt",
         "hoster_cloudflare_check_unknown" to "Cloudflare-Prüfung – Status unbekannt",
         "hoster_no_username" to "Kein Benutzername hinterlegt",
@@ -39,15 +37,12 @@ object HosterTexts {
         "hoster_duration_seconds" to "%1\$d s",
 
         // ddownload
-        "hoster_ddownload_account_hint" to "Empfohlen: API-Key aus dem ddownload-Konto (my.ddownload.com → API). Alternativ unten „Im Browser anmelden“ für Benutzername/Passwort – der Login verlangt ein CAPTCHA und geht nur im Browser.",
+        "hoster_ddownload_account_hint" to "Anmeldung nur über „Im Browser anmelden“: Benutzername und Passwort im eingebetteten Browser eingeben und das Captcha lösen; die App übernimmt die Session-Cookies.",
         "hoster_ddownload_invalid_link" to "Ungültiger ddownload-Link",
         "hoster_ddownload_cloudflare_blocked" to "ddownload: Zugriff von Cloudflare blockiert (HTTP %1\$d). Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.",
-        "hoster_ddownload_no_login" to "ddownload: keine Anmeldung hinterlegt. Entweder API-Key eintragen oder „Im Browser anmelden“ verwenden (Login verlangt ein CAPTCHA).",
+        "hoster_ddownload_no_login" to "ddownload: keine Anmeldung hinterlegt. Bitte unter Konten „Im Browser anmelden“ verwenden (der Login verlangt ein Captcha).",
         "hoster_ddownload_account_page_unreachable" to "ddownload: Kontoseite nicht erreichbar (HTTP %1\$d)",
         "hoster_ddownload_session_expired" to "ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut „Im Browser anmelden“.",
-        "hoster_ddownload_unexpected_api_response" to "ddownload: unerwartete API-Antwort",
-        "hoster_ddownload_api_not_json" to "ddownload-API: keine JSON-Antwort (HTTP %1\$d)",
-        "hoster_ddownload_api_error" to "ddownload: %1\$s",
         "hoster_ddownload_premium_required" to "ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).",
         "hoster_ddownload_no_direct_link_hint" to "ddownload: kein Direktlink erhalten (HTTP %1\$d, %2\$s).",
         "hoster_ddownload_no_direct_link" to "ddownload: kein Direktlink erhalten (HTTP %1\$d)",
@@ -68,8 +63,6 @@ object HosterTexts {
         "hoster_ddownload_free_size_limit" to "ddownload: Free-Download nur bis %1\$s – für diese Datei ist ein Premium-Konto nötig",
         "hoster_ddownload_premium_only" to "ddownload: Datei ist nur mit Premium-Konto ladbar",
         "hoster_ddownload_limit_reached_hour" to "ddownload: Download-Limit erreicht – in einer Stunde erneut",
-        "hoster_ddownload_no_download_url" to "ddownload lieferte keine Download-URL",
-        "hoster_ddownload_no_download_url_premium" to "ddownload lieferte keine Download-URL (Premium nötig?)",
 
         // Rapidgator
         "hoster_rapidgator_account_hint" to "E-Mail und Passwort des Rapidgator-Kontos (Premium erforderlich).",

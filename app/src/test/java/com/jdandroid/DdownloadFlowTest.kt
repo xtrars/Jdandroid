@@ -28,8 +28,7 @@ private fun epoch(year: Int, month: Int, day: Int): Long = GregorianCalendar(yea
 /**
  * ddownload against a local server: account page with the browser session,
  * premium download form with its redirect chain, and the free flow
- * (Turnstile, blocks, form errors). The API path (key) is covered by
- * [DdownloadApiTest].
+ * (Turnstile, blocks, form errors).
  */
 class DdownloadFlowTest {
 
@@ -47,7 +46,7 @@ class DdownloadFlowTest {
         MockWebServer().use { server ->
             server.start()
             val base = server.url("/").toString().trimEnd('/')
-            block(server, base, DdownloadHoster(base, "$base/api", Http.client))
+            block(server, base, DdownloadHoster(base))
         }
 
     /** Account page of a logged-in Ultimate account; the quota is mislabelled as on the real page. */
@@ -153,12 +152,33 @@ class DdownloadFlowTest {
     }
 
     @Test
-    fun ohneSitzungUndOhneSchluesselKeineAnfrage() = withServer { server, _, hoster ->
+    fun ohneSitzungKeineAnfrage() = withServer { server, _, hoster ->
         val fehler = failure { hoster.checkAccount(Account(id = 9, hosterId = "ddownload")) }
         assertTrue("$fehler", permanent(fehler))
         assertEquals(Texts.t("hoster_ddownload_no_login"), fehler!!.message)
         assertTrue(permanent(failure { hoster.resolve(fileUrl, null) }))
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun altbestandMitApiKeyLaeuftUeberDenBrowserWeg() {
+        // Accounts restored from an older backup may still carry an API key
+        val ohneCookies = Account(id = 4, hosterId = "ddownload", apiKey = "K")
+        withServer { server, _, hoster ->
+            val fehler = failure { hoster.checkAccount(ohneCookies) }
+            assertTrue("$fehler", permanent(fehler))
+            assertEquals(Texts.t("hoster_ddownload_no_login"), fehler!!.message)
+            assertTrue(permanent(failure { hoster.resolve(fileUrl, ohneCookies) }))
+            assertEquals(0, server.requestCount)
+        }
+        val mitCookies = ohneCookies.copy(id = 5, cookies = "xfss=abc123")
+        withServer { server, _, hoster ->
+            server.dispatcher = siteDispatcher()
+            assertEquals("Ultimate", runBlocking { hoster.checkAccount(mitCookies) }.statusText)
+            assertEquals(true, runBlocking { hoster.checkLink(fileUrl, mitCookies) }.online)
+            val pfade = (0 until server.requestCount).map { server.takeRequest().path.orEmpty() }
+            assertEquals(listOf("/?op=my_account", "/$code"), pfade)
+        }
     }
 
     @Test
@@ -214,7 +234,7 @@ class DdownloadFlowTest {
     }
 
     @Test
-    fun linkpruefungOhneSchluesselLiestDateiseite() = withServer { server, _, hoster ->
+    fun linkpruefungLiestDateiseite() = withServer { server, _, hoster ->
         server.dispatcher = siteDispatcher(page = html(dateiseite()))
         val info = runBlocking { hoster.checkLink(fileUrl, null) }
         assertEquals(true, info.online)
@@ -288,32 +308,6 @@ class DdownloadFlowTest {
             assertEquals("$base/cgi-bin/dl.cgi", runBlocking { hoster.resolveFree(fileUrl, FreeHints()) }.directUrl)
         }
     }
-
-    @Test
-    fun apiFehlerKlassifikation() {
-        val hoster = DdownloadHoster()
-        // (status, msg) -> permanent
-        val faelle = listOf(
-            Triple(404, "", true),
-            Triple(400, "File not found", true),
-            Triple(403, "Invalid key", true),
-            Triple(403, "Wrong key", true),
-            Triple(400, "No such file", true),
-            Triple(403, "Daily download limit reached", false),
-            Triple(403, "Access denied", false),
-            Triple(429, "Too many requests", false),
-            Triple(500, "", false),
-            Triple(503, "Service unavailable", false)
-        )
-        for ((status, msg, erwartet) in faelle) {
-            assertEquals("$status $msg", erwartet, hoster.apiFailure(status, msg).permanent)
-        }
-        assertEquals(
-            Texts.t("hoster_ddownload_api_error", Texts.t("hoster_http_status", 500)),
-            hoster.apiFailure(500, "").message
-        )
-    }
-
 
     @Test
     fun turnstileImFormularBrauchtDenBrowser() = withServer { server, base, hoster ->

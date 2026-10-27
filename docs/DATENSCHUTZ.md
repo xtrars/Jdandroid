@@ -36,9 +36,9 @@ speicherst; Zugangsdaten kommen nur auf Wunsch hinein, dann im Klartext.
 JDAndroid hat keinen eigenen Server. Netzverbindungen entstehen nur zu:
 
 1. **Den Hostern, für die du ein Konto eingerichtet hast oder deren Links du
-   hinzufügst** – ddownload.com (inkl. ddl.to, api-v2.ddownload.com und
-   Dateiserver), rapidgator.net (inkl. rg.to), 1fichier.com (inkl.
-   api.1fichier.com, Alias-Domains und Dateiserver). Übertragen werden dabei
+   hinzufügst** – ddownload.com (inkl. ddl.to und Dateiserver),
+   rapidgator.net (inkl. rg.to), 1fichier.com (inkl. api.1fichier.com,
+   Alias-Domains und Dateiserver). Übertragen werden dabei
    deine Zugangsdaten zu diesem Hoster, die Links, die du lädst, und die
    Downloads selbst. Für diese Verbindungen gelten die Datenschutzhinweise
    des jeweiligen Hosters. Beim Browser-Login (ddownload) und bei der
@@ -120,7 +120,7 @@ only on request, then in plain text.
 
 **Network connections.** JDAndroid has no server of its own. It connects
 only to (1) the hosters you configure or whose links you add – ddownload.com
-(incl. ddl.to and its API and file servers), rapidgator.net (incl. rg.to),
+(incl. ddl.to and file servers), rapidgator.net (incl. rg.to),
 1fichier.com (incl. api.1fichier.com, alias domains and file servers) –
 transmitting your credentials for that hoster, the links you download and
 the downloads themselves; the hoster's own privacy policy applies, and the

@@ -77,7 +77,7 @@ die Tabelle unten einkommentieren.
 
 | Hoster | Domains | Zugangsdaten | Weg |
 |---|---|---|---|
-| ddownload | ddownload.com, ddl.to | API-Key **oder** Browser-Login (Benutzername/Passwort) | API v2 oder Session-Cookies aus dem eingebetteten Browser |
+| ddownload | ddownload.com, ddl.to | Browser-Login (Benutzername/Passwort im eingebetteten Browser) | Session-Cookies aus dem eingebetteten Browser |
 | Rapidgator | rapidgator.net, rg.to | Benutzername + Passwort | offizielle API v2 |
 | 1fichier | 1fichier.com und die Alias-Domains (z. B. desfichiers.com, megadl.fr, dl4free.com) | API-Key (Kontoeinstellungen → API) | offizielle REST-API |
 
@@ -95,7 +95,7 @@ Hoster lassen sich über das `Hoster`-Interface ergänzen (siehe
 
   | Hoster | Prüfung | Konto nötig |
   |---|---|---|
-  | ddownload | API `file/info` mit Key, sonst die öffentliche Dateiseite | nein |
+  | ddownload | öffentliche Dateiseite (Name, Größe) | nein |
   | Rapidgator | API `file/info` (Name, Größe, MD5) | ja (Session-Token) |
   | 1fichier | öffentliches `check_links.pl` (Name, Größe) | nein |
 
@@ -192,8 +192,8 @@ Grenzen stehen in [`docs/NFS.md`](docs/NFS.md).
 
 Konten pro Hoster hinterlegen und prüfen (Premium-Status, „Aktiv bis“).
 Die Kontenübersicht zeigt die verbleibende Restmenge mit Balken zum
-Kontingent (Rapidgator: `traffic.left/total`; ddownload:
-`premium_traffic_left` gegen das Gesamtkontingent, auch Ultimate-Konten;
+Kontingent (Rapidgator: `traffic.left/total`; ddownload: Restmenge der
+Kontoseite gegen das Tageskontingent, auch Ultimate-Konten;
 1fichier: unbegrenzt) und frischt sie jede Minute auf, solange der Tab
 sichtbar ist, sowie nach jedem fertigen Download. Vorübergehende Fehler
 (HTTP 403 bei 1fichier ist meist eine Flood-Sperre, Tageslimit oder IP-Sperre
@@ -267,13 +267,10 @@ Mindest-Android-Version: 8.0 (API 26), Ziel: Android 16 (API 36).
 
 Konten-Tab → **+** → Hoster wählen:
 
-- **ddownload** – zwei Wege, weil das Login-Formular ein
-  Cloudflare-Turnstile-Captcha enthält:
-  1. **API-Key** (empfohlen): Schlüssel unter my.ddownload.com → API
-     erzeugen und eintragen.
-  2. **Im Browser anmelden**: Benutzername und Passwort im eingebetteten
-     Browser eingeben und das Captcha lösen; die App übernimmt die
-     Session-Cookies und löscht danach die Browser-Cookies.
+- **ddownload** – nur über **Im Browser anmelden**, weil das Login-Formular
+  ein Cloudflare-Turnstile-Captcha enthält: Benutzername und Passwort im
+  eingebetteten Browser eingeben und das Captcha lösen; die App übernimmt
+  die Session-Cookies und löscht danach die Browser-Cookies.
 - **Rapidgator** – Benutzername (E-Mail) und Passwort; die App holt sich
   per API einen Session-Token.
 - **1fichier** – API-Key aus den Kontoeinstellungen (Bereich „API“). Ein

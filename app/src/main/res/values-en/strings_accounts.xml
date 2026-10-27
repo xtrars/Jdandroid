@@ -27,10 +27,11 @@
     <string name="accounts_choose_hoster">Choose hoster</string>
     <string name="accounts_username_label">Username / email</string>
     <string name="accounts_password_label">Password</string>
-    <string name="accounts_web_login_button">Sign in via browser (username/password)</string>
+    <string name="accounts_web_login_button">Sign in via browser</string>
     <string name="accounts_save_and_check">Save &amp; check</string>
     <string name="accounts_login_user_password">Login with username &amp; password</string>
     <string name="accounts_login_api_key">Login with API key</string>
+    <string name="accounts_login_browser">Login in the browser</string>
     <string name="accounts_selected">Selected</string>
     <string name="accounts_web_login_initial">Please sign in – including \"I am not a robot\".</string>
 

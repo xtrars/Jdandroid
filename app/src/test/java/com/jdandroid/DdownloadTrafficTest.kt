@@ -3,15 +3,13 @@ package com.jdandroid
 import com.jdandroid.hoster.DdownloadAccountPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
 import java.util.GregorianCalendar
 
 /** Expected epoch in the default time zone, as SimpleDateFormat uses it in the parser. */
-private fun epoch(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0, second: Int = 0): Long =
-    GregorianCalendar(year, month, day, hour, minute, second).timeInMillis
+private fun epoch(year: Int, month: Int, day: Int): Long = GregorianCalendar(year, month, day).timeInMillis
 
 /** Quota detection on the ddownload account page in various layouts. */
 class DdownloadTrafficTest {
@@ -79,30 +77,6 @@ class DdownloadTrafficTest {
         val html = """<script>var traffic = "999 GB";</script><div>Traffic available: 10 GB</div>"""
         assertEquals(10 * gb, DdownloadAccountPage.parseTraffic(html).left)
     }
-
-    @Test
-    fun apiKeyNurMitKlarerForm() {
-        assertEquals(
-            "abcdef0123456789abcd",
-            DdownloadAccountPage.apiKeyFromPage("""<label>API Key</label><input type="text" value="abcdef0123456789abcd">""")
-        )
-        assertNull(DdownloadAccountPage.apiKeyFromPage("""<div>API documentation</div><input value="short">"""))
-    }
-}
-
-class DdownloadQuotaUnitTest {
-
-    @Test
-    fun megabyteLautApiDoku() {
-        // API docs: 102400 = 100 GB
-        assertEquals(100L shl 30, DdownloadAccountPage.quotaToBytes(102400.0))
-    }
-
-    @Test
-    fun apiWertLandetImTageskontingent() {
-        // 197040 MB per API = 192.4 GiB, consistent with 200 GB per day
-        assertEquals(197040L shl 20, DdownloadAccountPage.plausibleQuota(DdownloadAccountPage.quotaToBytes(197040.0)))
-    }
 }
 
 class DdownloadPlausibilityTest {
@@ -150,15 +124,13 @@ class DdownloadUltimatePageTest {
 class DdownloadExpireTest {
 
     @Test
-    fun verschiedeneDatumsformate() {
+    fun datumsformateDerKontoseite() {
         val jan5 = epoch(2030, Calendar.JANUARY, 5)
-        assertEquals(epoch(2030, Calendar.JANUARY, 5, 12), DdownloadAccountPage.parseExpire("2030-01-05 12:00:00"))
-        assertEquals(jan5, DdownloadAccountPage.parseExpire("2030-01-05"))
         assertEquals(jan5, DdownloadAccountPage.parseExpire("05 January 2030"))
-        assertEquals(1893456000000L, DdownloadAccountPage.parseExpire("1893456000"))
-        assertEquals(1893456000000L, DdownloadAccountPage.parseExpire("1893456000000"))
+        assertEquals(jan5, DdownloadAccountPage.parseExpire("5 January 2030"))
+        assertEquals(jan5, DdownloadAccountPage.parseExpire("05 Jan 2030"))
+        assertEquals(jan5, DdownloadAccountPage.parseExpire(" 5 Januar 2030 "))
         assertEquals(0L, DdownloadAccountPage.parseExpire(""))
-        assertEquals(0L, DdownloadAccountPage.parseExpire("null"))
         assertEquals(0L, DdownloadAccountPage.parseExpire("irgendwann"))
     }
 }

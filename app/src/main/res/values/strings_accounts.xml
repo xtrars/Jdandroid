@@ -27,10 +27,11 @@
     <string name="accounts_choose_hoster">Hoster wählen</string>
     <string name="accounts_username_label">Benutzername / E-Mail</string>
     <string name="accounts_password_label">Passwort</string>
-    <string name="accounts_web_login_button">Im Browser anmelden (Benutzer/Passwort)</string>
+    <string name="accounts_web_login_button">Im Browser anmelden</string>
     <string name="accounts_save_and_check">Speichern &amp; prüfen</string>
     <string name="accounts_login_user_password">Login mit Benutzername &amp; Passwort</string>
     <string name="accounts_login_api_key">Login mit API-Key</string>
+    <string name="accounts_login_browser">Login im Browser</string>
     <string name="accounts_selected">Ausgewählt</string>
     <string name="accounts_web_login_initial">Bitte anmelden – inklusive \"Ich bin kein Roboter\".</string>
 

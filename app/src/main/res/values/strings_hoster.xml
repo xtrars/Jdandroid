@@ -13,9 +13,7 @@
     <string name="hoster_unknown_error">Unbekannter Fehler</string>
     <string name="hoster_unexpected_response">Unerwartete Antwort</string>
     <string name="hoster_empty_server_response">Leere Antwort vom Server</string>
-    <string name="hoster_api_no_response">Keine Antwort der API</string>
     <string name="hoster_http_status">HTTP %1$d</string>
-    <string name="hoster_status_code">Status %1$d</string>
     <string name="hoster_http_status_unknown">HTTP %1$d – Status unbekannt</string>
     <string name="hoster_cloudflare_check_unknown">Cloudflare-Prüfung – Status unbekannt</string>
     <string name="hoster_no_username">Kein Benutzername hinterlegt</string>
@@ -31,15 +29,12 @@
     <string name="hoster_duration_seconds">%1$d s</string>
 
     <!-- ddownload -->
-    <string name="hoster_ddownload_account_hint">Empfohlen: API-Key aus dem ddownload-Konto (my.ddownload.com → API). Alternativ unten „Im Browser anmelden“ für Benutzername/Passwort – der Login verlangt ein CAPTCHA und geht nur im Browser.</string>
+    <string name="hoster_ddownload_account_hint">Anmeldung nur über „Im Browser anmelden“: Benutzername und Passwort im eingebetteten Browser eingeben und das Captcha lösen; die App übernimmt die Session-Cookies.</string>
     <string name="hoster_ddownload_invalid_link">Ungültiger ddownload-Link</string>
     <string name="hoster_ddownload_cloudflare_blocked">ddownload: Zugriff von Cloudflare blockiert (HTTP %1$d). Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.</string>
-    <string name="hoster_ddownload_no_login">ddownload: keine Anmeldung hinterlegt. Entweder API-Key eintragen oder „Im Browser anmelden“ verwenden (Login verlangt ein CAPTCHA).</string>
+    <string name="hoster_ddownload_no_login">ddownload: keine Anmeldung hinterlegt. Bitte unter Konten „Im Browser anmelden“ verwenden (der Login verlangt ein Captcha).</string>
     <string name="hoster_ddownload_account_page_unreachable">ddownload: Kontoseite nicht erreichbar (HTTP %1$d)</string>
     <string name="hoster_ddownload_session_expired">ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut „Im Browser anmelden“.</string>
-    <string name="hoster_ddownload_unexpected_api_response">ddownload: unerwartete API-Antwort</string>
-    <string name="hoster_ddownload_api_not_json">ddownload-API: keine JSON-Antwort (HTTP %1$d)</string>
-    <string name="hoster_ddownload_api_error">ddownload: %1$s</string>
     <string name="hoster_ddownload_premium_required">ddownload benötigt ein Premium-Konto (unter Konten hinzufügen).</string>
     <string name="hoster_ddownload_no_direct_link_hint">ddownload: kein Direktlink erhalten (HTTP %1$d, %2$s).</string>
     <string name="hoster_ddownload_no_direct_link">ddownload: kein Direktlink erhalten (HTTP %1$d)</string>
@@ -60,8 +55,6 @@
     <string name="hoster_ddownload_free_size_limit">ddownload: Free-Download nur bis %1$s – für diese Datei ist ein Premium-Konto nötig</string>
     <string name="hoster_ddownload_premium_only">ddownload: Datei ist nur mit Premium-Konto ladbar</string>
     <string name="hoster_ddownload_limit_reached_hour">ddownload: Download-Limit erreicht – in einer Stunde erneut</string>
-    <string name="hoster_ddownload_no_download_url">ddownload lieferte keine Download-URL</string>
-    <string name="hoster_ddownload_no_download_url_premium">ddownload lieferte keine Download-URL (Premium nötig?)</string>
 
     <!-- Rapidgator -->
     <string name="hoster_rapidgator_account_hint">E-Mail und Passwort des Rapidgator-Kontos (Premium erforderlich).</string>
