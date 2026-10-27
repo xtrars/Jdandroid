@@ -10,8 +10,9 @@ Deutsch. Kommentare im Code sind Englisch.
 - Antworten auf Deutsch, knapp, mit dem Ergebnis zuerst.
 - Nach jeder fertigen Änderung: Version erhöhen, Release-APK bauen, APK in
   `release/JDAndroid-<version>.apk` ablegen, README-Link anpassen, committen,
-  pushen, Tag `v<version>` pushen (löst `release.yml` aus und legt das
-  GitHub-Release an) und die APK per Datei senden.
+  pushen, `release.yml` mit dem Tag `v<version>` starten (legt Tag und
+  GitHub-Release an; ein Tag-Push über den Git-Proxy ist gesperrt, siehe
+  „Release aus der Cloud-Sitzung“) und die APK per Datei senden.
 - In `release/` bleiben nur die fünf neuesten APKs; ältere werden mit
   `git rm` entfernt (Reihenfolge nach Version, `versionCode` in
   `app/build.gradle.kts` ist maßgeblich). APKs mit dem alten, öffentlichen
@@ -147,6 +148,59 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   eingecheckte `release/JDAndroid-<version>.apk`.
 - Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
   Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
+
+## Stand für die nächste Sitzung (27.10.2026)
+
+- Zuletzt veröffentlicht: 0.9.0 (versionCode 65, Commit `060e72d`), Release
+  v0.9.0 mit CI-signierter APK; `release/` enthält 0.7.1 bis 0.9.0. Was sich
+  seit 0.4.1 geändert hat, steht im CHANGELOG: Space-Schema mit Sternenflug
+  und Lage-Parallaxe, ruhiger Fortschritt (ProgressBus 500 ms,
+  SessionProgress in der Benachrichtigung), NAS-Verschieben als eigener
+  Balken, Löschsperre beim Entpacken und Verschieben (`DeleteGuard`), „Erneut
+  laden“ (`redownload`), aufklappbare Namen, NAS-Assistent in einem Dialog,
+  ddownload nur noch über Browser-Login (`AccountType.BROWSER_LOGIN`).
+- Offen beim Nutzer: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+  `KEY_PASSWORD` für die Sitzungsumgebung; sie fehlen seit dem
+  Container-Neustart am 27.10.2026. Die Repository-Secrets der CI sind
+  gesetzt, die CI signiert. Ohne lokalen Keystore den Weg unten nehmen, nie
+  einen neuen Schlüssel erzeugen.
+- Nur geschätzt, nicht begonnen: Linux-/Flatpak-Fassung (zwei bis drei
+  Wochen; Kern und Hoster in ein gemeinsames Gradle-Modul, Compose
+  Multiplatform für den Desktop, Browser-Login und Captcha als größte Hürde).
+- `release/JDAndroid-0.8.2.apk` und älter sind lokale Builds und byteweise
+  nicht gleich den CI-Assets, tragen aber dieselbe Signatur; ab 0.9.0 liegt
+  in `release/` die CI-Datei.
+- Die Git-Historie bis 0.8.2 ist auf den 08.09.2026 datiert, die Sitzung
+  danach lief mit Datum 27.10.2026; CHANGELOG-Daten folgen dem Sitzungsdatum.
+
+## Release aus der Cloud-Sitzung
+
+- `release.yml` per GitHub-MCP `actions_run_trigger` starten (`run_workflow`,
+  `workflow_id` `release.yml`, `ref` = Branch, `inputs {"tag": "v<version>"}`);
+  der Lauf legt den fehlenden Tag auf dem Branch-Stand an. Nur einmal
+  starten, doppelte Läufe für denselben Tag abbrechen. Der Lauf braucht etwa
+  sechs Minuten.
+- Ohne lokalen Keystore: Version, CHANGELOG, README committen und pushen →
+  Workflow starten → im Hintergrund auf das Asset warten (`curl -s -o
+  /dev/null -w '%{http_code}'` auf
+  `https://github.com/xtrars/Jdandroid/releases/download/v<v>/JDAndroid-<v>.apk`
+  bis 302) → mit `curl -sL` laden (HEAD liefert am Blob-Server 401,
+  `gh release download` scheitert am gesperrten GraphQL, `gh api` als REST
+  geht) → `apksigner verify --print-certs` (Zertifikat SHA-256
+  `86eb8953d023a3ed046ecc1f08b36bb6d527d5edea2b9cbc795c6b451b1abd2e`) und
+  `aapt dump badging` (versionCode) prüfen → nach `release/` kopieren,
+  älteste APK mit `git rm` entfernen, committen, pushen, APK per Datei
+  senden. Erinnerung per `send_later` (10–12 Minuten) als Rückfallebene
+  anlegen und nach Erfolg löschen.
+- Frischer Container: Android-SDK nach `/opt/android-sdk` (cmdline-tools,
+  platform-tools, `platforms;android-36`, build-tools 34.0.0/35.0.0/36.0.0),
+  `sdk.dir` in `local.properties` (gitignored, auch in jedem Worktree);
+  `apksigner` und `aapt` liegen unter `/opt/android-sdk/build-tools/34.0.0/`.
+  Maven Central drosselt (HTTP 429): den ersten Build mit Wiederholungen und
+  Pausen fahren, `--offline` erst, wenn der Cache alles hat.
+- `cd` gilt nur innerhalb eines Bash-Aufrufs. Merges aus Worktrees immer als
+  `git -C /home/user/Jdandroid merge --no-edit wt/<name>`, sonst landet der
+  Merge im falschen Zweig; Worktrees und Zweige danach entfernen.
 
 ## Parallele Workflows
 

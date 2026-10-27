@@ -16,9 +16,11 @@ Projektinhaber steht in Abschnitt 2 gesammelt.
       Android und Play das Update.
 - [x] `CHANGELOG.md` mit dem Eintrag zur Version, README-Badge und
       Installationsabschnitt angepasst (0.1.0).
-- [ ] `git tag v<versionName>` auf dem Release-Commit setzen und pushen; der
-      Tag muss exakt `v` + `versionName` sein, sonst bricht `release.yml` ab.
-      Bei jeder weiteren Version wiederholen.
+- [x] Tag `v<versionName>` auf dem Release-Commit: lokal `git tag` und
+      pushen oder `release.yml` manuell mit dem Tag starten (legt ihn auf
+      dem Branch-Stand an; aus einer Claude-Sitzung der einzige Weg, weil
+      der Git-Proxy keine Tag-Pushes zulässt). Der Tag muss exakt `v` +
+      `versionName` sein, sonst bricht `release.yml` ab.
 
 ## 2. Signierung und Keystore
 
@@ -51,10 +53,10 @@ Erledigt (0.1.0):
 
 **Offen für den Projektinhaber:**
 
-- [ ] Die vier Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+- [x] Die vier Secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
       `KEY_PASSWORD` unter GitHub → Settings → Secrets and variables →
-      Actions anlegen. Bis dahin veröffentlicht `release.yml` die lokal
-      signierte APK aus `release/`.
+      Actions angelegt; die CI baut und signiert selbst (seit v0.9.0 liegt
+      die CI-Datei auch in `release/`).
 - [ ] Keystore und Passwörter außerhalb von GitHub sichern (Passwort-
       Manager, Offline-Kopie). Ein verlorener Keystore bedeutet: keine
       Updates mehr für bestehende Installationen. Für Play alternativ
@@ -142,8 +144,8 @@ Erledigt (0.1.0):
 
 ## 7. Nach der Veröffentlichung
 
-- [ ] `CLAUDE.md`: Regel „Keystore im Repo“ streichen, Versionsschema
-      `0.1.x`, GitHub-Release als Verteilweg; `release/` bleibt vorerst.
+- [x] `CLAUDE.md`: Regel „Keystore im Repo“ gestrichen, Versionsschema
+      `0.x`, GitHub-Release als Verteilweg; `release/` bleibt vorerst.
 - [x] `SECURITY.md`: Signatur-Fingerabdruck, Meldeweg.
 - [x] README-Installationsabschnitt: GitHub-Release-Link.
 - [ ] README-Installationsabschnitt: Play- und F-Droid-Links, sobald
