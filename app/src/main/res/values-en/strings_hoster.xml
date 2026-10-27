@@ -12,9 +12,7 @@
     <string name="hoster_unknown_error">Unknown error</string>
     <string name="hoster_unexpected_response">Unexpected response</string>
     <string name="hoster_empty_server_response">Empty response from server</string>
-    <string name="hoster_api_no_response">No response from the API</string>
     <string name="hoster_http_status">HTTP %1$d</string>
-    <string name="hoster_status_code">Status %1$d</string>
     <string name="hoster_http_status_unknown">HTTP %1$d – status unknown</string>
     <string name="hoster_cloudflare_check_unknown">Cloudflare check – status unknown</string>
     <string name="hoster_no_username">No username stored</string>
@@ -30,15 +28,12 @@
     <string name="hoster_duration_seconds">%1$d s</string>
 
     <!-- ddownload -->
-    <string name="hoster_ddownload_account_hint">Recommended: API key from your ddownload account (my.ddownload.com → API). Alternatively use \"Sign in via browser\" below for username/password – the login requires a CAPTCHA and only works in the browser.</string>
+    <string name="hoster_ddownload_account_hint">Sign in only via \"Sign in via browser\": enter your username and password in the embedded browser and solve the captcha; the app takes over the session cookies.</string>
     <string name="hoster_ddownload_invalid_link">Invalid ddownload link</string>
     <string name="hoster_ddownload_cloudflare_blocked">ddownload: access blocked by Cloudflare (HTTP %1$d). Please try again later or open the page once in the browser.</string>
-    <string name="hoster_ddownload_no_login">ddownload: no login stored. Either enter an API key or use \"Sign in via browser\" (the login requires a CAPTCHA).</string>
+    <string name="hoster_ddownload_no_login">ddownload: no login stored. Please use \"Sign in via browser\" under Accounts (the login requires a captcha).</string>
     <string name="hoster_ddownload_account_page_unreachable">ddownload: account page not reachable (HTTP %1$d)</string>
     <string name="hoster_ddownload_session_expired">ddownload: browser session expired. Please use \"Sign in via browser\" again under Accounts.</string>
-    <string name="hoster_ddownload_unexpected_api_response">ddownload: unexpected API response</string>
-    <string name="hoster_ddownload_api_not_json">ddownload API: no JSON response (HTTP %1$d)</string>
-    <string name="hoster_ddownload_api_error">ddownload: %1$s</string>
     <string name="hoster_ddownload_premium_required">ddownload requires a premium account (add one under Accounts).</string>
     <string name="hoster_ddownload_no_direct_link_hint">ddownload: no direct link received (HTTP %1$d, %2$s).</string>
     <string name="hoster_ddownload_no_direct_link">ddownload: no direct link received (HTTP %1$d)</string>
@@ -59,8 +54,6 @@
     <string name="hoster_ddownload_free_size_limit">ddownload: free downloads only up to %1$s – this file requires a premium account</string>
     <string name="hoster_ddownload_premium_only">ddownload: file can only be downloaded with a premium account</string>
     <string name="hoster_ddownload_limit_reached_hour">ddownload: download limit reached – retrying in one hour</string>
-    <string name="hoster_ddownload_no_download_url">ddownload did not return a download URL</string>
-    <string name="hoster_ddownload_no_download_url_premium">ddownload did not return a download URL (premium required?)</string>
 
     <!-- Rapidgator -->
     <string name="hoster_rapidgator_account_hint">E-mail and password of your Rapidgator account (premium required).</string>

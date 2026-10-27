@@ -3,7 +3,6 @@ package com.jdandroid.hoster
 import com.jdandroid.core.Texts
 import com.jdandroid.core.FileNames
 import com.jdandroid.data.Account
-import com.jdandroid.data.plainApiKey
 import com.jdandroid.data.plainCookies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,19 +13,16 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /**
- * ddownload.com, an XFileSharing hoster. Login via username/password (session
- * cookie), premium direct download via the two-step download form. Free
+ * ddownload.com, an XFileSharing hoster. Login only in the embedded browser
+ * (the login form carries a Cloudflare Turnstile), the session cookies are
+ * taken over; premium direct download via the two-step download form. Free
  * downloads go through [DdownloadFree]: blocks and wait times are read from
- * the page, the Cloudflare Turnstile in the download form is only solvable in
- * the embedded browser. The account page is parsed by [DdownloadAccountPage].
+ * the page, the Turnstile in the download form is only solvable in the
+ * embedded browser. The account page is parsed by [DdownloadAccountPage].
  */
 class DdownloadHoster internal constructor(
     /** Website address; tests replace it with a local server. */
-    internal val siteBase: String,
-    /** API address; tests replace it with a local server. */
-    private val apiBase: String = "https://api-v2.ddownload.com/api",
-    /** Client for API calls (the website uses one cookie store per account). */
-    private val apiClient: OkHttpClient = Http.client
+    internal val siteBase: String
 ) : Hoster {
 
     constructor() : this("https://ddownload.com")
@@ -34,9 +30,9 @@ class DdownloadHoster internal constructor(
     override val id = "ddownload"
     override val displayName = "ddownload"
     // The web login is protected by Cloudflare Turnstile and cannot be solved
-    // headlessly, hence two paths: API key (recommended, no captcha) or login
-    // in the embedded browser with session takeover.
-    override val accountType = AccountType.API_KEY
+    // headlessly: the user signs in in the embedded browser and the session
+    // is taken over.
+    override val accountType = AccountType.BROWSER_LOGIN
     override val accountHint: String
         get() = Texts.t("hoster_ddownload_account_hint")
     override val webLoginUrl = "https://ddownload.com/login.html"
@@ -173,29 +169,8 @@ class DdownloadHoster internal constructor(
     }
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val key = account.plainApiKey?.takeIf { it.isNotBlank() }
-        if (key != null) return@withContext checkViaApi(key)
-
         val (_, html) = sessionAndAccountPage(account)
         val (expire, premium, tier) = DdownloadAccountPage.status(DdownloadAccountPage.visibleText(html))
-
-        // With an API key on the account page the API reports the quota more
-        // reliably than the HTML (premium_traffic_left). Premium counts if the
-        // page OR the API says so; with an unclear API date format the page is
-        // the more reliable source.
-        DdownloadAccountPage.apiKeyFromPage(html)?.let { key ->
-            runCatching { checkViaApi(key) }.getOrNull()?.let { viaApi ->
-                if (viaApi.trafficLeft >= 0 || viaApi.trafficUnlimited) {
-                    val apiPremium = viaApi.statusText.startsWith("Premium")
-                    return@withContext if (premium) {
-                        viaApi.copy(
-                            premiumUntil = if (viaApi.premiumUntil > 0) viaApi.premiumUntil else expire,
-                            statusText = if (apiPremium) viaApi.statusText.replaceFirst("Premium", tier) else tier
-                        )
-                    } else viaApi
-                }
-            }
-        }
 
         val traffic = DdownloadAccountPage.plausibleTraffic(DdownloadAccountPage.parseTraffic(html))
         val trafficTotal = when {
@@ -217,94 +192,11 @@ class DdownloadHoster internal constructor(
         )
     }
 
-    /** Account check via the official API (no captcha). */
-    private fun checkViaApi(key: String): AccountInfo {
-        val json = apiCall("account/info", mapOf("key" to key))
-        // Status 200 without "result" is a changed response format, not an
-        // invalid key; key errors are already permanent in apiCall.
-        val result = json.optJSONObject("result")
-            ?: throw HosterException(Texts.t("hoster_ddownload_unexpected_api_response"), permanent = false)
-        val expire = DdownloadAccountPage.parseExpire(result.opt("premium_expire")?.toString())
-        // Per API docs "premium_traffic_left" (in MB, e.g. 102400 = 100 GB) is
-        // the remaining premium daily quota; "traffic_left"/"traffic_used"
-        // refer to free traffic and are irrelevant for premium.
-        val rawPremiumLeft = result.opt("premium_traffic_left")?.toString()?.trim().orEmpty()
-        val unlimited = rawPremiumLeft.contains("unlimited", true) || rawPremiumLeft == "inf"
-        val premiumLeft = rawPremiumLeft.toDoubleOrNull()
-        // Premium: a valid expiry date, or, if the API reports the date in an
-        // unknown format, an existing premium quota (a free account has none).
-        val premium = expire > System.currentTimeMillis() ||
-            (expire == 0L && (unlimited || (premiumLeft ?: 0.0) > 0))
-        val left = when {
-            unlimited -> -1L
-            premiumLeft != null && premiumLeft >= 0 ->
-                DdownloadAccountPage.plausibleQuota(DdownloadAccountPage.quotaToBytes(premiumLeft))
-            else -> {
-                // Older API without premium_traffic_left: traffic_left as fallback
-                result.opt("traffic_left")?.toString()?.trim()?.toDoubleOrNull()
-                    ?.let { DdownloadAccountPage.quotaToBytes(it) } ?: -1L
-            }
-        }
-        val total = when {
-            unlimited -> -1L
-            premium && left >= 0 -> maxOf(DdownloadAccountPage.DAILY_QUOTA, left)
-            else -> -1L
-        }
-        return AccountInfo(
-            valid = true,
-            premiumUntil = expire,
-            trafficLeft = left,
-            trafficTotal = total,
-            trafficUnlimited = unlimited,
-            statusText = if (premium) "Premium" else freeStatusText
-        )
-    }
-
-    private fun apiCall(path: String, params: Map<String, String>): org.json.JSONObject {
-        val query = params.entries.joinToString("&") {
-            "${it.key}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"
-        }
-        val (code, text) = apiClient.newCall(
-            okhttp3.Request.Builder().url("$apiBase/$path?$query")
-                .header("User-Agent", browserUa).build()
-        ).execute().use { it.code to it.peekBody(Http.MAX_TEXT_BYTES).string() }
-        // Cloudflare/error pages are not JSON: temporary, not "account invalid"
-        val json = runCatching { org.json.JSONObject(text) }.getOrElse {
-            throw HosterException(Texts.t("hoster_ddownload_api_not_json", code), permanent = false)
-        }
-        val status = json.optInt("status")
-        if (status != 200) throw apiFailure(status, json.optString("msg"))
-        return json
-    }
-
-    /**
-     * Classification of an API reply with status != 200. Permanent only what
-     * the text identifies as such (file gone, key invalid); daily limit,
-     * blocks and server errors are temporary.
-     */
-    internal fun apiFailure(status: Int, message: String): HosterException {
-        val msg = message.ifBlank { Texts.t("hoster_http_status", status) }
-        val permanent = status == 404 ||
-            msg.contains("not found", true) || msg.contains("invalid key", true) ||
-            msg.contains("wrong key", true) || msg.contains("no such", true)
-        return HosterException(Texts.t("hoster_ddownload_api_error", msg), permanent = permanent)
-    }
-
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
             if (account == null) throw HosterException(Texts.t("hoster_ddownload_premium_required"), true)
             val code = fileCode(url)
-            account.plainApiKey?.takeIf { it.isNotBlank() }?.let { key ->
-                return@withContext resolveViaApi(key, code)
-            }
-            val (client, accountHtml) = sessionAndAccountPage(account)
-            // With an API key on the account page the API is the safest route
-            // to the direct link (no form, no redirect chain)
-            DdownloadAccountPage.apiKeyFromPage(accountHtml)?.let { key ->
-                runCatching { resolveViaApi(key, code) }
-                    .onFailure { if (it is FileOfflineException) throw it }
-                    .getOrNull()?.let { return@withContext it }
-            }
+            val (client, _) = sessionAndAccountPage(account)
             val pageUrl = "$siteBase/$code"
 
             var page = client.fetch(pageUrl, referer = siteBase)
@@ -395,27 +287,8 @@ class DdownloadHoster internal constructor(
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
             val code = fileCode(url)
-            val key = account?.plainApiKey
-            if (!key.isNullOrBlank()) {
-                val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
-                    .optJSONArray("result")?.optJSONObject(0)
-                    ?: return@withContext LinkInfo(online = null, note = Texts.t("hoster_api_no_response"))
-                val status = info.optInt("status")
-                return@withContext if (status != 200) {
-                    // 404 = not found; any other status is "not online" as well
-                    val note = info.optString("msg").ifBlank { null }
-                        ?: if (status == 404) Texts.t("hoster_file_not_found") else Texts.t("hoster_status_code", status)
-                    LinkInfo(online = false, note = note)
-                } else {
-                    LinkInfo(
-                        online = true,
-                        fileName = info.optString("name").ifBlank { null },
-                        fileSize = info.optLong("size", -1)
-                    )
-                }
-            }
-            // Without an API key: parse the public file page (no login needed),
-            // with the browser user agent or Cloudflare only serves a challenge.
+            // The public file page needs no login, but the browser user agent:
+            // otherwise Cloudflare only serves a challenge.
             val resp = clientFor(0L).fetch("$siteBase/$code")
             val html = resp.body
             if (resp.code == 404 || html.contains("File Not Found", true) || html.contains("No such file", true)) {
@@ -476,27 +349,6 @@ class DdownloadHoster internal constructor(
         return DdownloadAccountPage.toBytes(m.groupValues[1], m.groupValues[2])
     }
 
-    /** Direct link via the API (premium required, no captcha). */
-    private fun resolveViaApi(key: String, code: String): ResolvedLink {
-        var fileName: String? = null
-        runCatching {
-            val info = apiCall("file/info", mapOf("key" to key, "file_code" to code))
-                .optJSONArray("result")?.optJSONObject(0)
-            fileName = info?.optString("name")?.ifBlank { null }
-            if (info?.optInt("status") == 404) throw FileOfflineException()
-        }.onFailure { if (it is HosterException && it.permanent) throw it }
-        // Status 200 without result/url is an API hiccup or a changed
-        // response format (as in checkViaApi): retry, do not fail the entry.
-        val result = apiCall("file/direct_link", mapOf("key" to key, "file_code" to code))
-            .optJSONObject("result")
-            ?: throw HosterException(Texts.t("hoster_ddownload_no_download_url"), permanent = false)
-        val direct = result.optString("url")
-        if (direct.isBlank()) {
-            throw HosterException(Texts.t("hoster_ddownload_no_download_url_premium"), permanent = false)
-        }
-        return ResolvedLink(DirectLinks.https(direct), fileName, result.optLong("size", -1))
-    }
-
     private fun checkOffline(html: String) {
         if (html.contains("File Not Found", true) ||
             html.contains("file was deleted", true) ||
@@ -549,8 +401,8 @@ class DdownloadHoster internal constructor(
             http.pathSegments.lastOrNull().orEmpty().isNotEmpty()
     }
 
-    /** Subdomains serving pages or the API, never files. */
-    private val serviceHosts = setOf("my.ddownload.com", "api-v2.ddownload.com", "my.ddl.to")
+    /** Subdomains serving pages, never files. */
+    private val serviceHosts = setOf("my.ddownload.com", "my.ddl.to")
 
     override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
 

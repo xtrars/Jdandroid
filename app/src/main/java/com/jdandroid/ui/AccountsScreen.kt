@@ -336,11 +336,7 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
     var password by rememberSaveable { mutableStateOf("") }
     var apiKey by rememberSaveable { mutableStateOf("") }
     val hoster = vm.hosters.firstOrNull { it.id == selectedId }
-    val valid = hoster != null && if (hoster.accountType == AccountType.USERNAME_PASSWORD) {
-        username.isNotBlank() && password.isNotBlank()
-    } else {
-        apiKey.isNotBlank()
-    }
+    val valid = hoster != null && AccountForm.canSave(hoster.accountType, username, password, apiKey)
 
     // Bounded, scrolling content keeps title and buttons visible with the keyboard open.
     val maxContentHeight = windowHeightDp() * 0.45f
@@ -386,35 +382,36 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    if (h.accountType == AccountType.USERNAME_PASSWORD) {
-                        OutlinedTextField(
-                            value = username,
-                            onValueChange = { username = it },
-                            label = { Text(stringResource(R.string.accounts_username_label)) },
-                            leadingIcon = { Icon(Icons.Default.Person, null) },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Email,
-                                autoCorrectEnabled = false
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            label = { Text(stringResource(R.string.accounts_password_label)) },
-                            leadingIcon = { Icon(JdIcons.Key, null) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                autoCorrectEnabled = false
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        OutlinedTextField(
+                    when (h.accountType) {
+                        AccountType.USERNAME_PASSWORD -> {
+                            OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                label = { Text(stringResource(R.string.accounts_username_label)) },
+                                leadingIcon = { Icon(Icons.Default.Person, null) },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Email,
+                                    autoCorrectEnabled = false
+                                ),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                label = { Text(stringResource(R.string.accounts_password_label)) },
+                                leadingIcon = { Icon(JdIcons.Key, null) },
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    autoCorrectEnabled = false
+                                ),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        AccountType.API_KEY -> OutlinedTextField(
                             value = apiKey,
                             onValueChange = { apiKey = it },
                             label = { Text(stringResource(R.string.accounts_api_key)) },
@@ -427,9 +424,11 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        // The credentials are entered in the browser, so no fields here
+                        AccountType.BROWSER_LOGIN -> Unit
                     }
                     if (h.webLoginUrl != null) {
-                        Spacer(Modifier.height(12.dp))
+                        if (h.accountType != AccountType.BROWSER_LOGIN) Spacer(Modifier.height(12.dp))
                         OutlinedButton(
                             onClick = { vm.requestWebLogin(h); onDismiss() },
                             modifier = Modifier.fillMaxWidth()
@@ -443,13 +442,16 @@ private fun AddAccountDialog(vm: AccountViewModel, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = valid,
-                onClick = singleShot {
-                    hoster?.let { vm.addAccount(it, username, password, apiKey) }
-                    onDismiss()
-                }
-            ) { Text(stringResource(R.string.accounts_save_and_check)) }
+            // A browser login is saved from the browser session, not from this dialog
+            if (hoster?.accountType != AccountType.BROWSER_LOGIN) {
+                TextButton(
+                    enabled = valid,
+                    onClick = singleShot {
+                        hoster?.let { vm.addAccount(it, username, password, apiKey) }
+                        onDismiss()
+                    }
+                ) { Text(stringResource(R.string.accounts_save_and_check)) }
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
@@ -489,6 +491,7 @@ private fun HosterSelectCard(hoster: Hoster, selected: Boolean, onClick: () -> U
                         when (hoster.accountType) {
                             AccountType.USERNAME_PASSWORD -> R.string.accounts_login_user_password
                             AccountType.API_KEY -> R.string.accounts_login_api_key
+                            AccountType.BROWSER_LOGIN -> R.string.accounts_login_browser
                         }
                     ),
                     style = MaterialTheme.typography.bodySmall,

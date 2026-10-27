@@ -98,7 +98,7 @@
     <string name="settings_dlc_hint">DLC files can be imported via \"Open with\" or Share. Decryption uses the JDownloader DLC service.</string>
 
     <!-- Footer -->
-    <string name="settings_hosters_hint">Supported hosters: Rapidgator, 1fichier, ddownload.\nDownloads use the hosters\' official APIs and require a premium account or API key (\"Accounts\" tab).</string>
+    <string name="settings_hosters_hint">Supported hosters: Rapidgator, 1fichier, ddownload.\nDownloads use the hosters\' official APIs or browser login and require a premium account, for 1fichier the API key (\"Accounts\" tab).</string>
     <!-- %1$s: versionName, %2$d: versionCode -->
     <string name="settings_version">JDAndroid %1$s (%2$d)</string>
 

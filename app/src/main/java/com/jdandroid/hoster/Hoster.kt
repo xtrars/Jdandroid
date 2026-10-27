@@ -9,7 +9,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Response
 import java.util.concurrent.TimeUnit
 
-enum class AccountType { USERNAME_PASSWORD, API_KEY }
+enum class AccountType {
+    USERNAME_PASSWORD,
+    API_KEY,
+    /** Session cookies taken over from the embedded browser; the dialog has no input fields. */
+    BROWSER_LOGIN
+}
 
 data class ResolvedLink(
     val directUrl: String,
