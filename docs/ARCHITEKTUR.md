@@ -68,7 +68,9 @@ Dienst an (`DownloadService.send`) bzw. die Linkprüfung.
   Material-Standardschema. Hell/Dunkel folgt dem System oder der Einstellung;
   `GamerColorScheme` ist die einzige eigene Palette (Neon auf Weltraumdunkel,
   Kontraste per `ThemeModeTest` gesichert). `GamerStyle.kt` liefert dazu
-  `LocalGamer`, den animierten Sternenhimmel (`GamerBackdrop`, `Starfield`),
+  `LocalGamer`, den Sternenflug (`GamerBackdrop`, `Starfield`: Sterne kommen
+  aus dem Fluchtpunkt in der Bildmitte, Position und Helligkeit sind reine
+  Funktionen von Zeit und Neigung),
   `neonFrame`, `NeonProgress`, `NeonLine` und die Monospace-Typografie;
   Karten, Balken, Leisten und Scaffolds schalten über `LocalGamer` um.
   Der gespeicherte Modus wird beim Start einmal mit `runBlocking` gelesen,

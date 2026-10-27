@@ -203,7 +203,7 @@ bei Rapidgator) schalten ein Konto nie dauerhaft ab.
 
 Jetpack Compose mit Material 3 und **Material You**: dynamisches Farbschema
 ab Android 12, darunter das Material-Standardschema; Hell/Dunkel nach System
-oder fest wählbar, dazu das Farbschema „Space“: Sternenhimmel mit Lage-Parallaxe,
+oder fest wählbar, dazu das Farbschema „Space“: Sternenflug mit Lage-Parallaxe,
 Neon-Rahmen mit Leuchtschein, Lauflicht-Balken und Monospace-HUD-Schrift,
 die einzige eigene Palette. Alle Schaltflächen bleiben auch bei eingeblendeter
 Tastatur sichtbar; pro Zeile gibt es ein Drei-Punkte-Aktionsmenü, am Paket

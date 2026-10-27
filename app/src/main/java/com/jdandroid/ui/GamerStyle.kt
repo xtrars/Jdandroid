@@ -47,7 +47,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** True while the gamer scheme is active; components switch to their neon variants. */
@@ -62,47 +66,126 @@ internal object Neon {
 }
 
 /**
- * One star of the backdrop; coordinates are fractions of the canvas, [depth]
- * 0 (far) to 1 (near) scales radius, drift and parallax.
+ * One star of the backdrop: [seed] picks its lateral position per lap,
+ * [offset] (0..1) is where in its lap it stands at time 0, [phase] the
+ * twinkle phase.
  */
-internal data class Star(val x: Float, val y: Float, val depth: Float, val phase: Float) {
-    val radius: Float get() = 0.6f + depth * 1.6f
-}
+internal data class Star(val seed: Int, val offset: Float, val phase: Float)
 
 /**
- * Deterministic star field: [count] stars creeping downwards, near ones
- * faster, all twinkling with their own phase. Tilting the device shifts the
- * field like a window into space: near stars move more than far ones.
- * Positions are pure functions of time and tilt, so the canvas keeps no state.
+ * Deterministic star field flown through: every star approaches on a lap of
+ * [LAP_SECONDS] from depth 1 (far) to [Z_NEAR], projected away from the
+ * vanishing point at the canvas centre, and restarts far away at a fresh
+ * lateral position. Tilting the device shifts near stars more than far ones.
+ * Everything is a pure function of time and tilt, so the canvas keeps no state.
  */
 internal class Starfield(count: Int = 140, seed: Int = 7) {
     val stars: List<Star> = Random(seed).let { r ->
-        List(count) { Star(x = r.nextFloat(), y = r.nextFloat(), depth = r.nextFloat(), phase = r.nextFloat()) }
+        List(count) { Star(seed = r.nextInt(), offset = r.nextFloat(), phase = r.nextFloat()) }
     }
 
-    /** Horizontal position for a tilt of -1..1, wrapped into 0..1. */
-    fun xAt(star: Star, tiltX: Float): Float = wrap(star.x - tiltX * PARALLAX * (0.2f + star.depth))
+    /** Position within the current lap: 0 just started (far), approaching 1 before the wrap. */
+    private fun progress(star: Star, time: Float): Float {
+        val laps = time / LAP_SECONDS + star.offset
+        return laps - floor(laps)
+    }
 
-    /** Vertical position after [time] seconds and a tilt of -1..1, wrapped into 0..1. */
-    fun yAt(star: Star, time: Float, tiltY: Float = 0f): Float =
-        wrap(star.y + (DRIFT_MIN + star.depth * DRIFT_RANGE) * time - tiltY * PARALLAX * (0.2f + star.depth))
+    /** Depth after [time] seconds: a sawtooth from 1 (far) down towards [Z_NEAR]. */
+    fun depthAt(star: Star, time: Float): Float = 1f - (1f - Z_NEAR) * progress(star, time)
 
-    private fun wrap(v: Float): Float = ((v % 1f) + 1f) % 1f
+    /** Lap number modulo [LAPS_PER_LOOP], so a time jump of [LOOP_SECONDS] is invisible. */
+    fun lap(star: Star, time: Float): Int = floor(time / LAP_SECONDS + star.offset).toInt().mod(LAPS_PER_LOOP)
 
-    /** Twinkle alpha in 0.35..1. */
-    fun alphaAt(star: Star, time: Float): Float =
-        0.675f + 0.325f * sin(2f * PI.toFloat() * (time * 0.4f + star.phase))
+    /**
+     * Lateral position for [lap], spread evenly over the unit disc but at
+     * least [MIN_LATERAL] off axis; a star on the axis would never leave the
+     * vanishing point.
+     */
+    fun lateral(star: Star, lap: Int): Offset {
+        val h = mix(star.seed, lap)
+        val inner = MIN_LATERAL * MIN_LATERAL
+        val r = sqrt(inner + (1f - inner) * unit(h))
+        val angle = 2f * PI.toFloat() * unit(mix(h, 1))
+        return Offset(r * cos(angle), r * sin(angle))
+    }
+
+    /**
+     * Offset from the canvas centre in fractions of the smaller canvas side:
+     * the lateral position divided by depth, so a star speeds up as it nears,
+     * plus a tilt shift of -1..1 that grows with nearness.
+     */
+    fun project(star: Star, time: Float, tilt: Offset = Offset.Zero): Offset {
+        val z = depthAt(star, time)
+        val parallax = PARALLAX * (PARALLAX_FAR_SHARE + (1f - z))
+        return lateral(star, lap(star, time)) * (FOCAL / z) - tilt * parallax
+    }
+
+    /** Dot radius in dp, growing from [RADIUS_FAR_DP] to [RADIUS_NEAR_DP] with nearness. */
+    fun radiusDp(z: Float): Float = RADIUS_FAR_DP + (RADIUS_NEAR_DP - RADIUS_FAR_DP) * (1f - z) / (1f - Z_NEAR)
+
+    /** 0 at the far end rising to 1 within [FADE_DEPTH], so stars do not pop up in the centre. */
+    fun fadeIn(z: Float): Float = ((1f - z) / FADE_DEPTH).coerceIn(0f, 1f)
+
+    /** Twinkle in [TWINKLE_MIN]..1, scaled by the far-end fade. */
+    fun alphaAt(star: Star, time: Float): Float {
+        val twinkle = (1f + TWINKLE_MIN) / 2f + (1f - TWINKLE_MIN) / 2f * sin(2f * PI.toFloat() * (time * TWINKLE_HZ + star.phase))
+        return twinkle * fadeIn(depthAt(star, time))
+    }
+
+    companion object {
+        /** Seconds of the animation loop; the time value then jumps back to 0. */
+        const val LOOP_SECONDS = 120f
+
+        /** Seconds of one approach; the loop holds a whole number of laps. */
+        const val LAP_SECONDS = 30f
+        const val LAPS_PER_LOOP = (LOOP_SECONDS / LAP_SECONDS).toInt()
+
+        /** Nearest depth; below it the star restarts at depth 1. */
+        const val Z_NEAR = 0.06f
+
+        /** Projection scale: lateral position / depth * FOCAL, in fractions of the smaller canvas side. */
+        const val FOCAL = 0.3f
+
+        /** Least lateral distance from the axis; with [FOCAL] / [Z_NEAR] it puts every star off screen before the wrap. */
+        const val MIN_LATERAL = 0.3f
+
+        /** Canvas fraction the nearest stars shift at full tilt, and the share of it far stars keep. */
+        const val PARALLAX = 0.12f
+        const val PARALLAX_FAR_SHARE = 0.2f
+
+        const val RADIUS_FAR_DP = 0.6f
+        const val RADIUS_NEAR_DP = 2.4f
+
+        /** Depth range below 1 over which a new star fades in. */
+        const val FADE_DEPTH = 0.15f
+
+        const val TWINKLE_MIN = 0.35f
+        const val TWINKLE_HZ = 0.4f
+    }
 }
 
-/** Seconds of one drift loop; long enough that the wrap is invisible. */
-private const val LOOP_SECONDS = 120f
+/** Scrambles ([seed], [salt]) into a well-mixed Int (murmur3 finaliser). */
+private fun mix(seed: Int, salt: Int): Int {
+    var h = seed + salt * GOLDEN
+    h = (h xor (h ushr 16)) * MIX_1
+    h = (h xor (h ushr 13)) * MIX_2
+    return h xor (h ushr 16)
+}
 
-/** Canvas fractions per second a far and the nearest star creep; slow enough not to read as snowfall. */
-private const val DRIFT_MIN = 0.002f
-private const val DRIFT_RANGE = 0.008f
+private const val GOLDEN = -0x61C88647
+private const val MIX_1 = -0x7A143595
+private const val MIX_2 = -0x3D4D51CB
 
-/** Canvas fraction the nearest stars shift at full tilt. */
-private const val PARALLAX = 0.12f
+/** Top 24 bits of a hash as a float in 0..1. */
+private fun unit(h: Int): Float = (h ushr 8) / (1 shl 24).toFloat()
+
+/** Depth below which a star trails a streak from its position [STREAK_SECONDS] earlier. */
+private const val STREAK_DEPTH = 0.25f
+private const val STREAK_SECONDS = 0.08f
+private const val STREAK_ALPHA = 0.5f
+
+/** Canvas fraction beyond the edge up to which stars are still drawn (streak and radius). */
+private const val OFFSCREEN_MARGIN = 0.1f
 
 /**
  * Device tilt from the gravity sensor as screen-relative -1..1 (x right, y
@@ -169,9 +252,9 @@ fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Com
 }
 
 /**
- * Two drifting nebula glows, a faint horizon grid and the twinkling star
- * field. Animates only while the activity is started, so a backgrounded
- * app costs nothing.
+ * Two drifting nebula glows, a faint horizon grid and the star field flying
+ * past. Animates only while the activity is started, so a backgrounded app
+ * costs nothing.
  */
 @Composable
 private fun SpaceCanvas() {
@@ -180,8 +263,8 @@ private fun SpaceCanvas() {
     val time = if (lifecycle.isAtLeast(Lifecycle.State.STARTED)) {
         val transition = rememberInfiniteTransition(label = "space")
         val t by transition.animateFloat(
-            initialValue = 0f, targetValue = LOOP_SECONDS,
-            animationSpec = infiniteRepeatable(tween((LOOP_SECONDS * 1000).toInt(), easing = LinearEasing), RepeatMode.Restart),
+            initialValue = 0f, targetValue = Starfield.LOOP_SECONDS,
+            animationSpec = infiniteRepeatable(tween((Starfield.LOOP_SECONDS * 1000).toInt(), easing = LinearEasing), RepeatMode.Restart),
             label = "time"
         )
         t
@@ -192,21 +275,31 @@ private fun SpaceCanvas() {
         drawRect(background)
         drawNebula(time, tilt)
         drawHorizonGrid()
+        val unit = size.minDimension
+        val centre = Offset(size.width / 2f, size.height / 2f)
+        val limitX = centre.x / unit + OFFSCREEN_MARGIN
+        val limitY = centre.y / unit + OFFSCREEN_MARGIN
         for (star in field.stars) {
-            drawCircle(
-                Color.White.copy(alpha = field.alphaAt(star, time)),
-                radius = star.radius.dp.toPx(),
-                center = Offset(field.xAt(star, tilt.x) * size.width, field.yAt(star, time, tilt.y) * size.height)
-            )
+            val p = field.project(star, time, tilt)
+            if (abs(p.x) > limitX || abs(p.y) > limitY) continue
+            val z = field.depthAt(star, time)
+            val colour = Color.White.copy(alpha = field.alphaAt(star, time))
+            val radius = field.radiusDp(z).dp.toPx()
+            val at = centre + p * unit
+            if (z < STREAK_DEPTH) {
+                val from = centre + field.project(star, time - STREAK_SECONDS, tilt) * unit
+                drawLine(colour.copy(alpha = colour.alpha * STREAK_ALPHA), from, at, radius * 2f, StrokeCap.Round)
+            }
+            drawCircle(colour, radius, at)
         }
     }
 }
 
 /** Nebulae sit far back: a slow drift plus a small share of the tilt parallax. */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Float, tilt: Offset) {
-    val drift = sin(2f * PI.toFloat() * time / LOOP_SECONDS)
+    val drift = sin(2f * PI.toFloat() * time / Starfield.LOOP_SECONDS)
     val radius = size.maxDimension * 0.55f
-    val shift = Offset(-tilt.x * PARALLAX * 0.25f * size.width, -tilt.y * PARALLAX * 0.25f * size.height)
+    val shift = Offset(-tilt.x * Starfield.PARALLAX * 0.25f * size.width, -tilt.y * Starfield.PARALLAX * 0.25f * size.height)
     val magenta = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f) + shift
     val cyan = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f) + shift
     drawCircle(
