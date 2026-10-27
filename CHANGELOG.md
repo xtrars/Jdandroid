@@ -27,6 +27,28 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.0] – 2026-10-27
+
+### Geändert
+
+- Schema „Space“: Die Sterne fallen nicht mehr von oben nach unten
+  (Schneeflocken-Eindruck), sondern fliegen aus dem Fluchtpunkt in der
+  Bildmitte am Betrachter vorbei. Jeder Stern braucht 30 s von ganz fern bis
+  zum Bildrand, wird dabei größer, nahe Sterne ziehen einen kurzen
+  Bewegungsstreifen, ferne blenden sanft ein. Die Lage-Parallaxe bleibt und
+  verschiebt nahe Sterne stärker als ferne; die Animation ist weiterhin eine
+  nahtlose Schleife.
+
+### Entfernt
+
+- ddownload über API-Key: Der Zugang über die API v2 (Kontoprüfung, Direktlink,
+  Linkprüfung, Schlüsselerkennung auf der Kontoseite) ist weg; ddownload-Konten
+  werden nur noch über „Im Browser anmelden“ angelegt. Der Dialog „Konto
+  hinzufügen“ zeigt für ddownload keine Eingabefelder und keinen
+  Speichern-Knopf mehr. Bestehende Konten mit gespeichertem API-Key laufen
+  über die Browser-Session weiter, sofern sie eine haben; sonst einmal neu
+  im Browser anmelden.
+
 ## [0.8.2] – 2026-09-08
 
 ### Behoben
@@ -1042,6 +1064,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.0]: https://github.com/xtrars/Jdandroid/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/xtrars/Jdandroid/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/xtrars/Jdandroid/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/xtrars/Jdandroid/compare/v0.7.1...v0.8.0
