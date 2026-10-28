@@ -151,10 +151,13 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 - Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
   Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
 
-## Stand für die nächste Sitzung (27.10.2026)
+## Stand für die nächste Sitzung (28.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.0 (versionCode 65, Commit `060e72d`), Release
-  v0.9.0 mit CI-signierter APK; `release/` enthält 0.7.1 bis 0.9.0. Was sich
+- Zuletzt veröffentlicht: 0.9.1 (versionCode 66), Release v0.9.1 mit
+  CI-signierter APK; `release/` enthält 0.8.0 bis 0.9.1. In 0.9.1 läuft der
+  Sternenflug ohne Schleife: Zeit = fortlaufende Systemuhr als `Double`
+  (`rememberFlightTime`, gelesen nur in der Zeichenphase), jede Runde eines
+  Sterns bekommt aus ihrer Nummer eine neue Position. Was sich
   seit 0.4.1 geändert hat, steht im CHANGELOG: Space-Schema mit Sternenflug
   und Lage-Parallaxe, ruhiger Fortschritt (ProgressBus 500 ms,
   SessionProgress in der Benachrichtigung), NAS-Verschieben als eigener
@@ -163,8 +166,8 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   ddownload nur noch über Browser-Login (`AccountType.BROWSER_LOGIN`).
 - Offen beim Nutzer: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
   `KEY_PASSWORD` für die Sitzungsumgebung; sie fehlen seit dem
-  Container-Neustart am 27.10.2026. Die Repository-Secrets der CI sind
-  gesetzt, die CI signiert. Ohne lokalen Keystore den Weg unten nehmen, nie
+  Container-Neustart am 27.10.2026 (am 28.10.2026 ebenfalls nicht da). Die
+  Repository-Secrets der CI sind gesetzt, die CI signiert. Ohne lokalen Keystore den Weg unten nehmen, nie
   einen neuen Schlüssel erzeugen.
 - Nur geschätzt, nicht begonnen: Linux-/Flatpak-Fassung (zwei bis drei
   Wochen; Kern und Hoster in ein gemeinsames Gradle-Modul, Compose
@@ -198,8 +201,14 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   platform-tools, `platforms;android-36`, build-tools 34.0.0/35.0.0/36.0.0),
   `sdk.dir` in `local.properties` (gitignored, auch in jedem Worktree);
   `apksigner` und `aapt` liegen unter `/opt/android-sdk/build-tools/34.0.0/`.
-  Maven Central drosselt (HTTP 429): den ersten Build mit Wiederholungen und
-  Pausen fahren, `--offline` erst, wenn der Cache alles hat.
+  Maven Central drosselt (HTTP 429). Abhilfe ohne Repo-Änderung: ein
+  Init-Skript `~/.gradle/init.d/central-mirror.gradle`, das in
+  `settingsEvaluated` die URL `https://repo.maven.apache.org/maven2` der
+  `pluginManagement`- und `dependencyResolutionManagement`-Repositories
+  durch Googles Spiegel
+  `https://maven-central.storage-download.googleapis.com/maven2/` ersetzt;
+  damit lief der erste Build am 28.10.2026 ohne Wiederholung durch.
+  `--offline` erst, wenn der Cache alles hat.
 - `cd` gilt nur innerhalb eines Bash-Aufrufs. Merges aus Worktrees immer als
   `git -C /home/user/Jdandroid merge --no-edit wt/<name>`, sonst landet der
   Merge im falschen Zweig; Worktrees und Zweige danach entfernen.
