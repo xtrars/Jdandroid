@@ -27,6 +27,16 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.2] – 2026-10-28
+
+### Geändert
+
+- Schema „Space“: Der Sternenflug richtet sich nach der Uhrzeit statt nach
+  der Laufzeit seit dem Gerätestart. Damit wiederholt er sich auch über
+  Neustarts des Geräts hinweg nie; vorher begann er nach jedem Neustart mit
+  derselben Abfolge. Während die Animation läuft, zählt sie im Bildtakt
+  weiter, ein Umstellen der Uhr lässt die Sterne also nicht springen.
+
 ## [0.9.1] – 2026-10-28
 
 ### Geändert
@@ -1076,6 +1086,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.2]: https://github.com/xtrars/Jdandroid/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/xtrars/Jdandroid/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/xtrars/Jdandroid/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/xtrars/Jdandroid/compare/v0.8.1...v0.8.2

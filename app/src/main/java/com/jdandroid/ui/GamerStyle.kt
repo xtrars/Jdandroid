@@ -162,8 +162,8 @@ internal class Starfield(count: Int = 140, seed: Int = 7) {
 }
 
 /**
- * Fractional part of [x]. Time grows without bound, so it is split off in
- * Double; a Float clock would lose whole seconds after a few months.
+ * Fractional part of [x]. Time is wall-clock seconds since 1970, where a
+ * Float only resolves steps of 128 s, so it is split off in Double.
  */
 private fun fraction(x: Double): Float = (x - floor(x)).toFloat()
 
@@ -258,19 +258,20 @@ fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Com
 }
 
 /**
- * Seconds on the monotonic clock, advanced with the frame clock while
- * [running]. The star field is a function of it, so a rotation or a return
- * to the app goes on with the flight instead of restarting it.
+ * Wall-clock seconds, read when a run starts and then advanced with the frame
+ * clock while [running], so setting the clock cannot make the stars jump. The
+ * star field is a function of it: the flight never repeats, not even across
+ * device restarts, and goes on after a rotation or a return to the app.
  */
 @Composable
 private fun rememberFlightTime(running: Boolean): State<Double> {
-    val time = remember { mutableDoubleStateOf(System.nanoTime() / 1e9) }
+    val time = remember { mutableDoubleStateOf(System.currentTimeMillis() / 1e3) }
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
-        val start = System.nanoTime()
-        time.doubleValue = start / 1e9
+        val start = System.currentTimeMillis() / 1e3
+        time.doubleValue = start
         val first = withInfiniteAnimationFrameNanos { it }
-        while (true) withInfiniteAnimationFrameNanos { frame -> time.doubleValue = (start + frame - first) / 1e9 }
+        while (true) withInfiniteAnimationFrameNanos { frame -> time.doubleValue = start + (frame - first) / 1e9 }
     }
     return time
 }

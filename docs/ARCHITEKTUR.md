@@ -70,9 +70,10 @@ Dienst an (`DownloadService.send`) bzw. die Linkprüfung.
   Kontraste per `ThemeModeTest` gesichert). `GamerStyle.kt` liefert dazu
   `LocalGamer`, den Sternenflug (`GamerBackdrop`, `Starfield`: Sterne kommen
   aus dem Fluchtpunkt in der Bildmitte, Position und Helligkeit sind reine
-  Funktionen von Zeit und Neigung; die Zeit ist die fortlaufende Systemuhr
-  als `Double`, jede Runde eines Sterns bekommt aus ihrer Nummer eine neue
-  Position, der Flug kennt keine Schleife),
+  Funktionen von Zeit und Neigung; die Zeit ist die Uhrzeit in Sekunden als
+  `Double`, beim Start eines Laufs gelesen und im Bildtakt fortgezählt, jede
+  Runde eines Sterns bekommt aus ihrer Nummer eine neue Position, der Flug
+  kennt keine Schleife, auch nicht über Gerätestarts),
   `neonFrame`, `NeonProgress`, `NeonLine` und die Monospace-Typografie;
   Karten, Balken, Leisten und Scaffolds schalten über `LocalGamer` um.
   Der gespeicherte Modus wird beim Start einmal mit `runBlocking` gelesen,

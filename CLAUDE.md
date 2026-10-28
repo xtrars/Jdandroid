@@ -153,11 +153,12 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (28.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.1 (versionCode 66), Release v0.9.1 mit
-  CI-signierter APK; `release/` enthält 0.8.0 bis 0.9.1. In 0.9.1 läuft der
-  Sternenflug ohne Schleife: Zeit = fortlaufende Systemuhr als `Double`
-  (`rememberFlightTime`, gelesen nur in der Zeichenphase), jede Runde eines
-  Sterns bekommt aus ihrer Nummer eine neue Position. Was sich
+- Zuletzt veröffentlicht: 0.9.2 (versionCode 67), Release v0.9.2 mit
+  CI-signierter APK; `release/` enthält 0.8.1 bis 0.9.2. Seit 0.9.1 läuft
+  der Sternenflug ohne Schleife: Zeit = Uhrzeit in Sekunden als `Double`
+  (`rememberFlightTime`: beim Start eines Laufs gelesen, im Bildtakt
+  fortgezählt, nur in der Zeichenphase gelesen), jede Runde eines Sterns
+  bekommt aus ihrer Nummer eine neue Position. Was sich
   seit 0.4.1 geändert hat, steht im CHANGELOG: Space-Schema mit Sternenflug
   und Lage-Parallaxe, ruhiger Fortschritt (ProgressBus 500 ms,
   SessionProgress in der Benachrichtigung), NAS-Verschieben als eigener

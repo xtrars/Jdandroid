@@ -39,7 +39,7 @@ class StarfieldTest {
 
     @Test
     fun tiefeGroesseUndHelligkeitBleibenImBereich() {
-        for (star in field.stars) for (time in listOf(0.0, 1.0, 29.99, 30.0, 59.9, 120.0, 1234.5, YEAR)) {
+        for (star in field.stars) for (time in listOf(0.0, 1.0, 29.99, 30.0, 59.9, 120.0, 1234.5, Y2100)) {
             val z = field.depthAt(star, time)
             assertTrue("z=$z", z > Z_NEAR && z <= 1f)
             assertTrue(field.radiusDp(z) in RADIUS_FAR_DP..RADIUS_NEAR_DP)
@@ -107,12 +107,12 @@ class StarfieldTest {
             // Every lap counts up and brings a position no earlier lap had
             val positions = (0 until 10_000).map { field.lateral(star, it) }
             assertEquals(positions.size, positions.toSet().size)
-            for (time in listOf(0.0, 17.3, 119.95, YEAR)) {
+            for (time in listOf(0.0, 17.3, 119.95, Y2100)) {
                 assertEquals(field.lap(star, time) + 1, field.lap(star, time + LAP_SECONDS))
             }
         }
         // A whole number of laps later the depths match, but the stars stand elsewhere
-        for (time in listOf(5.0, YEAR)) {
+        for (time in listOf(5.0, Y2100)) {
             val later = time + 4 * LAP_SECONDS
             val moved = field.stars.count { (field.project(it, time) - field.project(it, later)).getDistance() > 0.01f }
             assertTrue("moved=$moved", moved > field.stars.size * 9 / 10)
@@ -120,10 +120,10 @@ class StarfieldTest {
     }
 
     @Test
-    fun nachEinemJahrNochFluessig() {
-        // 60 frames per second over a whole lap, a year into the monotonic clock
+    fun imJahr2100NochFluessig() {
+        // 60 frames per second over a whole lap on the wall clock of 2100
         for (star in field.stars.take(10)) {
-            val start = YEAR + lapStart(star)
+            val start = Y2100 + lapStart(star)
             val lap = field.lap(star, start + 0.5)
             var last = -1f
             for (k in 1 until (LAP_SECONDS * 60).toInt()) {
@@ -193,7 +193,7 @@ class StarfieldTest {
         field.project(star, time, tilt) - field.project(star, time)
 
     private companion object {
-        /** A year of uptime on the monotonic clock, a whole number of laps. */
-        const val YEAR = 365.0 * 24 * 3600
+        /** 2100-01-01T00:00Z in wall-clock seconds, a whole number of laps. */
+        const val Y2100 = 4_102_444_800.0
     }
 }
