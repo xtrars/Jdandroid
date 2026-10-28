@@ -5,9 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import com.jdandroid.ui.Star
 import com.jdandroid.ui.Starfield
 import com.jdandroid.ui.Starfield.Companion.FADE_DEPTH
-import com.jdandroid.ui.Starfield.Companion.LAPS_PER_LOOP
 import com.jdandroid.ui.Starfield.Companion.LAP_SECONDS
-import com.jdandroid.ui.Starfield.Companion.LOOP_SECONDS
 import com.jdandroid.ui.Starfield.Companion.MIN_LATERAL
 import com.jdandroid.ui.Starfield.Companion.RADIUS_FAR_DP
 import com.jdandroid.ui.Starfield.Companion.RADIUS_NEAR_DP
@@ -20,8 +18,9 @@ import org.junit.Test
 
 /**
  * The backdrop is deterministic, every star approaches from the vanishing
- * point on a ~30 s lap, leaves the screen before it restarts, the loop closes
- * seamlessly and a tilt shifts near stars more than far ones.
+ * point on a ~30 s lap, leaves the screen before it restarts, the flight never
+ * repeats, stays smooth at any clock value and a tilt shifts near stars more
+ * than far ones.
  */
 class StarfieldTest {
 
@@ -40,13 +39,12 @@ class StarfieldTest {
 
     @Test
     fun tiefeGroesseUndHelligkeitBleibenImBereich() {
-        for (star in field.stars) for (time in listOf(0f, 1f, 29.99f, 30f, 59.9f, 120f, 1234.5f)) {
+        for (star in field.stars) for (time in listOf(0.0, 1.0, 29.99, 30.0, 59.9, 120.0, 1234.5, YEAR)) {
             val z = field.depthAt(star, time)
             assertTrue("z=$z", z > Z_NEAR && z <= 1f)
             assertTrue(field.radiusDp(z) in RADIUS_FAR_DP..RADIUS_NEAR_DP)
             val alpha = field.alphaAt(star, time)
             assertTrue("alpha=$alpha", alpha in 0f..1.0001f)
-            assertTrue(field.lap(star, time) in 0 until LAPS_PER_LOOP)
         }
         assertEquals(RADIUS_FAR_DP, field.radiusDp(1f), 1e-6f)
         assertEquals(RADIUS_NEAR_DP, field.radiusDp(Z_NEAR), 1e-6f)
@@ -57,10 +55,10 @@ class StarfieldTest {
         val samples = 300
         for (star in field.stars) {
             val start = lapStart(star)
-            val lap = field.lap(star, start + 0.5f)
+            val lap = field.lap(star, start + 0.5)
             var last = -1f
             for (k in 0 until samples) {
-                val time = start + (k + 0.5f) * LAP_SECONDS / samples
+                val time = start + (k + 0.5) * LAP_SECONDS / samples
                 assertEquals(lap, field.lap(star, time))
                 val distance = field.project(star, time).getDistance()
                 assertTrue("star=$star k=$k", distance > last)
@@ -73,11 +71,11 @@ class StarfieldTest {
     fun ruhigFernSchnellNah() {
         for (star in field.stars) {
             val start = lapStart(star)
-            val far = field.project(star, start + 0.1f).getDistance()
-            val mid = field.project(star, start + LAP_SECONDS / 2f).getDistance()
-            val near = field.project(star, start + LAP_SECONDS - 0.1f).getDistance()
+            val far = field.project(star, start + 0.1).getDistance()
+            val mid = field.project(star, start + LAP_SECONDS / 2.0).getDistance()
+            val near = field.project(star, start + LAP_SECONDS - 0.1).getDistance()
             // The first half of a lap covers less ground than the last tenth
-            val lastTenth = near - field.project(star, start + LAP_SECONDS * 0.9f).getDistance()
+            val lastTenth = near - field.project(star, start + LAP_SECONDS * 0.9).getDistance()
             assertTrue(mid - far < lastTenth)
             assertTrue("near=$near", near >= longestHalfExtent)
         }
@@ -86,40 +84,61 @@ class StarfieldTest {
     @Test
     fun rundendauerEtwa30Sekunden() {
         assertTrue(LAP_SECONDS in 25f..35f)
-        assertEquals(0f, LOOP_SECONDS % LAP_SECONDS, 1e-6f)
-        val step = 0.05f
+        val step = 0.05
+        val laps = 8
         for (star in field.stars.take(10)) {
-            val wraps = mutableListOf<Float>()
-            var time = 0f
-            var z = field.depthAt(star, 0f)
-            while (time < 2 * LOOP_SECONDS) {
+            val wraps = mutableListOf<Double>()
+            var time = 0.0
+            var z = field.depthAt(star, 0.0)
+            while (time < laps * LAP_SECONDS) {
                 val next = field.depthAt(star, time + step)
                 if (next > z) wraps += time
                 z = next
                 time += step
             }
-            assertEquals((2 * LOOP_SECONDS / LAP_SECONDS).toInt(), wraps.size)
-            wraps.zipWithNext { a, b -> assertEquals(LAP_SECONDS, b - a, 2 * step) }
+            assertEquals(laps, wraps.size)
+            wraps.zipWithNext { a, b -> assertEquals(LAP_SECONDS.toDouble(), b - a, 2 * step) }
         }
     }
 
     @Test
-    fun schleifeIstNahtlos() {
-        for (star in field.stars) for (time in listOf(0f, 1f, 17.3f, 59.9f, 119.95f)) {
-            val later = time + LOOP_SECONDS
-            assertEquals(field.lap(star, time), field.lap(star, later))
-            assertEquals(field.depthAt(star, time), field.depthAt(star, later), 1e-4f)
-            val a = field.project(star, time, tilt)
-            val b = field.project(star, later, tilt)
-            assertEquals(a.x, b.x, 1e-3f)
-            assertEquals(a.y, b.y, 1e-3f)
-            assertEquals(field.alphaAt(star, time), field.alphaAt(star, later), 1e-3f)
+    fun flugWiederholtSichNicht() {
+        for (star in field.stars) {
+            // Every lap counts up and brings a position no earlier lap had
+            val positions = (0 until 10_000).map { field.lateral(star, it) }
+            assertEquals(positions.size, positions.toSet().size)
+            for (time in listOf(0.0, 17.3, 119.95, YEAR)) {
+                assertEquals(field.lap(star, time) + 1, field.lap(star, time + LAP_SECONDS))
+            }
+        }
+        // A whole number of laps later the depths match, but the stars stand elsewhere
+        for (time in listOf(5.0, YEAR)) {
+            val later = time + 4 * LAP_SECONDS
+            val moved = field.stars.count { (field.project(it, time) - field.project(it, later)).getDistance() > 0.01f }
+            assertTrue("moved=$moved", moved > field.stars.size * 9 / 10)
+        }
+    }
+
+    @Test
+    fun nachEinemJahrNochFluessig() {
+        // 60 frames per second over a whole lap, a year into the monotonic clock
+        for (star in field.stars.take(10)) {
+            val start = YEAR + lapStart(star)
+            val lap = field.lap(star, start + 0.5)
+            var last = -1f
+            for (k in 1 until (LAP_SECONDS * 60).toInt()) {
+                val time = start + k / 60.0
+                assertEquals(lap, field.lap(star, time))
+                val distance = field.project(star, time).getDistance()
+                assertTrue("star=$star k=$k", distance > last)
+                last = distance
+            }
         }
     }
 
     @Test
     fun seitlichePositionNieImFluchtpunkt() {
-        for (star in field.stars) for (lap in 0 until LAPS_PER_LOOP) {
+        for (star in field.stars) for (lap in -100..1_000) {
             val distance = field.lateral(star, lap).getDistance()
             assertTrue("distance=$distance", distance >= MIN_LATERAL - 1e-6f && distance <= 1f + 1e-6f)
         }
@@ -132,12 +151,12 @@ class StarfieldTest {
     fun naheSterneVerschiebenSichStaerkerAlsFerne() {
         for (star in field.stars) {
             val start = lapStart(star)
-            val far = shift(star, start + 0.5f)
-            val near = shift(star, start + LAP_SECONDS - 0.5f)
+            val far = shift(star, start + 0.5)
+            val near = shift(star, start + LAP_SECONDS - 0.5)
             assertTrue(far.x < 0f)
             assertTrue(near.x < far.x)
             assertEquals(0f, far.y, 1e-6f)
-            assertEquals(Offset.Zero, shift(star, start + 5f, Offset.Zero))
+            assertEquals(Offset.Zero, shift(star, start + 5.0, Offset.Zero))
         }
     }
 
@@ -149,8 +168,8 @@ class StarfieldTest {
         assertEquals(1f, field.fadeIn(Z_NEAR), 1e-6f)
         for (star in field.stars) {
             val start = lapStart(star)
-            assertTrue(field.alphaAt(star, start + 0.01f) < 0.01f)
-            assertTrue(field.alphaAt(star, start + FADE_DEPTH * LAP_SECONDS + 1f) >= TWINKLE_MIN)
+            assertTrue(field.alphaAt(star, start + 0.01) < 0.01f)
+            assertTrue(field.alphaAt(star, start + FADE_DEPTH * LAP_SECONDS + 1.0) >= TWINKLE_MIN)
         }
     }
 
@@ -168,8 +187,13 @@ class StarfieldTest {
     }
 
     /** First time at or after 0 at which the star is at depth 1. */
-    private fun lapStart(star: Star): Float = ((1f - star.offset) % 1f) * LAP_SECONDS
+    private fun lapStart(star: Star): Double = ((1.0 - star.offset) % 1.0) * LAP_SECONDS
 
-    private fun shift(star: Star, time: Float, tilt: Offset = this.tilt): Offset =
+    private fun shift(star: Star, time: Double, tilt: Offset = this.tilt): Offset =
         field.project(star, time, tilt) - field.project(star, time)
+
+    private companion object {
+        /** A year of uptime on the monotonic clock, a whole number of laps. */
+        const val YEAR = 365.0 * 24 * 3600
+    }
 }

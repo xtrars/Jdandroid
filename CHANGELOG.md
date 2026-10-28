@@ -27,6 +27,18 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.1] – 2026-10-28
+
+### Geändert
+
+- Schema „Space“: Der Sternenflug läuft ohne Schleife. Bisher wiederholte
+  sich das Bild alle zwei Minuten, weil jeder Stern nur vier seitliche
+  Positionen kannte; jetzt bekommt er in jeder Runde eine neue, der Flug
+  wiederholt sich nie. Die Zeit kommt aus der fortlaufenden Systemuhr, daher
+  geht der Flug nach dem Drehen des Geräts oder der Rückkehr in die App
+  weiter, statt von vorn zu beginnen. Ein Bild der Animation zeichnet nur
+  noch neu, ohne die Oberfläche neu aufzubauen.
+
 ## [0.9.0] – 2026-10-27
 
 ### Geändert
@@ -1064,6 +1076,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.1]: https://github.com/xtrars/Jdandroid/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/xtrars/Jdandroid/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/xtrars/Jdandroid/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/xtrars/Jdandroid/compare/v0.8.0...v0.8.1

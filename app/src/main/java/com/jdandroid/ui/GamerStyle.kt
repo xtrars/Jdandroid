@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,9 +22,11 @@ import android.hardware.SensorManager
 import android.view.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -75,26 +78,23 @@ internal data class Star(val seed: Int, val offset: Float, val phase: Float)
 /**
  * Deterministic star field flown through: every star approaches on a lap of
  * [LAP_SECONDS] from depth 1 (far) to [Z_NEAR], projected away from the
- * vanishing point at the canvas centre, and restarts far away at a fresh
- * lateral position. Tilting the device shifts near stars more than far ones.
- * Everything is a pure function of time and tilt, so the canvas keeps no state.
+ * vanishing point at the canvas centre, and restarts far away at a lateral
+ * position hashed from its lap number, so the flight never repeats. Tilting
+ * the device shifts near stars more than far ones. Everything is a pure
+ * function of time and tilt, so the canvas keeps no state.
  */
 internal class Starfield(count: Int = 140, seed: Int = 7) {
     val stars: List<Star> = Random(seed).let { r ->
         List(count) { Star(seed = r.nextInt(), offset = r.nextFloat(), phase = r.nextFloat()) }
     }
 
-    /** Position within the current lap: 0 just started (far), approaching 1 before the wrap. */
-    private fun progress(star: Star, time: Float): Float {
-        val laps = time / LAP_SECONDS + star.offset
-        return laps - floor(laps)
-    }
+    private fun laps(star: Star, time: Double): Double = time / LAP_SECONDS + star.offset
 
     /** Depth after [time] seconds: a sawtooth from 1 (far) down towards [Z_NEAR]. */
-    fun depthAt(star: Star, time: Float): Float = 1f - (1f - Z_NEAR) * progress(star, time)
+    fun depthAt(star: Star, time: Double): Float = 1f - (1f - Z_NEAR) * fraction(laps(star, time))
 
-    /** Lap number modulo [LAPS_PER_LOOP], so a time jump of [LOOP_SECONDS] is invisible. */
-    fun lap(star: Star, time: Float): Int = floor(time / LAP_SECONDS + star.offset).toInt().mod(LAPS_PER_LOOP)
+    /** Number of the lap the star is on at [time]; it only ever counts up. */
+    fun lap(star: Star, time: Double): Int = floor(laps(star, time)).toInt()
 
     /**
      * Lateral position for [lap], spread evenly over the unit disc but at
@@ -114,7 +114,7 @@ internal class Starfield(count: Int = 140, seed: Int = 7) {
      * the lateral position divided by depth, so a star speeds up as it nears,
      * plus a tilt shift of -1..1 that grows with nearness.
      */
-    fun project(star: Star, time: Float, tilt: Offset = Offset.Zero): Offset {
+    fun project(star: Star, time: Double, tilt: Offset = Offset.Zero): Offset {
         val z = depthAt(star, time)
         val parallax = PARALLAX * (PARALLAX_FAR_SHARE + (1f - z))
         return lateral(star, lap(star, time)) * (FOCAL / z) - tilt * parallax
@@ -127,18 +127,15 @@ internal class Starfield(count: Int = 140, seed: Int = 7) {
     fun fadeIn(z: Float): Float = ((1f - z) / FADE_DEPTH).coerceIn(0f, 1f)
 
     /** Twinkle in [TWINKLE_MIN]..1, scaled by the far-end fade. */
-    fun alphaAt(star: Star, time: Float): Float {
-        val twinkle = (1f + TWINKLE_MIN) / 2f + (1f - TWINKLE_MIN) / 2f * sin(2f * PI.toFloat() * (time * TWINKLE_HZ + star.phase))
+    fun alphaAt(star: Star, time: Double): Float {
+        val wave = sin(2f * PI.toFloat() * fraction(time * TWINKLE_HZ + star.phase))
+        val twinkle = (1f + TWINKLE_MIN) / 2f + (1f - TWINKLE_MIN) / 2f * wave
         return twinkle * fadeIn(depthAt(star, time))
     }
 
     companion object {
-        /** Seconds of the animation loop; the time value then jumps back to 0. */
-        const val LOOP_SECONDS = 120f
-
-        /** Seconds of one approach; the loop holds a whole number of laps. */
+        /** Seconds of one approach from the far end to past the screen edge. */
         const val LAP_SECONDS = 30f
-        const val LAPS_PER_LOOP = (LOOP_SECONDS / LAP_SECONDS).toInt()
 
         /** Nearest depth; below it the star restarts at depth 1. */
         const val Z_NEAR = 0.06f
@@ -164,6 +161,12 @@ internal class Starfield(count: Int = 140, seed: Int = 7) {
     }
 }
 
+/**
+ * Fractional part of [x]. Time grows without bound, so it is split off in
+ * Double; a Float clock would lose whole seconds after a few months.
+ */
+private fun fraction(x: Double): Float = (x - floor(x)).toFloat()
+
 /** Scrambles ([seed], [salt]) into a well-mixed Int (murmur3 finaliser). */
 private fun mix(seed: Int, salt: Int): Int {
     var h = seed + salt * GOLDEN
@@ -186,6 +189,9 @@ private const val STREAK_ALPHA = 0.5f
 
 /** Canvas fraction beyond the edge up to which stars are still drawn (streak and radius). */
 private const val OFFSCREEN_MARGIN = 0.1f
+
+/** Seconds of one swing of the nebula drift. */
+private const val NEBULA_SWING_SECONDS = 120.0
 
 /**
  * Device tilt from the gravity sensor as screen-relative -1..1 (x right, y
@@ -252,6 +258,24 @@ fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Com
 }
 
 /**
+ * Seconds on the monotonic clock, advanced with the frame clock while
+ * [running]. The star field is a function of it, so a rotation or a return
+ * to the app goes on with the flight instead of restarting it.
+ */
+@Composable
+private fun rememberFlightTime(running: Boolean): State<Double> {
+    val time = remember { mutableDoubleStateOf(System.nanoTime() / 1e9) }
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        val start = System.nanoTime()
+        time.doubleValue = start / 1e9
+        val first = withInfiniteAnimationFrameNanos { it }
+        while (true) withInfiniteAnimationFrameNanos { frame -> time.doubleValue = (start + frame - first) / 1e9 }
+    }
+    return time
+}
+
+/**
  * Two drifting nebula glows, a faint horizon grid and the star field flying
  * past. Animates only while the activity is started, so a backgrounded app
  * costs nothing.
@@ -260,18 +284,12 @@ fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Com
 private fun SpaceCanvas() {
     val field = remember { Starfield() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val time = if (lifecycle.isAtLeast(Lifecycle.State.STARTED)) {
-        val transition = rememberInfiniteTransition(label = "space")
-        val t by transition.animateFloat(
-            initialValue = 0f, targetValue = Starfield.LOOP_SECONDS,
-            animationSpec = infiniteRepeatable(tween((Starfield.LOOP_SECONDS * 1000).toInt(), easing = LinearEasing), RepeatMode.Restart),
-            label = "time"
-        )
-        t
-    } else 0f
+    val clock = rememberFlightTime(lifecycle.isAtLeast(Lifecycle.State.STARTED))
     val tilt by rememberTilt()
     val background = MaterialTheme.colorScheme.background
     Canvas(Modifier.fillMaxSize()) {
+        // Read in the draw phase only, so a frame redraws without recomposing.
+        val time = clock.value
         drawRect(background)
         drawNebula(time, tilt)
         drawHorizonGrid()
@@ -296,8 +314,8 @@ private fun SpaceCanvas() {
 }
 
 /** Nebulae sit far back: a slow drift plus a small share of the tilt parallax. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Float, tilt: Offset) {
-    val drift = sin(2f * PI.toFloat() * time / Starfield.LOOP_SECONDS)
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Double, tilt: Offset) {
+    val drift = sin(2f * PI.toFloat() * fraction(time / NEBULA_SWING_SECONDS))
     val radius = size.maxDimension * 0.55f
     val shift = Offset(-tilt.x * Starfield.PARALLAX * 0.25f * size.width, -tilt.y * Starfield.PARALLAX * 0.25f * size.height)
     val magenta = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f) + shift
