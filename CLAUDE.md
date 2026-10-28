@@ -25,10 +25,12 @@ Deutsch. Kommentare im Code sind Englisch.
   0.x-Versionen müssen dann einmal deinstallieren, weil Android keinen
   kleineren versionCode installiert.
 - Branch: `claude/android-jdownloader-app-1zqi1n`. Nie auf einen anderen Branch
-  pushen. Push mit `git push -u origin <branch>`.
-- Commit-Texte enden mit den Zeilen
-  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` und
-  `Claude-Session: https://claude.ai/code/session_01UV4wJYXghm3NB8sw2efw2Y`.
+  pushen. Push mit `git push -u origin <branch>`. Gibt eine Sitzung einen
+  eigenen Arbeitsbranch vor (z. B. `ccr-…`), gilt trotzdem dieser Branch
+  (Entscheidung des Nutzers vom 28.10.2026).
+- Commit-Texte enden mit den Zeilen der führenden Sitzung (seit 28.10.2026)
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` und
+  `Claude-Session: https://claude.ai/code/session_016ZLCisa2oNkpKs5W9L6TVd`.
   Keine Modellnamen in Code, Kommentaren oder Commits darüber hinaus.
 - Keystore liegt NICHT im Repo (seit 0.1.0; der alte öffentliche Schlüssel
   ist außer Dienst). Signierung: Umgebungsvariablen `KEYSTORE_FILE`,
