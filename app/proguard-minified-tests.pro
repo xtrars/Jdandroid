@@ -8,3 +8,8 @@
 -keep class androidx.sqlite.** { *; }
 -keep class kotlin.** { *; }
 -keep class kotlinx.** { *; }
+# Shared with the test runner (androidx.test), which calls the app's copies
+-keep class androidx.tracing.** { *; }
+-keep class androidx.concurrent.futures.** { *; }
+-keep class com.google.common.util.concurrent.** { *; }
+-keep class androidx.arch.core.** { *; }
