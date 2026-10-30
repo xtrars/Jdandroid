@@ -56,12 +56,11 @@ class AccountRefresherTest {
         assertEquals("Keystore fehlt", AccountRefresher.statusWithUpgradeError(null, "Keystore fehlt"))
         val status = AccountRefresher.statusWithUpgradeError("Premium", "Keystore fehlt")
         assertEquals("Premium · Keystore fehlt", status)
-        assertTrue(Account(hosterId = "ddownload", valid = true, statusText = status).hasPremium(now))
     }
 
     private val premium = Account(
         hosterId = "rapidgator", valid = true, premiumUntil = now + 86_400_000, trafficLeft = 5, trafficTotal = 10,
-        statusText = "Premium", lastChecked = now - 60_000
+        statusText = "Premium", lastChecked = now - 60_000, premium = true
     )
 
     private fun apply(account: Account, result: Result<AccountInfo>, upgradeError: String? = null) =
@@ -72,9 +71,11 @@ class AccountRefresherTest {
 
     @Test
     fun erfolgreichePruefungUebernimmtAlleWerte() {
-        val info = AccountInfo(valid = true, premiumUntil = now + 1, trafficLeft = 1, trafficTotal = 2, trafficUnlimited = true, statusText = "Premium")
-        val updated = apply(premium.copy(valid = false, statusText = "alt"), Result.success(info))
-        assertEquals(premium.copy(valid = true, premiumUntil = now + 1, trafficLeft = 1, trafficTotal = 2, trafficUnlimited = true, statusText = "Premium", lastChecked = now), updated)
+        val info = AccountInfo(valid = true, premium = true, premiumUntil = now + 1, trafficLeft = 1, trafficTotal = 2, trafficUnlimited = true, statusText = "Premium")
+        val updated = apply(premium.copy(valid = false, premium = false, statusText = "alt"), Result.success(info))
+        assertEquals(premium.copy(valid = true, premium = true, premiumUntil = now + 1, trafficLeft = 1, trafficTotal = 2, trafficUnlimited = true, statusText = "Premium", lastChecked = now), updated)
+        // The flag follows the hoster, whatever the status text says
+        assertFalse(apply(premium, Result.success(info.copy(premium = false, premiumUntil = 0))).hasPremium(now))
         // Hoster says invalid: taken over as is
         assertFalse(apply(premium, Result.success(info.copy(valid = false, statusText = "Gesperrt"))).valid)
         assertEquals("Premium · Keystore fehlt", apply(premium, Result.success(info), "Keystore fehlt").statusText)
@@ -98,7 +99,7 @@ class AccountRefresherTest {
 
     @Test
     fun voruebergehenderFehlerBehaeltPremiumOhneAblaufdatum() {
-        // ddownload without a readable expiry: premium is read from the status prefix
+        // ddownload without a readable expiry: premium only from the flag of the last check
         val byStatus = premium.copy(premiumUntil = 0, statusText = "Ultimate · Kontingent nicht lesbar")
         assertTrue(byStatus.hasPremium(now))
         val first = apply(byStatus, Result.failure(HosterException("Cloudflare", permanent = false)))

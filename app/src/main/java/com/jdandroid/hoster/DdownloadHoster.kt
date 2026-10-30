@@ -190,6 +190,7 @@ class DdownloadHoster internal constructor(
 
         AccountInfo(
             valid = true,
+            premium = premium,
             premiumUntil = expire,
             trafficLeft = traffic.left,
             trafficTotal = trafficTotal,

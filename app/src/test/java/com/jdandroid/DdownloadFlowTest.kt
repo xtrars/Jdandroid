@@ -114,6 +114,7 @@ class DdownloadFlowTest {
         server.enqueue(html(kontoseite))
         val info = runBlocking { hoster.checkAccount(session) }
         assertTrue(info.valid)
+        assertTrue(info.premium)
         assertEquals("Ultimate", info.statusText)
         assertEquals(epoch(2030, Calendar.DECEMBER, 2), info.premiumUntil)
         // "197040 GB" means MB: 192.4 GiB of the 200 GB daily quota

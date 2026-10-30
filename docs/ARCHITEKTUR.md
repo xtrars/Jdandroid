@@ -141,11 +141,13 @@ Nutzeraktion ist sinnlos (Datei offline, kein Premium); alles andere gilt als
 vorübergehend und wird von der Engine wiederholt.
 
 **Free-Modus** (Einstellung „Free-Modus“, Standard an): Ohne Premium-Konto
-(`Account.hasPremium()` – ein gültiges Free-Konto zählt nicht, der
+(`Account.hasPremium()`: Ablaufdatum in der Zukunft oder ohne Datum das
+Feld `premium`, das der Hoster in `AccountInfo.premium` selbst setzt, nie der
+Anzeigetext – ein gültiges Free-Konto zählt nicht, der
 Premium-Weg scheiterte damit dauerhaft) ruft die Engine
 `resolveFree(url, hints)` auf. Zwei Ausnahmen steuern den Ablauf:
 `WaitException(seconds, grund)` – der Eintrag bleibt `QUEUED` mit
-`retryAt = jetzt + Sekunden` und der Meldung „Wartezeit im Free-Modus:
+`retryAt = jetzt + Sekunden` und der Meldung „Wartezeit:
 mm:ss – Grund“ (die Liste zählt live herunter und behält den Grund,
 `attempts` bleibt unverändert); `CaptchaRequiredException(pageUrl, grund,
 cookieUrl, cookies)` – der Eintrag bleibt `QUEUED` mit `retryAt` ein Jahr in
@@ -402,7 +404,7 @@ und der RAR-Entpacker (natives 7-Zip) lokale Dateien brauchen.
 |---|---|---|
 | `packages` | `DownloadPackage` | Name, `autoNamed` (darf aus Dateinamen verfeinert werden), `source` (Herkunft bei Click'n'Load), `addedAt` |
 | `downloads` | `DownloadItem` | URL (eindeutiger Index), `hosterId`, `packageId`, Name, `archiveKey` (Basisname des Archivs, indiziert), Größe, Fortschritt, Geschwindigkeit, `status`, Fehlertext, `localPath`, `attempts`, `retryAt`, `online`, `extractProgress` |
-| `accounts` | `Account` | `hosterId`, Benutzername, Passwort/API-Key/Cookies (verschlüsselt), `premiumUntil`, `trafficLeft`, `trafficTotal`, `trafficUnlimited`, `valid`, `lastChecked`, `statusText` |
+| `accounts` | `Account` | `hosterId`, Benutzername, Passwort/API-Key/Cookies (verschlüsselt), `premiumUntil`, `trafficLeft`, `trafficTotal`, `trafficUnlimited`, `valid`, `lastChecked`, `statusText`, `premium` |
 
 Migrationen stehen in `Db.kt` als `ALL_MIGRATIONS` und sind bewusst echte
 Migrationen statt `fallbackToDestructiveMigration()` – bei einem Update
@@ -420,6 +422,8 @@ Datenbank neu aufgebaut.
 | 7→8 | Duplikate bereinigen, eindeutiger Index auf `downloads.url` | 1.5.0 |
 | 8→9 | `downloads.extractProgress` (seit dem ProgressBus nur noch Start 0 / Ende -1, Spalte bleibt aus Kompatibilität) | 0.0.4 |
 | 9→10 | `downloads.archiveKey` (indiziert, aus `fileName` nachgefüllt) | 0.0.8 |
+| 10→11 | `downloads.extractProgress` entfernt, deutsche Vermerke zu Codes | 0.1.0 |
+| 11→12 | `accounts.premium` (aus dem Statustext-Präfix „Premium“/„Ultimate“ nachgefüllt) | 0.9.9 |
 
 Der instrumentierte `MigrationTest` (`app/src/androidTest/`) prüft die
 Migrationen ab Version 5 gegen die exportierten Schemata mit

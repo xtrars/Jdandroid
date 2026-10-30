@@ -27,6 +27,19 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.9] – 2026-10-30
+
+### Geändert
+
+- Premium-Konten werden über ein eigenes Kennzeichen erkannt, das jeder
+  Hoster aus seinen Kontodaten setzt (Rapidgator `is_premium`, 1fichier
+  `offer`, ddownload Kontoseite), statt aus dem Anfang des Anzeigetexts
+  („Premium“, „Ultimate“). Ein künftiger Hoster mit anderer Bezeichnung oder
+  eine Übersetzung kann ein Premium-Konto so nicht mehr stillschweigend zum
+  Free-Konto machen. Datenbank-Schema 12: Die Migration füllt das
+  Kennzeichen nach der bisherigen Regel, bis zur nächsten Kontoprüfung
+  ändert sich nichts.
+
 ## [0.9.8] – 2026-10-30
 
 ### Geändert
@@ -1220,6 +1233,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.9]: https://github.com/xtrars/Jdandroid/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/xtrars/Jdandroid/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/xtrars/Jdandroid/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/xtrars/Jdandroid/compare/v0.9.5...v0.9.6

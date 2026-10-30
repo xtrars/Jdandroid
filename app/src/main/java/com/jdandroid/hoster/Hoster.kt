@@ -39,6 +39,8 @@ data class LinkInfo(
 
 data class AccountInfo(
     val valid: Boolean,
+    /** The hoster grants premium downloads; decided from its own data, never from [statusText]. */
+    val premium: Boolean,
     val premiumUntil: Long = 0,
     /** Remaining traffic in bytes, -1 = unknown. */
     val trafficLeft: Long = -1,

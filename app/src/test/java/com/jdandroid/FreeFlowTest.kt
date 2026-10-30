@@ -16,8 +16,8 @@ import org.junit.Test
 class FreeFlowTest {
     private val now = 1_700_000_000_000L
 
-    private fun account(valid: Boolean = true, premiumUntil: Long = 0, status: String? = "Free") =
-        Account(hosterId = "rapidgator", valid = valid, premiumUntil = premiumUntil, statusText = status)
+    private fun account(valid: Boolean = true, premiumUntil: Long = 0, premium: Boolean = false) =
+        Account(hosterId = "rapidgator", valid = valid, premiumUntil = premiumUntil, premium = premium)
 
     @Test
     fun premiumKontoNimmtImmerDenPremiumWeg() {
@@ -29,7 +29,7 @@ class FreeFlowTest {
 
     @Test
     fun abgelaufenesPremiumLaeuftFreeOderMeldetFehlendesPremium() {
-        val expired = account(premiumUntil = now - 1, status = "Premium")
+        val expired = account(premiumUntil = now - 1, premium = true)
         assertEquals(FreePath.FREE, FreeFlow.choosePath(expired, freeMode = true, now = now))
         assertEquals(FreePath.NO_PREMIUM_ERROR, FreeFlow.choosePath(expired, freeMode = false, now = now))
     }
@@ -48,16 +48,16 @@ class FreeFlowTest {
 
     @Test
     fun ungueltigesKontoZaehltWieKeinKonto() {
-        val invalid = account(valid = false, premiumUntil = now + 1, status = "Premium")
+        val invalid = account(valid = false, premiumUntil = now + 1, premium = true)
         assertEquals(FreePath.DISABLED_ERROR, FreeFlow.choosePath(invalid, freeMode = false, now = now))
         assertEquals(FreePath.FREE, FreeFlow.choosePath(invalid, freeMode = true, now = now))
     }
 
     @Test
-    fun premiumAmKontostatusOhneAblaufdatum() {
-        assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(status = "Premium"), freeMode = true, now = now))
-        assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(status = "Ultimate"), freeMode = false, now = now))
-        assertEquals(FreePath.NO_PREMIUM_ERROR, FreeFlow.choosePath(account(status = null), freeMode = false, now = now))
+    fun premiumAmKennzeichenOhneAblaufdatum() {
+        assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(premium = true), freeMode = true, now = now))
+        assertEquals(FreePath.PREMIUM, FreeFlow.choosePath(account(premium = true), freeMode = false, now = now))
+        assertEquals(FreePath.NO_PREMIUM_ERROR, FreeFlow.choosePath(account(), freeMode = false, now = now))
     }
 
     @Test
@@ -72,12 +72,12 @@ class FreeFlowTest {
 
     @Test
     fun premiumKontoGewinntGegenAelteresGueltigesFreeKonto() {
-        val expired = account(premiumUntil = now - 1, status = "Premium").copy(id = 1)
+        val expired = account(premiumUntil = now - 1, premium = true).copy(id = 1)
         val premium = account(premiumUntil = now + 1).copy(id = 2)
         assertEquals(premium, listOf(expired, premium).preferredValid(now))
         assertEquals(premium, listOf(premium, expired).preferredValid(now))
-        // Premium from the status text only, without an expiry date
-        val byStatus = account(status = "Ultimate").copy(id = 1)
+        // Premium from the flag only, without an expiry date
+        val byStatus = account(premium = true).copy(id = 1)
         assertEquals(byStatus, listOf(byStatus, account().copy(id = 2)).preferredValid(now))
     }
 

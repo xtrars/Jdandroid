@@ -432,6 +432,7 @@ class OneFichierHoster internal constructor(
         val cdnGb = json.optDouble("available_credits_in_gb", -1.0).takeIf { it >= 0 }
         return AccountInfo(
             valid = true,
+            premium = premium,
             premiumUntil = end,
             trafficLeft = -1,
             trafficUnlimited = premium,

@@ -66,6 +66,7 @@ object AccountRefresher {
         if (info != null) {
             return account.copy(
                 valid = info.valid,
+                premium = info.premium,
                 premiumUntil = info.premiumUntil,
                 trafficLeft = info.trafficLeft,
                 trafficTotal = info.trafficTotal,
@@ -80,8 +81,7 @@ object AccountRefresher {
         return account.copy(
             valid = if (permanent) false else account.valid,
             statusText = if (!permanent && account.valid) {
-                // The old hoster status stays in front: without an expiry date
-                // Account.hasPremium reads premium from that prefix.
+                // The last hoster status stays readable in front of the note
                 statusWithUpgradeError(hosterStatus(account.statusText), temporaryText(message))
             } else message,
             lastChecked = now
@@ -115,7 +115,7 @@ object AccountRefresher {
         }
     }
 
-    /** Hoster status first so [Account.hasPremium] still sees the "Premium" prefix. */
+    /** Hoster status first, the upgrade error appended. */
     fun statusWithUpgradeError(status: String?, upgradeError: String?): String? =
         if (upgradeError == null) status
         else listOfNotNull(status?.takeIf { it.isNotBlank() }, upgradeError).joinToString(" · ")

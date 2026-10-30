@@ -5,9 +5,9 @@ package com.jdandroid.core.texts
  * Every key exists verbatim in `res/values/strings_hoster.xml` and translated
  * in `res/values-en/strings_hoster.xml` (checked by `TextsTest`).
  *
- * Account tiers ("Premium", "Ultimate", "Premium/Access") stay untranslated:
- * `Account.hasPremium` compares against them. Texts.t has no plurals, so
- * durations use unit abbreviations (h, min, s).
+ * Account tiers ("Premium", "Ultimate", "Premium/Access") stay untranslated
+ * as the hosters' own names. Texts.t has no plurals, so durations use unit
+ * abbreviations (h, min, s).
  */
 object HosterTexts {
     val texts: Map<String, String> = mapOf(

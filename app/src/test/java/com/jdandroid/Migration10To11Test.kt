@@ -1,6 +1,5 @@
 package com.jdandroid
 
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.jdandroid.data.AppDatabase
 import com.jdandroid.data.DownloadNotes
 import org.junit.After
@@ -10,8 +9,6 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.File
-import java.lang.reflect.Proxy
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -19,7 +16,7 @@ import java.sql.SQLException
 /**
  * Runs the real Room migration 10 -> 11 against SQLite on the JVM: a schema-10
  * database is built from the exported schema and the migration's SQL is fed
- * through a [SupportSQLiteDatabase] stand-in.
+ * through [MigrationSql.roomDb].
  */
 class Migration10To11Test {
 
@@ -28,7 +25,7 @@ class Migration10To11Test {
     @Before
     fun openDb() {
         db = DriverManager.getConnection("jdbc:sqlite::memory:")
-        createSchema(db, 10)
+        MigrationSql.createSchema(db, 10)
     }
 
     @After
@@ -45,20 +42,7 @@ class Migration10To11Test {
         }
     }
 
-    private fun migrate() {
-        val fake = Proxy.newProxyInstance(
-            SupportSQLiteDatabase::class.java.classLoader, arrayOf(SupportSQLiteDatabase::class.java)
-        ) { _, method, args ->
-            if (method.name != "execSQL") throw UnsupportedOperationException(method.name)
-            val bind = (args.getOrNull(1) as? Array<*>).orEmpty()
-            db.prepareStatement(args[0] as String).use { st ->
-                bind.forEachIndexed { i, v -> st.setObject(i + 1, v) }
-                st.execute()
-            }
-            null
-        } as SupportSQLiteDatabase
-        AppDatabase.MIGRATION_10_11.migrate(fake)
-    }
+    private fun migrate() = AppDatabase.MIGRATION_10_11.migrate(MigrationSql.roomDb(db))
 
     private fun note(id: Long): String? =
         db.prepareStatement("SELECT errorMessage FROM downloads WHERE id = ?").use { st ->
@@ -85,11 +69,11 @@ class Migration10To11Test {
     fun `extractProgress faellt weg, alle anderen Spalten und Werte bleiben`() {
         insert(1, null)
         migrate()
-        val migrated = columns(db)
+        val migrated = MigrationSql.columns(db, "downloads")
         assertTrue(migrated.toString(), "extractProgress" !in migrated)
         DriverManager.getConnection("jdbc:sqlite::memory:").use { fresh ->
-            createSchema(fresh, 11)
-            assertEquals(columns(fresh), migrated)
+            MigrationSql.createSchema(fresh, 11)
+            assertEquals(MigrationSql.columns(fresh, "downloads"), migrated)
             assertEquals(indexes(fresh), indexes(db))
         }
         db.createStatement().use { st ->
@@ -117,29 +101,6 @@ class Migration10To11Test {
     }
 
     private companion object {
-        fun schemaFile(version: Int): File =
-            listOf("schemas", "app/schemas")
-                .map { File(it, "com.jdandroid.data.AppDatabase/$version.json") }
-                .first { it.isFile }
-
-        /** Executes every createSql of the exported schema like [SchemaDbTest]. */
-        fun createSchema(conn: Connection, version: Int) {
-            var table = ""
-            Regex(""""(tableName|createSql)":\s*"([^"]+)"""").findAll(schemaFile(version).readText()).forEach { m ->
-                when (m.groupValues[1]) {
-                    "tableName" -> table = m.groupValues[2]
-                    else -> conn.createStatement().use { it.execute(m.groupValues[2].replace("\${TABLE_NAME}", table)) }
-                }
-            }
-        }
-
-        fun columns(conn: Connection): List<String> =
-            conn.createStatement().use { st ->
-                st.executeQuery("PRAGMA table_info(downloads)").use { rs ->
-                    generateSequence { if (rs.next()) rs.getString("name") else null }.toList()
-                }
-            }
-
         fun indexes(conn: Connection): Set<String> =
             conn.createStatement().use { st ->
                 st.executeQuery("PRAGMA index_list(downloads)").use { rs ->

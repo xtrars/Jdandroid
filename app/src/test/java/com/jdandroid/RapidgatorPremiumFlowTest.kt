@@ -93,6 +93,7 @@ class RapidgatorPremiumFlowTest {
         // Login through the account check caches T1; the login response already carries the user
         val info = runBlocking { hoster.checkAccount(account) }
         assertTrue(info.valid)
+        assertTrue(info.premium)
         assertEquals("Premium", info.statusText)
         assertEquals(1L, info.trafficLeft)
         assertEquals(2L, info.trafficTotal)
@@ -183,6 +184,7 @@ class RapidgatorPremiumFlowTest {
 
         // T2 is cached afterwards: user/info succeeds without a login
         val frei = runBlocking { hoster.checkAccount(account) }
+        assertFalse(frei.premium)
         assertEquals(hoster.freeStatusText, frei.statusText)
         assertEquals(-1L, frei.trafficLeft)
         assertEquals(2, api.logins)

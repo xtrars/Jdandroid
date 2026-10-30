@@ -100,6 +100,7 @@ class OneFichierPremiumTest {
         )
         val info = runBlocking { hoster.checkAccount(account) }
         assertTrue(info.valid)
+        assertTrue(info.premium)
         assertTrue(info.trafficUnlimited)
         assertTrue(info.premiumUntil > System.currentTimeMillis())
         assertEquals(hoster.withCdnCredit("Premium/Access", 2.0), info.statusText)

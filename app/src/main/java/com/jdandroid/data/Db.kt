@@ -92,19 +92,18 @@ data class Account(
     val trafficUnlimited: Boolean = false,
     val valid: Boolean = false,
     val lastChecked: Long = 0,
-    val statusText: String? = null
+    val statusText: String? = null,
+    /** Premium according to the last check ([com.jdandroid.hoster.AccountInfo.premium]). */
+    val premium: Boolean = false
 )
 
 /**
- * Premium: expiry in the future or, without a date, a premium status text
- * (ddownload "Premium"/"Ultimate", 1fichier "Premium/Access"). A valid
- * account without premium is a free account and the engine uses free mode.
+ * Premium: expiry in the future or, without a date, the hoster's premium
+ * flag. A valid account without premium is a free account and the engine
+ * uses free mode.
  */
 fun Account.hasPremium(now: Long = System.currentTimeMillis()): Boolean =
-    valid && (
-        premiumUntil > now ||
-            (premiumUntil == 0L && statusText?.let { it.startsWith("Premium") || it.startsWith("Ultimate") } == true)
-        )
+    valid && (premiumUntil > now || (premiumUntil == 0L && premium))
 
 /**
  * The account the engine uses for a hoster: a premium account beats a valid
@@ -415,7 +414,7 @@ interface AccountDao {
 
 @Database(
     entities = [DownloadItem::class, Account::class, DownloadPackage::class],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -517,8 +516,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Premium as its own flag, filled from the status text prefix it was read from until version 11. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN premium INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE accounts SET premium = 1 " +
+                        "WHERE substr(statusText, 1, 7) = 'Premium' OR substr(statusText, 1, 8) = 'Ultimate'"
+                )
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
-            MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+            MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+            MIGRATION_11_12
         )
     }
 }

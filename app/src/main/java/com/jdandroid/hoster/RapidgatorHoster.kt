@@ -409,6 +409,7 @@ class RapidgatorHoster internal constructor(
         val trafficTotal = traffic?.takeUnless { it.isNull("total") }?.optLong("total", -1) ?: -1
         AccountInfo(
             valid = true,
+            premium = premium,
             premiumUntil = premiumEnd,
             trafficLeft = trafficLeft,
             trafficTotal = trafficTotal,

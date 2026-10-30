@@ -214,7 +214,28 @@ class MigrationTest {
     }
 
     @Test
-    fun migrateAll5To11() {
+    fun migrate11To12_premiumAusDemStatustext() {
+        helper.createDatabase(dbName, 11).apply {
+            listOf("Premium" to 1, "Ultimate · Kontingent nicht lesbar" to 2, "Free" to 3).forEach { (status, id) ->
+                execSQL(
+                    "INSERT INTO accounts (id, hosterId, username, password, apiKey, cookies, premiumUntil, " +
+                        "trafficLeft, trafficTotal, trafficUnlimited, valid, lastChecked, statusText) VALUES " +
+                        "(?, 'ddownload', 'user', 'pw', NULL, NULL, 0, -1, -1, 0, 1, 0, ?)",
+                    arrayOf<Any?>(id, status)
+                )
+            }
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, AppDatabase.MIGRATION_11_12)
+        db.query("SELECT id, premium, statusText FROM accounts ORDER BY id").use { c ->
+            assertEquals(3, c.count)
+            val premium = generateSequence { if (c.moveToNext()) c.getInt(1) else null }.toList()
+            assertEquals(listOf(1, 1, 0), premium)
+        }
+    }
+
+    @Test
+    fun migrateAll5To12() {
         helper.createDatabase(dbName, 5).apply {
             execSQL("INSERT INTO packages (id, name, autoNamed, source, addedAt) VALUES (1, 'Paket', 1, NULL, 1)")
             insertDownload5(this, 1, "https://example.org/a.part1.rar", "a.part1.rar", "COMPLETED", DownloadNotes.LEGACY_WAITING_PARTS)
@@ -228,7 +249,7 @@ class MigrationTest {
             )
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 11, true, *AppDatabase.ALL_MIGRATIONS)
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, *AppDatabase.ALL_MIGRATIONS)
         db.query("SELECT id, url, archiveKey, packageId, online, errorMessage FROM downloads ORDER BY id").use { c ->
             assertEquals(2, c.count)
             assertTrue(c.moveToFirst())
@@ -243,13 +264,14 @@ class MigrationTest {
             assertTrue(c.isNull(2))
             assertEquals(DownloadNotes.WAITING_WIFI, c.getString(5))
         }
-        db.query("SELECT username, valid, trafficTotal, trafficUnlimited, statusText FROM accounts WHERE id = 1").use { c ->
+        db.query("SELECT username, valid, trafficTotal, trafficUnlimited, statusText, premium FROM accounts WHERE id = 1").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("user", c.getString(0))
             assertEquals(1, c.getInt(1))
             assertEquals(-1L, c.getLong(2))
             assertEquals(0, c.getInt(3))
             assertEquals("Premium", c.getString(4))
+            assertEquals(1, c.getInt(5))
         }
         db.query("SELECT name FROM packages WHERE id = 1").use { c ->
             assertTrue(c.moveToFirst())

@@ -27,7 +27,7 @@ class DirectLinksTest {
         override val accountHint = ""
         override val siteHosts = setOf("example.com", "www.example.com")
         override fun matches(url: String) = url.contains("example.com/")
-        override suspend fun checkAccount(account: Account) = AccountInfo(valid = false, statusText = "")
+        override suspend fun checkAccount(account: Account) = AccountInfo(valid = false, premium = false, statusText = "")
         override suspend fun resolve(url: String, account: Account?) = ResolvedLink(url)
     }
 
