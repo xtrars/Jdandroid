@@ -79,12 +79,27 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          # Gegen den mit R8 geschrumpften Build: prueft die JNI-Rueckrufe des RAR-Entpackers
-          script: ./gradlew --no-daemon -Pjd.testMinified connectedMinifiedAndroidTest
+          # Gegen den mit R8 geschrumpften Build: prueft die JNI-Rueckrufe des RAR-Entpackers.
+          # Ein abgestuerzter Testprozess laesst Gradle trotzdem "erfolgreich" melden, daher
+          # werden die Ergebnisse selbst geprueft. Danach einmal normal starten (Absturz der
+          # App selbst?); logcat zeigt den Grund.
+          script: |
+            adb logcat -c
+            ./gradlew --no-daemon -Pjd.testMinified connectedMinifiedAndroidTest || touch instrumentierung-fehlgeschlagen
+            adb install -r app/build/outputs/apk/minified/app-minified.apk
+            adb shell am start -W -n com.jdandroid/.ui.MainActivity
+            sleep 8
+            adb logcat -d > logcat.txt
+            test ! -f instrumentierung-fehlgeschlagen
+            ! grep -rqs "<failure" app/build/outputs/androidTest-results/connected
+            ! grep -q "FATAL EXCEPTION" logcat.txt
       - name: Testberichte hochladen
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: androidTest-report
-          path: app/build/reports/androidTests/connected/
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+            logcat.txt
           if-no-files-found: ignore
