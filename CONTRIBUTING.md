@@ -11,10 +11,10 @@ Deutsch: Oberfläche, Kommentare, Commit-Texte, Issues und Pull Requests.
 | Werkzeug | Version | Bemerkung |
 |---|---|---|
 | JDK | 17 (Temurin) | `sourceCompatibility`/`jvmTarget` 17 |
-| Gradle | 8.14.5 | über den Wrapper `./gradlew`, keine eigene Installation nötig |
-| Android Gradle Plugin | 8.13.2 | in `gradle/libs.versions.toml` |
-| Kotlin / KSP | 2.3.21 / 2.3.11 | Compose-Compiler-Plugin aus dem Kotlin-Release |
-| Android SDK | compileSdk 36, minSdk 26 | Pfad in `local.properties` (`sdk.dir=...`) |
+| Gradle | 9.8.2 | über den Wrapper `./gradlew`, keine eigene Installation nötig |
+| Android Gradle Plugin | 9.5.0 | in `gradle/libs.versions.toml`; bringt Kotlin selbst mit (kein `kotlin-android`-Plugin) |
+| Kotlin / KSP | 2.4.10 / 2.3.12 | Compose-Compiler-Plugin aus dem Kotlin-Release |
+| Android SDK | compileSdk 37, targetSdk 36, minSdk 26 | Pfad in `local.properties` (`sdk.dir=...`) |
 | Android Studio | aktuelle stabile Version | optional, das Projekt lässt sich rein per Gradle bauen |
 
 Nach dem Klonen reicht ein vorhandenes Android-SDK und JDK 17; der Wrapper

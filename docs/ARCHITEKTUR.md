@@ -541,8 +541,10 @@ liefert. Click'n'Load 2 kommt ohne den Dienst aus.
 
 ## Build und Tests
 
-- Toolchain: JDK 17, Gradle 8.14.5 (Wrapper mit SHA-256-Prüfsumme), AGP
-  8.13.2, Kotlin 2.3.21, KSP 2.3.11, Compose BOM 2026.06.01, Room 2.8.4.
+- Toolchain: JDK 17, Gradle 9.8.2 (Wrapper mit SHA-256-Prüfsumme), AGP
+  9.5.0 mit eingebautem Kotlin (KGP-Version über `kotlin-android` mit
+  `apply false` im Root-Build), Kotlin 2.4.10, KSP 2.3.12, Compose BOM
+  2026.09.00, Room 2.8.5; compileSdk 37, targetSdk 36.
   Versionen in `gradle/libs.versions.toml`; alle Artefakte werden über
   `gradle/verification-metadata.xml` per SHA-256 verifiziert.
 - Release-APK heißt `JDAndroid-<versionName>.apk` und wird mit dem

@@ -4,7 +4,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
@@ -43,20 +42,20 @@ fun releaseSigning(): Map<String, String>? {
 
 android {
     namespace = "com.jdandroid"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.jdandroid"
         minSdk = 26
         targetSdk = 36
         // versionCode must grow with every release or the installer refuses the update.
-        versionCode = 68
-        versionName = "0.9.3"
+        versionCode = 69
+        versionName = "0.9.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Exported Room schemas as test assets for MigrationTest
-    sourceSets["androidTest"].assets.srcDirs("$projectDir/schemas")
+    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
@@ -97,22 +96,22 @@ android {
         compose = true
     }
     lint {
-        // Dependencies are updated deliberately, not on every lint run.
-        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+        // Dependencies and targetSdk (Play requirement) are updated deliberately, not on every lint run.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
     }
     androidResources {
         // Only the app's own languages; AndroidX translations of other
         // languages stay out.
         localeFilters += listOf("de", "en")
     }
+}
 
-    // Name the release APK by version instead of app-release.apk
-    applicationVariants.all {
-        if (buildType.name == "release") {
-            outputs.all {
-                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-                    "JDAndroid-${versionName}.apk"
-            }
+// Name the release APK by version instead of app-release.apk
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            (output as com.android.build.api.variant.impl.VariantOutputImpl).outputFileName
+                .set(output.versionName.map { "JDAndroid-$it.apk" })
         }
     }
 }

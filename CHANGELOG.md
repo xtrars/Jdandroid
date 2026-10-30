@@ -27,6 +27,19 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.4] – 2026-10-30
+
+### Geändert
+
+- Werkzeuge und Bibliotheken aktualisiert: Android Gradle Plugin 9.5.0
+  (vorher 8.13.2, bringt Kotlin selbst mit), Gradle 9.8.2 (vorher 8.14.5),
+  Kotlin 2.4.10, KSP 2.3.12, Compose BOM 2026.09.00, Navigation 2.10.2,
+  core-ktx 1.19.1, Room 2.8.5, DataStore 1.3.0, OkHttp 5.5.1, sqlite-jdbc
+  3.53.4.0 (nur Tests). Die neuen androidx-Bibliotheken setzen AGP 9.1 und
+  compileSdk 37 voraus; die App wird jetzt gegen Android 17 (API 37)
+  übersetzt, targetSdk bleibt 36, am Verhalten der App ändert sich nichts.
+  Die Prüfsummen in `gradle/verification-metadata.xml` sind nachgezogen.
+
 ## [0.9.3] – 2026-10-30
 
 ### Geändert
@@ -1104,6 +1117,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.4]: https://github.com/xtrars/Jdandroid/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/xtrars/Jdandroid/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/xtrars/Jdandroid/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/xtrars/Jdandroid/compare/v0.9.0...v0.9.1

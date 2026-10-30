@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.9.3](https://img.shields.io/badge/Version-0.9.3-informational.svg)
+![Version 0.9.4](https://img.shields.io/badge/Version-0.9.4-informational.svg)
 
 ## English summary
 
@@ -27,7 +27,7 @@ until the NAS is reachable), Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
 **Install.** No store release. Download the newest APK from the
-[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.3.apk`, with a
+[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.4.apk`, with a
 SHA-256 checksum; the five newest APKs are also kept in
 [`release/`](release/)), allow installation from unknown sources for your
 browser or file manager, and open the file. Requires Android 8.0 (API 26) or
@@ -228,11 +228,11 @@ die fünf neuesten APKs im Repository unter [`release/`](release/):
 
 | Version | `versionCode` | Datei |
 |---|---|---|
-| **0.9.3** (aktuell) | 68 | [Release v0.9.3](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.3) · [`release/JDAndroid-0.9.3.apk`](release/JDAndroid-0.9.3.apk) |
+| **0.9.4** (aktuell) | 69 | [Release v0.9.4](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.4) · [`release/JDAndroid-0.9.4.apk`](release/JDAndroid-0.9.4.apk) |
+| 0.9.3 | 68 | [Release v0.9.3](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.3) · [`release/JDAndroid-0.9.3.apk`](release/JDAndroid-0.9.3.apk) |
 | 0.9.2 | 67 | [Release v0.9.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.2) · [`release/JDAndroid-0.9.2.apk`](release/JDAndroid-0.9.2.apk) |
 | 0.9.1 | 66 | [Release v0.9.1](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.1) · [`release/JDAndroid-0.9.1.apk`](release/JDAndroid-0.9.1.apk) |
 | 0.9.0 | 65 | [Release v0.9.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.0) · [`release/JDAndroid-0.9.0.apk`](release/JDAndroid-0.9.0.apk) |
-| 0.8.2 | 64 | [Release v0.8.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.8.2) · [`release/JDAndroid-0.8.2.apk`](release/JDAndroid-0.8.2.apk) |
 
 **Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
 Schlüssel signiert, der im Repository lag und deshalb als kompromittiert
@@ -314,9 +314,9 @@ Browser-Besonderheiten:
 
 ## Build aus dem Quelltext
 
-Voraussetzungen: JDK 17, Android SDK mit Platform 36. Toolchain: Gradle
-8.14.5 (Wrapper mit SHA-256-Prüfsumme), AGP 8.13.2, Kotlin 2.3.21,
-KSP 2.3.11, Compose BOM 2026.06.01, Room 2.8.4.
+Voraussetzungen: JDK 17, Android SDK mit Platform 37. Toolchain: Gradle
+9.8.2 (Wrapper mit SHA-256-Prüfsumme), AGP 9.5.0, Kotlin 2.4.10,
+KSP 2.3.12, Compose BOM 2026.09.00, Room 2.8.5.
 
 ```bash
 git clone https://github.com/xtrars/Jdandroid.git

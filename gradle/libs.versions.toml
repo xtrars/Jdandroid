@@ -1,17 +1,17 @@
 [versions]
 nfsClient = "1.1.0"
 kotlinxSerialization = "1.8.1"
-agp = "8.13.2"
-kotlin = "2.3.21"
-ksp = "2.3.11"
-coreKtx = "1.18.0"
+agp = "9.5.0"
+kotlin = "2.4.10"
+ksp = "2.3.12"
+coreKtx = "1.19.1"
 lifecycle = "2.10.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.01"
-navigationCompose = "2.9.8"
-room = "2.8.4"
-okhttp = "5.4.0"
-datastore = "1.2.1"
+composeBom = "2026.09.00"
+navigationCompose = "2.10.2"
+room = "2.8.5"
+okhttp = "5.5.1"
+datastore = "1.3.0"
 coroutines = "1.11.0"
 junit = "4.13.2"
 androidxTestRunner = "1.7.0"
@@ -48,7 +48,7 @@ commons-compress = { group = "org.apache.commons", name = "commons-compress", ve
 xz = { group = "org.tukaani", name = "xz", version = "1.12" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # JVM tests of the SQL queries (ArchiveSetsTest); same version as the Room compiler
-sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.53.4.0" }
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 # Real org.json for JVM tests: android.jar only carries a stub that throws "not mocked"
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }

@@ -85,7 +85,12 @@ Deutsch. Kommentare im Code sind Englisch.
   7-Zip-JBinding (RAR), zip4j, commons-compress (7z).
 - R8 ist bewusst aus (`isMinifyEnabled = false`): Shrinking entfernte
   JNI-Callback-Klassen des RAR-Entpackers.
-- Build: `./gradlew --offline -q testDebugUnitTest assembleRelease`.
+- Build: `./gradlew --offline -q testDebugUnitTest assembleRelease`; Lint
+  (`lintDebug`) einzeln und ohne `--offline` starten (im selben Aufruf
+  scheitert der Konfigurations-Cache, offline fehlen Lint-Artefakte).
+  Abhängigkeits-Updates: danach
+  `./gradlew --no-configuration-cache --write-verification-metadata sha256
+  testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleRelease`.
   Beide Tasks nacheinander ausführen, wenn eine neue Schema-Version
   entsteht: parallele KSP-Läufe legen sonst eine leere `N.json` an
   (dann löschen und neu bauen).
@@ -153,12 +158,15 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.3 (versionCode 68), Release v0.9.3 mit
-  CI-signierter APK; `release/` enthält 0.8.2 bis 0.9.3. 0.9.3: Sternenflug
-  steht bei „Animationen entfernen“ still, Energiesparmodus etwa 30 Bilder/s
-  (`FramePacing`). Als Nächstes zugesagt: 0.9.4 mit den offenen
-  Dependabot-PRs (#6 sqlite-jdbc, #12 Kotlin/KSP, #13 OkHttp, #14 Gradle 9,
-  #15 androidx), getrennt von Funktionsänderungen. Seit 0.9.1 läuft
+- Zuletzt veröffentlicht: 0.9.4 (versionCode 69), Release v0.9.4 mit
+  CI-signierter APK; `release/` enthält 0.9.0 bis 0.9.4. 0.9.4: AGP 9.5.0
+  mit eingebautem Kotlin (kein `kotlin-android` im App-Modul; im Root-Build
+  mit `apply false`, damit die KGP-Version 2.4.10 gilt), Gradle 9.8.2,
+  compileSdk 37 (targetSdk 36), APK-Name über `androidComponents.onVariants`;
+  damit sind die Dependabot-PRs #6, #12–#15 inhaltlich erledigt. Neue
+  androidx-Versionen verlangen AGP 9.1+ und compileSdk 37. 0.9.3:
+  Sternenflug steht bei „Animationen entfernen“ still, Energiesparmodus etwa
+  30 Bilder/s (`FramePacing`). Seit 0.9.1 läuft
   der Sternenflug ohne Schleife: Zeit = Uhrzeit in Sekunden als `Double`
   (`rememberFlightTime`: beim Start eines Laufs gelesen, im Bildtakt
   fortgezählt, nur in der Zeichenphase gelesen), jede Runde eines Sterns
@@ -203,7 +211,8 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   senden. Erinnerung per `send_later` (10–12 Minuten) als Rückfallebene
   anlegen und nach Erfolg löschen.
 - Frischer Container: Android-SDK nach `/opt/android-sdk` (cmdline-tools,
-  platform-tools, `platforms;android-36`, build-tools 34.0.0/35.0.0/36.0.0),
+  platform-tools, `platforms;android-37.0` (AGP lädt sie sonst selbst nach),
+  build-tools 34.0.0/35.0.0/36.0.0),
   `sdk.dir` in `local.properties` (gitignored, auch in jedem Worktree);
   `apksigner` und `aapt` liegen unter `/opt/android-sdk/build-tools/34.0.0/`.
   Maven Central drosselt (HTTP 429). Abhilfe ohne Repo-Änderung: ein
