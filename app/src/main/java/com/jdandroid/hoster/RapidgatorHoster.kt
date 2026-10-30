@@ -4,7 +4,6 @@ import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.FormBody
@@ -51,33 +50,23 @@ class RapidgatorHoster internal constructor(
     /** Captcha page: the user solves the Turnstile there in the embedded browser. */
     private val captchaPageUrl get() = "$siteBase/download/captcha"
 
-    private val browserUa: String get() = Http.browserUa
-
     /**
      * State of a free flow per file id: own cookie store (PHPSESSID, __token,
      * sdata__), timer id and the time from which the link may be unlocked.
      * Lives only in-process; after a restart the flow starts over.
      */
-    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) {
+    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) :
+        FreeBrowserSession(baseClient, SESSION_MAX_AGE_MS) {
         lateinit var vars: RapidgatorFreeVars
         var fileName: String? = null
         var fileSize = -1L
         var hash: String? = null
-        val jar = MemoryCookieJar()
-        val client: OkHttpClient = baseClient.newBuilder().followRedirects(true).cookieJar(jar).build()
         var sid: String? = null
         var readyAt = 0L
         var linkReady = false
-        val createdAt = System.currentTimeMillis()
-
-        val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
-
-        fun cookieHeader(url: String): String? = jar.cookieHeader(url)
-
-        fun cookiesForBrowser(): List<String> = jar.cookiesForBrowser()
     }
 
-    private val freeSessions = ConcurrentHashMap<String, FreeSession>()
+    private val freeSessions = FreeSessions<FreeSession> { it.expired }
 
     /** Restarts per file when the server rejects the timer or the state. */
     private val restarts = ConcurrentHashMap<String, Int>()
@@ -117,7 +106,7 @@ class RapidgatorHoster internal constructor(
                 ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
             val pageUrl = "$siteBase/file/$id" + (nameSegment?.let { "/$it" } ?: "")
 
-            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { DirectLinks.https(it) }?.let { direct ->
+            hints.browserLink()?.let { direct ->
                 val session = freeSessions.remove(id)
                 restarts.remove(id)
                 return@withContext ResolvedLink(
@@ -130,15 +119,8 @@ class RapidgatorHoster internal constructor(
             }
 
             while (true) {
-                val session = freeSessions[id]?.takeUnless { it.expired }
-                    ?: startFreeSession(id, pageUrl)
-
-                // Timer still running: long remainders to the engine, short ones in-process
-                val remaining = session.readyAt - System.currentTimeMillis()
-                if (remaining > MAX_INLINE_WAIT_MS) {
-                    throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_rapidgator_free_wait"))
-                }
-                if (remaining > 0) delay(remaining + 500)
+                val session = freeSessions[id] ?: startFreeSession(id, pageUrl)
+                awaitCountdown(session.readyAt, Texts.t("hoster_rapidgator_free_wait"))
 
                 if (!session.linkReady) {
                     val reply = ajax(session, session.vars.getDownloadUrl, "sid" to (session.sid ?: ""))
@@ -261,15 +243,8 @@ class RapidgatorHoster internal constructor(
      * subdomains). Cookies only for the hoster's own hosts, never for a
      * foreign [directUrl].
      */
-    internal fun freeHeaders(directUrl: String, cookies: String?): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        headers["User-Agent"] = browserUa
-        headers["Referer"] = captchaPageUrl
-        if (DirectLinks.isSiteHost(directUrl, siteHosts)) {
-            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
-        }
-        return headers
-    }
+    internal fun freeHeaders(directUrl: String, cookies: String?): Map<String, String> =
+        freeFileHeaders(captchaPageUrl, directUrl, cookies, siteHosts)
 
     /**
      * File server address after the captcha:
@@ -285,8 +260,6 @@ class RapidgatorHoster internal constructor(
     }
 
     private companion object {
-        /** Remainders up to this run in-process; longer ones go to the engine as wait time. */
-        const val MAX_INLINE_WAIT_MS = 5_000L
         const val SESSION_MAX_AGE_MS = 2L * 60 * 60 * 1000
         const val MAX_RESTARTS = 3
     }

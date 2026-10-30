@@ -166,8 +166,12 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.11 (versionCode 76), Release v0.9.11 mit
-  CI-signierter APK; `release/` enthält 0.9.7 bis 0.9.11. 0.9.11:
+- Zuletzt veröffentlicht: 0.9.12 (versionCode 77), Release v0.9.12 mit
+  CI-signierter APK; `release/` enthält 0.9.8 bis 0.9.12. 0.9.12:
+  SOLID-Umbau 4 erledigt: `hoster/FreeFlowKit.kt` (`browserLink`,
+  `awaitCountdown`, `walkToFile`, `freeFileHeaders`, `FreeSessions`,
+  `FreeBrowserSession`) für alle drei Free-Abläufe, `FreeFlowKitTest`; damit
+  sind die SOLID-Umbauten 1–4 abgeschlossen. 0.9.11:
   SOLID-Umbau 3 erledigt: Exportziele als Klassen hinter `ExportTarget`
   (`AppFolderTarget`, `NasTarget` in `ExportTarget.kt`, `SafTarget`,
   `MediaStoreTarget`), `StorageTarget` legt nur die Reihenfolge fest;
@@ -178,12 +182,15 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   `DownloadEngineTest` mit Fakes und MockWebServer, `Clock.wallMillis`).
   0.9.9: SOLID-Umbau 1 (`AccountInfo.premium` Pflichtfeld, `Account.premium`,
   Schema 12, `hasPremium` ohne Textvergleich; JVM-Migrationstests teilen
-  `MigrationSql`). Offen: Umbau 4 (siehe unten). 0.9.8: Fehler aus
+  `MigrationSql`). 0.9.8: Fehler aus
   der SOLID-Prüfung behoben (Export-Teilfehler behält Einträge,
   `StorageTarget.exportedAt` nach Anzeigepfad, Rapidgator-Login unter Sperre,
   HTTPS zentral), ddownload wartet bei Sperre 15, bei Wartung 20 Minuten
-  (Wunsch des Nutzers). Als Nächstes vereinbart, mit Tests: SOLID-Umbau 4,
-  gemeinsamer Free-Ablauf der Hoster.
+  (Wunsch des Nutzers). Aus der SOLID-Prüfung nicht beauftragt (nur
+  auf Wunsch): `RapidgatorApi` mit einem `withToken` statt dreier Varianten des
+  erneuten Logins,
+  `DdownloadPage`/`DdownloadSession` aus `DdownloadHoster` lösen,
+  `DownloadViewModel` aufteilen.
   0.9.7: R8 an
   (APK 22,2 → 12,5 MB, siehe „Technik in Kürze“). 0.9.6: Effizienz
   (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen

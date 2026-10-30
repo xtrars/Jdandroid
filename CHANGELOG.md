@@ -27,6 +27,23 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.12] – 2026-10-30
+
+### Geändert
+
+- Umbau: Die drei Free-Abläufe (Rapidgator, 1fichier, ddownload) teilen
+  sich ihre Bausteine (`FreeFlowKit`): Übernahme des Links aus der
+  Captcha-Ansicht, Countdown (kurz im Hintergrund, lang als Wartezeit),
+  Weiterleitungen bis zum Dateiserver, Header der Dateianfrage und der
+  gemerkte Stand je Datei. Ein Fehler, der dort behoben wird, gilt künftig
+  für alle Hoster; ein neuer Hoster kopiert keine hundert Zeilen mehr.
+
+### Behoben
+
+- ddownload: Ein in der Captcha-Ansicht abgefangener Link wird wie bei den
+  anderen Hostern als HTTPS übernommen, und ein gemerktes Formular derselben
+  Datei wird dabei verworfen.
+
 ## [0.9.11] – 2026-10-30
 
 ### Geändert
@@ -1256,6 +1273,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.12]: https://github.com/xtrars/Jdandroid/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/xtrars/Jdandroid/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/xtrars/Jdandroid/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/xtrars/Jdandroid/compare/v0.9.8...v0.9.9

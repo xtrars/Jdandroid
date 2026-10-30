@@ -59,8 +59,6 @@ class DdownloadHoster internal constructor(
     /** Main domains that never serve a file (pages only). */
     override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
 
-    internal val browserUa: String get() = Http.browserUa
-
     /** One cookie store (session) per account id. */
     private val cookieJars = java.util.concurrent.ConcurrentHashMap<Long, MemoryCookieJar>()
     private val clients = java.util.concurrent.ConcurrentHashMap<Long, OkHttpClient>()
@@ -414,10 +412,6 @@ class DdownloadHoster internal constructor(
     private val serviceHosts = setOf("my.ddownload.com", "my.ddl.to")
 
     override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
-
-    /** Resolves a Location header (possibly relative) against the page address. */
-    internal fun resolveLocation(base: String, location: String): String =
-        base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
 
     /**
      * Direct link from the HTML. Only file server addresses count: matching on

@@ -2,10 +2,8 @@ package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * ddownload free flow (no account). Page parsing lives in [DdownloadFreePage],
@@ -39,13 +37,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         }
     }
 
-    private val freeSessions = ConcurrentHashMap<String, FreeSession>()
-
-    /**
-     * Countdowns up to this run in-process; longer ones become engine wait
-     * time so the job neither holds a slot nor keeps the wake lock.
-     */
-    private val MAX_INLINE_COUNTDOWN = 5
+    private val freeSessions = FreeSessions<FreeSession> { it.expired }
 
     /** Minimum wait after a block without a concrete time (seconds). */
     private val MIN_RETRY_WAIT = 60
@@ -71,7 +63,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
     suspend fun resolve(url: String, hints: FreeHints): ResolvedLink = withContext(Dispatchers.IO) {
         val code = hoster.fileCode(url)
         val pageUrl = "${hoster.siteBase}/$code"
-        hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
+        hints.browserLink()?.let { direct ->
+            freeSessions.remove(code)
             return@withContext ResolvedLink(
                 direct,
                 fileNameFromUrl(direct),
@@ -82,17 +75,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         val client = hoster.clientFor(0L)
         // Form from an earlier attempt (long countdown): do not reload the
         // page, otherwise the countdown would start over
-        val session = freeSessions[code]?.takeUnless { it.expired }
-        val form: Map<String, String>
-        val fileName: String?
-        val fileSize: Long
-        val countdown: Int
-        if (session != null) {
-            form = session.form
-            fileName = session.fileName
-            fileSize = session.fileSize
-            countdown = ((session.readyAt - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
-        } else {
+        val session = freeSessions[code] ?: run {
             val page = with(hoster) { client.fetch(pageUrl, referer = siteBase) }
             hoster.checkBlocked(page)
             if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
@@ -102,8 +85,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
                 throw HosterException(Texts.t("hoster_ddownload_file_page_unreachable", page.code), permanent = false)
             }
             checkFreeBlockers(page.body)
-            fileName = hoster.pageFileName(page.body)
-            fileSize = hoster.pageFileSize(page.body)
+            val fileName = hoster.pageFileName(page.body)
+            val fileSize = hoster.pageFileSize(page.body)
 
             val captchaFields = when (val captcha = DdownloadFreePage.captcha(page.body)) {
                 is FreeCaptcha.Span -> mapOf("code" to captcha.code)
@@ -115,47 +98,30 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
                     pageUrl, Texts.t("hoster_ddownload_image_captcha")
                 )
             }
-            form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
-            countdown = DdownloadFreePage.countdownSeconds(page.body)
+            val form = freeDownloadForm(page.body, code, pageUrl, captchaFields)
+            val readyAt = System.currentTimeMillis() + DdownloadFreePage.countdownSeconds(page.body) * 1000L
             // Remember form and ready time; the next attempt submits it
-            freeSessions[code] = FreeSession(
-                form, fileName, fileSize, System.currentTimeMillis() + countdown * 1000L
-            )
+            FreeSession(form, fileName, fileSize, readyAt).also { freeSessions[code] = it }
         }
-
-        // Countdown before the download: short waits in-process, long ones
-        // back to the engine as wait time (form stays in [freeSessions])
-        if (countdown > MAX_INLINE_COUNTDOWN) {
-            throw WaitException(countdown + 1, Texts.t("hoster_ddownload_free_countdown"))
-        }
-        if (countdown > 0) delay((countdown + 1) * 1000L)
+        val countdown = ((session.readyAt - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+        // A long countdown goes back to the engine, the form stays in [freeSessions]
+        awaitCountdown(session.readyAt, Texts.t("hoster_ddownload_free_countdown"), marginMs = 1000)
 
         // The form is used up: another attempt reloads the page
         freeSessions.remove(code)
-        var resp = with(hoster) { client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false) }
-        hoster.checkBlocked(resp)
-        var direct: String? = null
-        var currentUrl = pageUrl
-        var hops = 0
-        while (direct == null && hops++ < 6) {
-            if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
-                val target = hoster.resolveLocation(currentUrl, resp.location)
-                if (hoster.isFileServerUrl(target)) { direct = target; break }
-                resp = with(hoster) { client.fetch(target, referer = currentUrl, followRedirects = false) }
-                currentUrl = target
-                hoster.checkBlocked(resp)
-                // Response is already the file: the fetched address is the link
-                if (resp.code in 200..299 && resp.isFile) { direct = target; break }
-                continue
-            }
-            if (resp.code in 200..299 && resp.isFile) {
-                // The file itself came back on the POST: its address fetched
-                // via GET is only the file page, so there is no usable link
-                throw HosterException(Texts.t("hoster_ddownload_no_direct_link", resp.code), permanent = false)
-            }
-            direct = hoster.extractDirectLink(resp.body)
-            break
-        }
+        val first = with(hoster) { client.fetch(pageUrl, form = session.form, referer = pageUrl, followRedirects = false) }
+        hoster.checkBlocked(first)
+        val walk = walkToFile(
+            first = first,
+            firstUrl = pageUrl,
+            maxHops = 6,
+            isDirect = hoster::isFileServerUrl,
+            fetch = { target, referer -> with(hoster) { client.fetch(target, referer = referer, followRedirects = false) } },
+            linkIn = hoster::extractDirectLink,
+            onPage = hoster::checkBlocked
+        )
+        val direct = walk.direct
+        val resp = walk.last
         if (direct.isNullOrBlank()) {
             val body = resp.body
             when {
@@ -175,8 +141,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         }
         ResolvedLink(
             direct,
-            fileName ?: fileNameFromUrl(direct),
-            fileSize,
+            session.fileName ?: fileNameFromUrl(direct),
+            session.fileSize,
             headers = freeHeaders(pageUrl, direct, hoster.cookieHeader(0L, direct))
         )
     }
@@ -227,15 +193,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      * in case the file server requires them. Cookies only for the hoster's own
      * hosts, never for a foreign CDN [directUrl].
      */
-    fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        headers["User-Agent"] = hoster.browserUa
-        headers["Referer"] = pageUrl
-        if (DirectLinks.isSiteHost(directUrl, hoster.siteHosts)) {
-            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
-        }
-        return headers
-    }
+    fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> =
+        freeFileHeaders(pageUrl, directUrl, cookies, hoster.siteHosts)
 
     /** File name from the last path segment of a file server address (only with an extension). */
     fun fileNameFromUrl(url: String): String? =

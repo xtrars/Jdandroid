@@ -5,7 +5,6 @@ import com.jdandroid.core.formatBytes
 import com.jdandroid.data.Account
 import com.jdandroid.data.plainApiKey
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -17,7 +16,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 1fichier.com: official REST API (API key, Premium/Access required); without
@@ -76,30 +74,22 @@ class OneFichierHoster internal constructor(
     /** Host of [siteBase]; domain of the cookies set by the app itself. */
     private val siteHost = siteBase.toHttpUrl().host
 
-    private val browserUa: String get() = Http.browserUa
-
     /**
      * State of a free flow per file id: own cookie store (file page session,
      * `LG=en`), the parsed form and the time from which it may be submitted.
      * Lives only in-process.
      */
-    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) {
+    private class FreeSession(val pageUrl: String, baseClient: OkHttpClient) :
+        FreeBrowserSession(baseClient, SESSION_MAX_AGE_MS) {
         var form: OneFichierForm? = null
         /** Hotlink: the file page already served the file, no form needed. */
         var hotlink: ResolvedLink? = null
         var fileName: String? = null
         var fileSize = -1L
         var readyAt = 0L
-        val createdAt = System.currentTimeMillis()
-        val jar = MemoryCookieJar()
-        val client: OkHttpClient = baseClient.newBuilder().followRedirects(true).cookieJar(jar).build()
-
-        val expired: Boolean get() = System.currentTimeMillis() - createdAt > SESSION_MAX_AGE_MS
-
-        fun cookieHeader(url: String): String? = jar.cookieHeader(url)
     }
 
-    private val freeSessions = ConcurrentHashMap<String, FreeSession>()
+    private val freeSessions = FreeSessions<FreeSession> { it.expired || it.form == null }
 
     private fun FreeSession.fetch(
         url: String,
@@ -152,47 +142,32 @@ class OneFichierHoster internal constructor(
             val id = link.substringAfter("?")
             val pageUrl = "$siteBase/?$id&lg=en"
 
-            hints.direktUrlAusBrowser?.takeIf { it.isNotBlank() }?.let { direct ->
+            hints.browserLink()?.let { direct ->
                 val session = freeSessions.remove(id)
                 return@withContext ResolvedLink(
-                    secure(direct),
+                    direct,
                     session?.fileName,
                     session?.fileSize ?: -1,
                     headers = freeHeaders(link, direct, hints.cookies ?: session?.cookieHeader(direct))
                 )
             }
 
-            val session = freeSessions[id]?.takeUnless { it.expired || it.form == null }
-                ?: startFreeSession(id, link, pageUrl)
+            val session = freeSessions[id] ?: startFreeSession(id, link, pageUrl)
             session.hotlink?.let { return@withContext it }
-
-            // Countdown: short remainders in-process, long ones to the engine
-            val remaining = session.readyAt - System.currentTimeMillis()
-            if (remaining > MAX_INLINE_WAIT_MS) {
-                throw WaitException(((remaining + 999) / 1000).toInt() + 1, Texts.t("hoster_onefichier_free_countdown"))
-            }
-            if (remaining > 0) delay(remaining + 500)
+            awaitCountdown(session.readyAt, Texts.t("hoster_onefichier_free_countdown"))
 
             val form = session.form ?: throw HosterException(Texts.t("hoster_onefichier_form_missing"), permanent = false)
             val action = form.action?.takeIf { it.startsWith("http", true) } ?: "$siteBase/?$id"
-            var resp = session.fetch(action, referer = pageUrl, form = form.fields, followRedirects = false)
-            var direct: String? = null
-            var hops = 0
-            var currentUrl = action
-            while (direct == null && hops++ < 4) {
-                if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
-                    val target = resolveLocation(currentUrl, resp.location)
-                    if (isDirectDownloadUrl(target)) { direct = target; break }
-                    resp = session.fetch(target, referer = currentUrl, followRedirects = false)
-                    currentUrl = target
-                    continue
-                }
-                // After a redirect via GET the response may be the file; the
-                // POST address itself, fetched via GET, is only the file page
-                if (resp.code in 200..299 && resp.isFile && currentUrl != action) { direct = resp.finalUrl; break }
-                direct = OneFichierFreePage.directLink(resp.body)
-                break
-            }
+            val walk = walkToFile(
+                first = session.fetch(action, referer = pageUrl, form = form.fields, followRedirects = false),
+                firstUrl = action,
+                maxHops = 4,
+                isDirect = ::isDirectDownloadUrl,
+                fetch = { target, referer -> session.fetch(target, referer = referer, followRedirects = false) },
+                linkIn = OneFichierFreePage::directLink
+            )
+            val direct = walk.direct
+            val resp = walk.last
             // The form is used up: the next attempt fetches the page again
             freeSessions.remove(id)
             if (direct.isNullOrBlank()) {
@@ -247,9 +222,6 @@ class OneFichierHoster internal constructor(
         return session
     }
 
-    private fun resolveLocation(base: String, location: String): String =
-        base.toHttpUrlOrNull()?.resolve(location)?.toString() ?: location
-
     private fun secure(url: String): String = DirectLinks.https(url)
 
     /**
@@ -258,15 +230,8 @@ class OneFichierHoster internal constructor(
      * requires them. Cookies only for the hoster's own hosts, never for a
      * foreign [directUrl].
      */
-    internal fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        headers["User-Agent"] = browserUa
-        headers["Referer"] = pageUrl
-        if (DirectLinks.isSiteHost(directUrl, siteHosts)) {
-            cookies?.trim()?.takeIf { it.isNotEmpty() }?.let { headers["Cookie"] = it }
-        }
-        return headers
-    }
+    internal fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> =
+        freeFileHeaders(pageUrl, directUrl, cookies, siteHosts)
 
     /**
      * File server address `https://a-3.1fichier.com/<token>` (no file
@@ -279,12 +244,6 @@ class OneFichierHoster internal constructor(
     }
 
     private companion object {
-        /**
-         * Countdown remainders up to this run in-process; longer ones go to
-         * the engine as wait time so the job neither holds a slot nor keeps
-         * the wake lock.
-         */
-        const val MAX_INLINE_WAIT_MS = 5_000L
         const val SESSION_MAX_AGE_MS = 10L * 60 * 1000
     }
 
