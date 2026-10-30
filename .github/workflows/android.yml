@@ -79,7 +79,8 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
+          # Gegen den mit R8 geschrumpften Build: prueft die JNI-Rueckrufe des RAR-Entpackers
+          script: ./gradlew --no-daemon -Pjd.testMinified connectedMinifiedAndroidTest
       - name: Testberichte hochladen
         if: always()
         uses: actions/upload-artifact@v7

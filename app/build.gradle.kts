@@ -49,8 +49,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // versionCode must grow with every release or the installer refuses the update.
-        versionCode = 71
-        versionName = "0.9.6"
+        versionCode = 72
+        versionName = "0.9.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -75,19 +75,28 @@ android {
 
     buildTypes {
         release {
-            // R8 off: the shrinker removed the RAR callback classes
-            // (Extractor.RarOpenCallback, ISequentialOutStream lambda) that are
-            // only reached from native 7-Zip code via JNI, so release builds
-            // could not extract RAR.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 shrinks and optimizes; proguard-rules.pro keeps what native
+            // 7-Zip code reaches via JNI (RarExtractionTest checks it).
+            // res/raw/keep.xml keeps the texts ResourceTexts looks up by name.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+        // The release build with the debug key, so the instrumented tests in CI
+        // run against shrunk code (-Pjd.testMinified)
+        create("minified") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            proguardFile("proguard-minified-tests.pro")
+            testProguardFile("proguard-androidtest.pro")
+        }
     }
+    testBuildType = if (providers.gradleProperty("jd.testMinified").isPresent) "minified" else "debug"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

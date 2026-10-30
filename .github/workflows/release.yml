@@ -183,6 +183,10 @@ jobs:
           mkdir -p dist
           cp "$apk" dist/
           (cd dist && sha256sum "JDAndroid-${VERSION}.apk" > "JDAndroid-${VERSION}.apk.sha256")
+          # R8 nummeriert Zeilen neu: Absturzberichte lassen sich nur mit dem
+          # Mapping genau dieses Builds zurueckuebersetzen (retrace)
+          mapping="app/build/outputs/mapping/release/mapping.txt"
+          if [ -f "$mapping" ]; then gzip -9 -c "$mapping" > "dist/JDAndroid-${VERSION}-mapping.txt.gz"; fi
           # Signatur pruefen (apksigner aus den Build-Tools des Runners)
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           if [ -n "$apksigner" ]; then

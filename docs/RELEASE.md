@@ -86,9 +86,11 @@ Erledigt (0.1.0):
       `app/build/outputs/bundle/release/app-release.aab`, mit derselben
       signingConfig). Bei Bedarf einen Schritt in `release.yml` ergänzen,
       der zusätzlich `bundleRelease` baut und das AAB hochlädt.
-- [ ] R8 bleibt aus (siehe `app/build.gradle.kts`); die APK ist dadurch
-      größer, aber der RAR-Entpacker funktioniert. Wer Minify einschaltet,
-      muss RAR auf einem Gerät testen.
+- [x] R8 an (seit 0.9.7), ohne Verschleierung; Keep-Regeln für die
+      JNI-Rückrufe des RAR-Entpackers und den NFS-Client, geprüft durch
+      `RarExtractionTest` gegen die Variante `minified` in der CI. Das
+      Mapping jedes Releases liegt als `JDAndroid-<v>-mapping.txt.gz` am
+      GitHub-Release (für Absturzberichte, R8-retrace).
 - [ ] Native Bibliotheken (7-Zip-JBinding) für alle ABIs enthalten; bei
       Play übernimmt das AAB die Aufteilung.
 

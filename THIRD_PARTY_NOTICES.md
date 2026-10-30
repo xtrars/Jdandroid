@@ -14,9 +14,11 @@ BSD-3-Clause, 0BSD; EPL-1.0 nur in den Unit-Tests, die nicht in die APK
 gelangen). Die einzige
 Copyleft-Komponente ist 7-Zip-JBinding-4Android unter der LGPL-2.1: Sie wird
 unverändert als eigenständige Bibliothek (Java-Klassen plus native `.so`, per
-JNI geladen) eingebunden, ihr Quelltext ist öffentlich verfügbar, und weil R8
-im Release-Build ausgeschaltet ist (`isMinifyEnabled = false`), lässt sich die
-Bibliothek in der APK unverändert austauschen – damit ist die LGPL-2.1 mit der
+JNI geladen) eingebunden, ihr Quelltext ist öffentlich verfügbar. R8 hält ihre
+Java-Klassen per Keep-Regel vollständig und ohne Umbenennung, die native
+Bibliothek bleibt unberührt, und weil der vollständige Quelltext von JDAndroid
+samt Build öffentlich ist, lässt sich die APK jederzeit mit einer geänderten
+Fassung der Bibliothek neu bauen – damit ist die LGPL-2.1 mit der
 Apache-2.0-Projektlizenz vereinbar, ohne dass JDAndroid selbst unter die LGPL
 oder GPL fiele. GPL-lizenzierte Bestandteile gibt es nicht. Zu beachten bleibt
 die unRAR-Einschränkung des in 7-Zip enthaltenen RAR-Codes: Aus diesem Code darf

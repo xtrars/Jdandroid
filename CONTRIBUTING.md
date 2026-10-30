@@ -50,10 +50,13 @@ Hinweise:
   Tasks **nacheinander** ausführen, nicht in einem Aufruf: parallele
   KSP-Läufe legen sonst eine leere `app/schemas/com.jdandroid.data.AppDatabase/N.json`
   an. Passiert es doch: leere Datei löschen, neu bauen.
-- R8/Shrinking ist im Release-Build bewusst **aus** (`isMinifyEnabled = false`).
-  Der Shrinker hatte Rückrufklassen des RAR-Entpackers entfernt, die nur aus
-  nativem 7-Zip-Code per JNI aufgerufen werden. Bitte nicht wieder einschalten,
-  ohne das Entpacken von RAR auf einem echten Gerät zu prüfen.
+- R8 verkleinert den Release-Build, ohne Verschleierung. Was nur per JNI
+  (7-Zip-Rückrufe) oder Reflection (NFS-Client mit Netty 3) erreicht wird,
+  halten Keep-Regeln in `app/proguard-rules.pro`; bitte nicht lockern. Die
+  instrumentierten Tests laufen in der CI gegen die gleich geschrumpfte
+  Variante `minified` (`./gradlew -Pjd.testMinified
+  connectedMinifiedAndroidTest`), `RarExtractionTest` entpackt dort ein- und
+  mehrteilige RAR-Archive.
 - Kotlin-Blockkommentare sind verschachtelbar: ein `/*` in KDoc (etwa in
   einem Pfad wie `proof/*`) öffnet einen weiteren Kommentar und bricht den
   Build.

@@ -27,6 +27,23 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.7] – 2026-10-30
+
+### Geändert
+
+- Der Release-Build wird mit R8 verkleinert und optimiert, ungenutzte
+  Ressourcen aus Bibliotheken fallen weg: Die APK schrumpft von 22,2 auf
+  12,5 MB, die App startet schneller und braucht weniger Speicher. Alle Texte
+  bleiben erhalten, auch die, die die App per Name nachschlägt. Der Code wird nicht verschleiert, Namen in Absturzberichten
+  bleiben lesbar; die Zeilennummern übersetzt die Mapping-Datei zurück, die
+  jedem GitHub-Release als `JDAndroid-<version>-mapping.txt.gz` beiliegt.
+- R8 war bisher aus, weil es die Klassen entfernte, die der RAR-Entpacker aus
+  nativem Code aufruft. Keep-Regeln halten jetzt 7-Zip-JBinding samt
+  Rückrufen sowie Netty 3 und den NFS-Client vollständig. Ein Abgleich der
+  Klassen und Methoden zeigt dieselbe JNI-Schnittstelle wie ohne R8, und die
+  CI lässt die Emulator-Tests (Entpacken ein- und mehrteiliger RAR-Archive,
+  Datenbank-Migrationen) gegen eine gleich geschrumpfte Variante laufen.
+
 ## [0.9.6] – 2026-10-30
 
 ### Geändert
@@ -1172,6 +1189,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.7]: https://github.com/xtrars/Jdandroid/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/xtrars/Jdandroid/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/xtrars/Jdandroid/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/xtrars/Jdandroid/compare/v0.9.3...v0.9.4

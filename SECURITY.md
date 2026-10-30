@@ -127,10 +127,11 @@ unter `app/src/main/`):
   Archiven werden vom jeweiligen Entpacker (zip4j, commons-compress,
   7-Zip-JBinding) verarbeitet; Meldungen zu Pfadausbrüchen („Zip Slip“) sind
   ausdrücklich willkommen.
-- **Release-Build:** R8 ist aus (`isMinifyEnabled = false`, siehe Kommentar
-  in `app/build.gradle.kts`). Der Code in der APK ist damit unverschleiert;
-  das ist bei einem Open-Source-Projekt beabsichtigt und keine Lücke.
-- **Absturzberichte** werden nur lokal gespeichert und in den Einstellungen
+- **Release-Build:** R8 verkleinert und optimiert den Code, verschleiert ihn
+  aber nicht (`-dontobfuscate` in `app/proguard-rules.pro`). Klassen- und
+  Methodennamen in der APK bleiben lesbar; das ist bei einem
+  Open-Source-Projekt beabsichtigt und keine Lücke.
+- **Absturzberichte** werden nur lokal gespeichert und beim nächsten Start
   angezeigt (`CrashReporter.kt`); es gibt keine Telemetrie und keine
   automatische Übermittlung.
 - **Berechtigungen:** Internet, Netzwerkstatus, Vordergrunddienst

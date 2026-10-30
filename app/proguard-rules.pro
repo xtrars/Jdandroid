@@ -1,7 +1,8 @@
-# R8 is off in the release build (isMinifyEnabled = false in app/build.gradle.kts);
-# these rules only apply once the shrinker is enabled again. They cover only what
-# is reached via JNI/reflection. No obfuscation, so crash reports stay readable.
+# R8 shrinks and optimizes the release build. The rules cover only what is
+# reached via JNI or reflection. No obfuscation and kept line numbers, so crash
+# reports stay readable (inlined frames: mapping.txt of the release).
 -dontobfuscate
+-keepattributes SourceFile,LineNumberTable
 
 # 7-Zip-JBinding calls Java classes and methods from native code by name,
 # including our callback implementations (RarOpenCallback, ISequentialOutStream
@@ -11,6 +12,22 @@
 -keep class * implements net.sf.sevenzipjbinding.** { *; }
 -keep class com.jdandroid.engine.Extractor$RarOpenCallback { *; }
 -keep class com.jdandroid.engine.Extractor$RarExtractCallback { *; }
+
+# NFS export: Netty 3 and the NFS client look up classes and loggers
+# reflectively; no device test covers this path, so both stay whole.
+-keep class org.jboss.netty.** { *; }
+-keep class com.emc.ecs.nfsclient.** { *; }
+# Optional Netty integrations the NFS client never uses
+-dontwarn com.google.protobuf.**
+-dontwarn javax.servlet.**
+-dontwarn org.apache.log4j.**
+-dontwarn org.apache.tomcat.jni.**
+-dontwarn org.eclipse.jetty.npn.**
+-dontwarn org.jboss.logging.**
+-dontwarn org.jboss.marshalling.**
+-dontwarn sun.security.**
+# SLF4J 1.7 looks for an optional binding and falls back to no logging
+-dontwarn org.slf4j.impl.StaticLoggerBinder
 
 # Room entities/DAOs need no keep rules: Room generates code and ships its own
 # consumer rules.

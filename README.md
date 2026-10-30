@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.9.6](https://img.shields.io/badge/Version-0.9.6-informational.svg)
+![Version 0.9.7](https://img.shields.io/badge/Version-0.9.7-informational.svg)
 
 ## English summary
 
@@ -27,7 +27,7 @@ until the NAS is reachable), Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
 **Install.** No store release. Download the newest APK from the
-[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.6.apk`, with a
+[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.7.apk`, with a
 SHA-256 checksum; the five newest APKs are also kept in
 [`release/`](release/)), allow installation from unknown sources for your
 browser or file manager, and open the file. Requires Android 8.0 (API 26) or
@@ -228,11 +228,11 @@ die fünf neuesten APKs im Repository unter [`release/`](release/):
 
 | Version | `versionCode` | Datei |
 |---|---|---|
-| **0.9.6** (aktuell) | 71 | [Release v0.9.6](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.6) · [`release/JDAndroid-0.9.6.apk`](release/JDAndroid-0.9.6.apk) |
+| **0.9.7** (aktuell) | 72 | [Release v0.9.7](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.7) · [`release/JDAndroid-0.9.7.apk`](release/JDAndroid-0.9.7.apk) |
+| 0.9.6 | 71 | [Release v0.9.6](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.6) · [`release/JDAndroid-0.9.6.apk`](release/JDAndroid-0.9.6.apk) |
 | 0.9.5 | 70 | [Release v0.9.5](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.5) · [`release/JDAndroid-0.9.5.apk`](release/JDAndroid-0.9.5.apk) |
 | 0.9.4 | 69 | [Release v0.9.4](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.4) · [`release/JDAndroid-0.9.4.apk`](release/JDAndroid-0.9.4.apk) |
 | 0.9.3 | 68 | [Release v0.9.3](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.3) · [`release/JDAndroid-0.9.3.apk`](release/JDAndroid-0.9.3.apk) |
-| 0.9.2 | 67 | [Release v0.9.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.2) · [`release/JDAndroid-0.9.2.apk`](release/JDAndroid-0.9.2.apk) |
 
 **Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
 Schlüssel signiert, der im Repository lag und deshalb als kompromittiert
@@ -338,9 +338,12 @@ Hinweise:
 - Abhängigkeiten werden über `gradle/verification-metadata.xml` per
   SHA-256-Prüfsumme verifiziert; nach einem Versionswechsel die Datei mit
   `./gradlew --write-verification-metadata sha256 <tasks>` neu erzeugen.
-- R8/Minify ist im Release-Build bewusst **aus**: der Shrinker entfernte die
-  Rückrufklassen des RAR-Entpackers, die nur aus nativem 7-Zip-Code per JNI
-  aufgerufen werden. Keep-Regeln dafür liegen in `app/proguard-rules.pro`.
+- R8 verkleinert den Release-Build (seit 0.9.7, APK rund 12,5 statt 22 MB),
+  ohne Verschleierung. Die Rückrufklassen des RAR-Entpackers, die nur aus
+  nativem 7-Zip-Code per JNI aufgerufen werden, halten Keep-Regeln in
+  `app/proguard-rules.pro`; die CI prüft das mit `RarExtractionTest` im
+  Emulator gegen die gleich geschrumpfte Variante `minified`
+  (`-Pjd.testMinified connectedMinifiedAndroidTest`).
 - **Signierung:** Der Keystore liegt nicht im Repository. `app/build.gradle.kts`
   liest zuerst die Umgebungsvariablen `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`,
   `KEY_ALIAS` und `KEY_PASSWORD`, sonst die Datei `keystore.properties` im

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texts are looked up by name (ResourceTexts.getIdentifier), the shrinker cannot see those uses -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/*,@plurals/*" />

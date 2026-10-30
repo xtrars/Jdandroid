@@ -83,8 +83,16 @@ Deutsch. Kommentare im Code sind Englisch.
   DataStore, OkHttp, eigener Mini-HTTP-Server auf `ServerSocket`
   (Click'n'Load auf 127.0.0.1:9666, `container/ClickNLoadServer.kt`),
   7-Zip-JBinding (RAR), zip4j, commons-compress (7z).
-- R8 ist bewusst aus (`isMinifyEnabled = false`): Shrinking entfernte
-  JNI-Callback-Klassen des RAR-Entpackers.
+- R8 an (seit 0.9.7), `-dontobfuscate`, Ressourcen geschrumpft; alle Texte
+  und Pluralformen hält `res/raw/keep.xml` (`ResourceTexts` sucht sie per
+  `getIdentifier`, das sieht der Shrinker nicht). Keep-Regeln in
+  `proguard-rules.pro` für 7-Zip-JBinding samt Rückrufen (JNI) sowie Netty 3
+  und NFS-Client (Reflection); ohne sie entpackte der Release kein RAR.
+  Instrumentierte Tests laufen gegen `minified` (R8 wie Release,
+  Debug-Schlüssel): `./gradlew -Pjd.testMinified connectedMinifiedAndroidTest`;
+  Test-Aufrufe halten `proguard-minified-tests.pro` (App) und
+  `proguard-androidtest.pro` (Test-APK). Mapping je Release als
+  `JDAndroid-<v>-mapping.txt.gz` am GitHub-Release (Zeilennummern).
 - Build: `./gradlew --offline -q testDebugUnitTest assembleRelease`; Lint
   (`lintDebug`) einzeln und ohne `--offline` starten (im selben Aufruf
   scheitert der Konfigurations-Cache, offline fehlen Lint-Artefakte).
@@ -158,14 +166,15 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.6 (versionCode 71), Release v0.9.6 mit
-  CI-signierter APK; `release/` enthält 0.9.2 bis 0.9.6. 0.9.6: Effizienz
+- Zuletzt veröffentlicht: 0.9.7 (versionCode 72), Release v0.9.7 mit
+  CI-signierter APK; `release/` enthält 0.9.3 bis 0.9.7. 0.9.7: R8 an
+  (APK 22,2 → 12,5 MB, siehe „Technik in Kürze“). 0.9.6: Effizienz
   (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen
   Channel und bei aus Bildschirm alle 15 s, Wake-Lock ohne Referenzzählung,
   `LocalCalmMotion` für Neon-Effekte, RAR ohne Passwort sofort erkannt,
   Regex vorübersetzt), `RarExtractionTest` im Emulator mit Archiven aus
   `tools/mkrar.py` (7-Zip prüft sie: `apt-get install 7zip`, `7z t`).
-  In Arbeit: 0.9.7 mit R8 (siehe unten). Bewusst offen: direkter Export beim
+  Bewusst offen: direkter Export beim
   Entpacken (doppeltes Kopieren in MediaStore) und Fortschritt der
   Download-Liste ohne Neuberechnung aller Gruppen alle 500 ms. 0.9.5: Build ohne
   Compiler-Warnungen (Stand nach Kotlin 2.4); neue Warnungen gleich

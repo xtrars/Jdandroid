@@ -11,8 +11,9 @@
 
 - [ ] `./gradlew testDebugUnitTest` läuft grün (85+ Unit-Tests unter `app/src/test`)
 - [ ] `./gradlew lintDebug` ohne neue Warnungen
-- [ ] `./gradlew assembleRelease` baut; bei Entpack-Änderungen auf einem Gerät mit
-      Release-APK getestet (R8 ist aus, JNI-Callbacks des RAR-Entpackers)
+- [ ] `./gradlew assembleRelease` baut (R8 an); bei Entpack-Änderungen läuft
+      `RarExtractionTest` gegen die geschrumpfte Variante (`-Pjd.testMinified
+      connectedMinifiedAndroidTest`, in der CI automatisch)
 - [ ] Bei Änderungen an Entities in `Db.kt`: Schema-Version erhöht, Migration ergänzt,
       neues Schema unter `app/schemas/` exportiert, `MigrationTest` (androidTest) erweitert
 - [ ] Bei neuen oder geänderten Abhängigkeiten: `gradle/verification-metadata.xml`
