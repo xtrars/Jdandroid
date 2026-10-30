@@ -151,10 +151,14 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 - Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
   Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
 
-## Stand für die nächste Sitzung (28.10.2026)
+## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.2 (versionCode 67), Release v0.9.2 mit
-  CI-signierter APK; `release/` enthält 0.8.1 bis 0.9.2. Seit 0.9.1 läuft
+- Zuletzt veröffentlicht: 0.9.3 (versionCode 68), Release v0.9.3 mit
+  CI-signierter APK; `release/` enthält 0.8.2 bis 0.9.3. 0.9.3: Sternenflug
+  steht bei „Animationen entfernen“ still, Energiesparmodus etwa 30 Bilder/s
+  (`FramePacing`). Als Nächstes zugesagt: 0.9.4 mit den offenen
+  Dependabot-PRs (#6 sqlite-jdbc, #12 Kotlin/KSP, #13 OkHttp, #14 Gradle 9,
+  #15 androidx), getrennt von Funktionsänderungen. Seit 0.9.1 läuft
   der Sternenflug ohne Schleife: Zeit = Uhrzeit in Sekunden als `Double`
   (`rememberFlightTime`: beim Start eines Laufs gelesen, im Bildtakt
   fortgezählt, nur in der Zeichenphase gelesen), jede Runde eines Sterns

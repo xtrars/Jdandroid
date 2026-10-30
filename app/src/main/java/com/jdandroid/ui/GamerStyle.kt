@@ -1,5 +1,11 @@
 package com.jdandroid.ui
 
+import android.animation.ValueAnimator
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.PowerManager
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -10,6 +16,7 @@ import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,20 +36,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -196,14 +211,14 @@ private const val NEBULA_SWING_SECONDS = 120.0
 /**
  * Device tilt from the gravity sensor as screen-relative -1..1 (x right, y
  * down), low-pass filtered, mapped through the display rotation. Listens only
- * while the activity is started; zero without a sensor.
+ * while [enabled] and the activity is started; zero without a sensor.
  */
 @Composable
-fun rememberTilt(): State<Offset> {
+fun rememberTilt(enabled: Boolean = true): State<Offset> {
     val context = LocalContext.current
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val tilt = remember { mutableStateOf(Offset.Zero) }
-    val listening = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    val listening = enabled && lifecycle.isAtLeast(Lifecycle.State.STARTED)
     DisposableEffect(listening) {
         if (!listening) return@DisposableEffect onDispose {}
         val manager = context.getSystemService(SensorManager::class.java)
@@ -222,6 +237,37 @@ fun rememberTilt(): State<Offset> {
         onDispose { manager.unregisterListener(listener) }
     }
     return tilt
+}
+
+/** Battery saver state, followed live while the activity is started. */
+@Composable
+private fun rememberPowerSave(): State<Boolean> {
+    val context = LocalContext.current
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val manager = remember { context.getSystemService(PowerManager::class.java) }
+    val saver = remember { mutableStateOf(manager?.isPowerSaveMode == true) }
+    val listening = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    DisposableEffect(listening) {
+        if (!listening || manager == null) return@DisposableEffect onDispose {}
+        saver.value = manager.isPowerSaveMode
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                saver.value = manager.isPowerSaveMode
+            }
+        }
+        val filter = IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return saver
+}
+
+/** Frame skipping for the backdrop under battery saver. */
+internal object FramePacing {
+    /** Least spacing of drawn frames: every 2nd at 60 Hz, every 4th at 120 Hz, about 30 a second. */
+    const val SAVER_NANOS = 30_000_000L
+
+    fun due(frame: Long, shown: Long, minNanos: Long): Boolean = frame - shown >= minNanos
 }
 
 /** Gravity vector to screen tilt; pure so the rotation mapping is testable. */
@@ -259,98 +305,122 @@ fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Com
 
 /**
  * Wall-clock seconds, read when a run starts and then advanced with the frame
- * clock while [running], so setting the clock cannot make the stars jump. The
- * star field is a function of it: the flight never repeats, not even across
- * device restarts, and goes on after a rotation or a return to the app.
+ * clock while [running], at most once per [minFrameNanos]; setting the clock
+ * cannot make the stars jump. The star field is a function of it: the flight
+ * never repeats, not even across device restarts.
  */
 @Composable
-private fun rememberFlightTime(running: Boolean): State<Double> {
+private fun rememberFlightTime(running: Boolean, minFrameNanos: Long): State<Double> {
     val time = remember { mutableDoubleStateOf(System.currentTimeMillis() / 1e3) }
+    val spacing by rememberUpdatedState(minFrameNanos)
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
         val start = System.currentTimeMillis() / 1e3
         time.doubleValue = start
         val first = withInfiniteAnimationFrameNanos { it }
-        while (true) withInfiniteAnimationFrameNanos { frame -> time.doubleValue = start + (frame - first) / 1e9 }
+        var shown = first
+        while (true) withInfiniteAnimationFrameNanos { frame ->
+            if (FramePacing.due(frame, shown, spacing)) {
+                shown = frame
+                time.doubleValue = start + (frame - first) / 1e9
+            }
+        }
     }
     return time
 }
 
 /**
  * Two drifting nebula glows, a faint horizon grid and the star field flying
- * past. Animates only while the activity is started, so a backgrounded app
- * costs nothing.
+ * past. Animates only while the activity is started, stands still when the
+ * system removes animations and draws about 30 frames a second under battery
+ * saver.
  */
 @Composable
 private fun SpaceCanvas() {
     val field = remember { Starfield() }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val clock = rememberFlightTime(lifecycle.isAtLeast(Lifecycle.State.STARTED))
-    val tilt by rememberTilt()
+    val started = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    // Re-read on every start: the switch sits in the system settings, so changing it means leaving the app.
+    val animate = remember(started) { ValueAnimator.areAnimatorsEnabled() }
+    val saver by rememberPowerSave()
+    val clock = rememberFlightTime(started && animate, if (saver) FramePacing.SAVER_NANOS else 0L)
+    val tilt = rememberTilt(enabled = animate)
     val background = MaterialTheme.colorScheme.background
-    Canvas(Modifier.fillMaxSize()) {
-        // Read in the draw phase only, so a frame redraws without recomposing.
-        val time = clock.value
-        drawRect(background)
-        drawNebula(time, tilt)
-        drawHorizonGrid()
-        val unit = size.minDimension
-        val centre = Offset(size.width / 2f, size.height / 2f)
-        val limitX = centre.x / unit + OFFSCREEN_MARGIN
-        val limitY = centre.y / unit + OFFSCREEN_MARGIN
-        for (star in field.stars) {
-            val p = field.project(star, time, tilt)
-            if (abs(p.x) > limitX || abs(p.y) > limitY) continue
-            val z = field.depthAt(star, time)
-            val colour = Color.White.copy(alpha = field.alphaAt(star, time))
-            val radius = field.radiusDp(z).dp.toPx()
-            val at = centre + p * unit
-            if (z < STREAK_DEPTH) {
-                val from = centre + field.project(star, time - STREAK_SECONDS, tilt) * unit
-                drawLine(colour.copy(alpha = colour.alpha * STREAK_ALPHA), from, at, radius * 2f, StrokeCap.Round)
+    Spacer(
+        // Own layer: a star frame does not re-record the screen above it, nor the other way round.
+        Modifier.fillMaxSize().graphicsLayer().drawWithCache {
+            val grid = horizonGrid(size)
+            val gridStroke = Stroke(1.dp.toPx())
+            val radius = size.maxDimension * 0.55f
+            val magenta = Brush.radialGradient(listOf(Neon.magenta.copy(alpha = 0.22f), Color.Transparent), Offset.Zero, radius)
+            val cyan = Brush.radialGradient(listOf(Neon.cyan.copy(alpha = 0.18f), Color.Transparent), Offset.Zero, radius)
+            onDrawBehind {
+                // Read in the draw phase only, so a frame redraws without recomposing.
+                val time = clock.value
+                // Sampled on the frames the clock drives, so sensor events alone never cause a redraw.
+                val shift = if (animate) Snapshot.withoutReadObservation { tilt.value } else Offset.Zero
+                drawRect(background)
+                drawNebula(time, shift, radius, magenta, cyan)
+                drawPath(grid, GRID_COLOR, style = gridStroke)
+                drawStars(field, time, shift)
             }
-            drawCircle(colour, radius, at)
         }
+    )
+}
+
+private fun DrawScope.drawStars(field: Starfield, time: Double, tilt: Offset) {
+    val unit = size.minDimension
+    val centre = Offset(size.width / 2f, size.height / 2f)
+    val limitX = centre.x / unit + OFFSCREEN_MARGIN
+    val limitY = centre.y / unit + OFFSCREEN_MARGIN
+    for (star in field.stars) {
+        val p = field.project(star, time, tilt)
+        if (abs(p.x) > limitX || abs(p.y) > limitY) continue
+        val z = field.depthAt(star, time)
+        val colour = Color.White.copy(alpha = field.alphaAt(star, time))
+        val radius = field.radiusDp(z).dp.toPx()
+        val at = centre + p * unit
+        if (z < STREAK_DEPTH) {
+            val from = centre + field.project(star, time - STREAK_SECONDS, tilt) * unit
+            drawLine(colour.copy(alpha = colour.alpha * STREAK_ALPHA), from, at, radius * 2f, StrokeCap.Round)
+        }
+        drawCircle(colour, radius, at)
     }
 }
 
-/** Nebulae sit far back: a slow drift plus a small share of the tilt parallax. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNebula(time: Double, tilt: Offset) {
+/**
+ * Nebulae sit far back: a slow drift plus a small share of the tilt parallax.
+ * The glows are centred on the origin and moved by translation, so their
+ * brushes are built once per size.
+ */
+private fun DrawScope.drawNebula(time: Double, tilt: Offset, radius: Float, magenta: Brush, cyan: Brush) {
     val drift = sin(2f * PI.toFloat() * fraction(time / NEBULA_SWING_SECONDS))
-    val radius = size.maxDimension * 0.55f
     val shift = Offset(-tilt.x * Starfield.PARALLAX * 0.25f * size.width, -tilt.y * Starfield.PARALLAX * 0.25f * size.height)
-    val magenta = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f) + shift
-    val cyan = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f) + shift
-    drawCircle(
-        Brush.radialGradient(listOf(Neon.magenta.copy(alpha = 0.22f), Color.Transparent), radius = radius, center = magenta),
-        radius = radius,
-        center = magenta
-    )
-    drawCircle(
-        Brush.radialGradient(listOf(Neon.cyan.copy(alpha = 0.18f), Color.Transparent), radius = radius, center = cyan),
-        radius = radius,
-        center = cyan
-    )
+    val m = Offset(size.width * (0.15f + 0.1f * drift), size.height * 0.2f) + shift
+    val c = Offset(size.width * (0.9f - 0.1f * drift), size.height * 0.75f) + shift
+    translate(m.x, m.y) { drawCircle(magenta, radius, Offset.Zero) }
+    translate(c.x, c.y) { drawCircle(cyan, radius, Offset.Zero) }
 }
 
+private val GRID_COLOR = Neon.cyan.copy(alpha = 0.07f)
+
 /** Perspective grid in the lower third: lines converge towards a vanishing point above the screen. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHorizonGrid() {
-    val color = Neon.cyan.copy(alpha = 0.07f)
+private fun Density.horizonGrid(size: Size): Path = Path().apply {
     val top = size.height * 0.68f
-    val stroke = 1.dp.toPx()
     var y = top
     var gap = 6.dp.toPx()
     while (y < size.height) {
-        drawLine(color, Offset(0f, y), Offset(size.width, y), stroke)
+        moveTo(0f, y)
+        lineTo(size.width, y)
         y += gap
         gap *= 1.28f
     }
-    val vanish = Offset(size.width / 2f, top - size.height * 0.6f)
+    val vanishX = size.width / 2f
     val columns = 12
     for (i in 0..columns) {
         val x = size.width * i / columns
-        val bottom = Offset(vanish.x + (x - vanish.x) * 2.2f, size.height)
-        drawLine(color, Offset(x, top), bottom, stroke)
+        moveTo(x, top)
+        lineTo(vanishX + (x - vanishX) * 2.2f, size.height)
     }
 }
 

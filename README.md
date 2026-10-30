@@ -3,7 +3,7 @@
 [![Android CI](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml/badge.svg?branch=claude%2Fandroid-jdownloader-app-1zqi1n)](https://github.com/xtrars/Jdandroid/actions/workflows/android.yml)
 [![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84.svg)
-![Version 0.9.2](https://img.shields.io/badge/Version-0.9.2-informational.svg)
+![Version 0.9.3](https://img.shields.io/badge/Version-0.9.3-informational.svg)
 
 ## English summary
 
@@ -27,7 +27,7 @@ until the NAS is reachable), Material You theming, Click'n'Load server bound to
 127.0.0.1:9666 only, credentials encrypted with an Android KeyStore key.
 
 **Install.** No store release. Download the newest APK from the
-[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.2.apk`, with a
+[GitHub Releases](https://github.com/xtrars/Jdandroid/releases) page (currently `JDAndroid-0.9.3.apk`, with a
 SHA-256 checksum; the five newest APKs are also kept in
 [`release/`](release/)), allow installation from unknown sources for your
 browser or file manager, and open the file. Requires Android 8.0 (API 26) or
@@ -203,12 +203,13 @@ bei Rapidgator) schalten ein Konto nie dauerhaft ab.
 
 Jetpack Compose mit Material 3 und **Material You**: dynamisches Farbschema
 ab Android 12, darunter das Material-Standardschema; Hell/Dunkel nach System
-oder fest wählbar, dazu das Farbschema „Space“: Sternenflug mit Lage-Parallaxe,
+oder fest wählbar, dazu das Farbschema „Space“: Sternenflug mit Lage-Parallaxe
+(steht bei „Animationen entfernen“ still, im Energiesparmodus etwa 30 Bilder/s),
 Neon-Rahmen mit Leuchtschein, Lauflicht-Balken und Monospace-HUD-Schrift,
 die einzige eigene Palette. Alle Schaltflächen bleiben auch bei eingeblendeter
 Tastatur sichtbar; pro Zeile gibt es ein Drei-Punkte-Aktionsmenü, am Paket
-zusätzlich Start/Pause. Fehler erscheinen als eine klare Meldung, ein
-Absturzbericht steht in den Einstellungen unter „Letzter Absturz“.
+zusätzlich Start/Pause. Fehler erscheinen als eine klare Meldung; nach einem
+Absturz zeigt die App beim nächsten Start einmal den Bericht zum Kopieren.
 
 Die Oberfläche gibt es auf **Deutsch und Englisch**; sie folgt der
 Gerätesprache (Deutsch ist die Standardsprache). Alle Texte – auch die
@@ -227,11 +228,11 @@ die fünf neuesten APKs im Repository unter [`release/`](release/):
 
 | Version | `versionCode` | Datei |
 |---|---|---|
-| **0.9.2** (aktuell) | 67 | [Release v0.9.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.2) · [`release/JDAndroid-0.9.2.apk`](release/JDAndroid-0.9.2.apk) |
+| **0.9.3** (aktuell) | 68 | [Release v0.9.3](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.3) · [`release/JDAndroid-0.9.3.apk`](release/JDAndroid-0.9.3.apk) |
+| 0.9.2 | 67 | [Release v0.9.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.2) · [`release/JDAndroid-0.9.2.apk`](release/JDAndroid-0.9.2.apk) |
 | 0.9.1 | 66 | [Release v0.9.1](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.1) · [`release/JDAndroid-0.9.1.apk`](release/JDAndroid-0.9.1.apk) |
 | 0.9.0 | 65 | [Release v0.9.0](https://github.com/xtrars/Jdandroid/releases/tag/v0.9.0) · [`release/JDAndroid-0.9.0.apk`](release/JDAndroid-0.9.0.apk) |
 | 0.8.2 | 64 | [Release v0.8.2](https://github.com/xtrars/Jdandroid/releases/tag/v0.8.2) · [`release/JDAndroid-0.8.2.apk`](release/JDAndroid-0.8.2.apk) |
-| 0.8.1 | 63 | [Release v0.8.1](https://github.com/xtrars/Jdandroid/releases/tag/v0.8.1) · [`release/JDAndroid-0.8.1.apk`](release/JDAndroid-0.8.1.apk) |
 
 **Signaturwechsel mit 0.1.0.** Die `0.0.x`-Versionen waren mit einem
 Schlüssel signiert, der im Repository lag und deshalb als kompromittiert
@@ -388,7 +389,7 @@ Die App ist noch nicht in einem Store. Die Unterlagen dafür liegen vor:
 ```
 app/src/main/java/com/jdandroid/
 ├── JdApp.kt            Application: Datenbank, Einstellungen, Benachrichtigungskanal
-├── CrashReporter.kt    unbehandelte Ausnahmen → Einstellungen „Letzter Absturz“
+├── CrashReporter.kt    unbehandelte Ausnahmen → Dialog beim nächsten Start
 ├── data/               Room (Db.kt: packages/downloads/accounts, Schema v11, Migrationen),
 │                       DataStore-Einstellungen, Secrets (AES-GCM/Keystore),
 │                       LinkChecker (Online-Prüfung), AccountRefresher, PackageNaming

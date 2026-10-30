@@ -2,6 +2,7 @@ package com.jdandroid
 
 import android.view.Surface
 import androidx.compose.ui.geometry.Offset
+import com.jdandroid.ui.FramePacing
 import com.jdandroid.ui.Star
 import com.jdandroid.ui.Starfield
 import com.jdandroid.ui.Starfield.Companion.FADE_DEPTH
@@ -19,8 +20,8 @@ import org.junit.Test
 /**
  * The backdrop is deterministic, every star approaches from the vanishing
  * point on a ~30 s lap, leaves the screen before it restarts, the flight never
- * repeats, stays smooth at any clock value and a tilt shifts near stars more
- * than far ones.
+ * repeats, stays smooth at any clock value, a tilt shifts near stars more
+ * than far ones and battery saver draws about 30 frames a second.
  */
 class StarfieldTest {
 
@@ -170,6 +171,28 @@ class StarfieldTest {
             val start = lapStart(star)
             assertTrue(field.alphaAt(star, start + 0.01) < 0.01f)
             assertTrue(field.alphaAt(star, start + FADE_DEPTH * LAP_SECONDS + 1.0) >= TWINKLE_MIN)
+        }
+    }
+
+    @Test
+    fun energiesparmodusEtwa30BilderProSekunde() {
+        for (hz in listOf(60, 90, 120, 144)) {
+            val period = 1_000_000_000L / hz
+            fun drawn(minNanos: Long): Int {
+                var shown = 0L
+                var count = 0
+                for (k in 1..hz) {
+                    // Vsync timestamps jitter by a fraction of a millisecond
+                    val frame = k * period + (k % 3 - 1) * 400_000L
+                    if (FramePacing.due(frame, shown, minNanos)) {
+                        shown = frame
+                        count++
+                    }
+                }
+                return count
+            }
+            assertEquals(hz, drawn(0L))
+            assertTrue("hz=$hz drawn=${drawn(FramePacing.SAVER_NANOS)}", drawn(FramePacing.SAVER_NANOS) in 28..30)
         }
     }
 

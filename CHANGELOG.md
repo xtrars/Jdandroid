@@ -27,6 +27,24 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.3] – 2026-10-30
+
+### Geändert
+
+- Schema „Space“ beachtet die Systemeinstellungen: Ist in den
+  Bedienungshilfen „Animationen entfernen“ an, steht der Sternenhimmel still
+  und der Lagesensor bleibt aus. Im Energiesparmodus zeichnet der
+  Sternenflug höchstens etwa 30 Bilder pro Sekunde statt so viele, wie das
+  Display schafft (bis zu 120); das Ein- und Ausschalten wirkt sofort.
+  Bewegungen des Geräts lösen dabei kein zusätzliches Bild aus.
+- Gitter und Nebel des Sternenhimmels werden nur noch bei einer neuen
+  Bildschirmgröße aufgebaut statt in jedem Bild.
+
+### Behoben
+
+- README: Ein Absturzbericht erscheint als Dialog beim nächsten Start, nicht
+  in den Einstellungen; der Abschnitt „Letzter Absturz“ war längst entfernt.
+
 ## [0.9.2] – 2026-10-28
 
 ### Geändert
@@ -1086,6 +1104,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.3]: https://github.com/xtrars/Jdandroid/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/xtrars/Jdandroid/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/xtrars/Jdandroid/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/xtrars/Jdandroid/compare/v0.8.2...v0.9.0

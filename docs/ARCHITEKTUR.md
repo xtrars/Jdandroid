@@ -73,7 +73,11 @@ Dienst an (`DownloadService.send`) bzw. die Linkprüfung.
   Funktionen von Zeit und Neigung; die Zeit ist die Uhrzeit in Sekunden als
   `Double`, beim Start eines Laufs gelesen und im Bildtakt fortgezählt, jede
   Runde eines Sterns bekommt aus ihrer Nummer eine neue Position, der Flug
-  kennt keine Schleife, auch nicht über Gerätestarts),
+  kennt keine Schleife, auch nicht über Gerätestarts; bei „Animationen
+  entfernen“ (`ValueAnimator.areAnimatorsEnabled()`) steht er still ohne
+  Lagesensor, im Energiesparmodus zeichnet `FramePacing` etwa 30 Bilder/s,
+  die Neigung wird nur in diesen Bildern abgetastet; Gitter und Nebel-Pinsel
+  liegen in `drawWithCache`),
   `neonFrame`, `NeonProgress`, `NeonLine` und die Monospace-Typografie;
   Karten, Balken, Leisten und Scaffolds schalten über `LocalGamer` um.
   Der gespeicherte Modus wird beim Start einmal mit `runBlocking` gelesen,
