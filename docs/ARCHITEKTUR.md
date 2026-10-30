@@ -297,7 +297,15 @@ niedrige Priorität) und `events` (Click'n'Load-Eingang, Neustart, Zeitlimit).
 ## Download-Engine
 
 `DownloadEngine` verwaltet die Jobs in einer `ConcurrentHashMap<Long, Job>`
-unter einem `Mutex`. Kernpunkte:
+unter einem `Mutex`. Alles, was sie braucht, bekommt sie über den
+Konstruktor (`engine/EnginePorts.kt`): die Download-Zeilen als `QueueDao`
+(Rolle der Room-`DownloadDao`), Einstellungen, Speicherziel, Abschluss
+(`ArchiveCoordinator` als `Completion`), Link-Auflösung (`FreeFlow`),
+Hoster-Liste, HTTP-Client, Netzregel, freier Platz und Uhr (monoton und
+Wanduhr). `DownloadEngine.create(context, …)` verdrahtet die App;
+`DownloadEngineTest` prüft Plätze, Pause, Wiederholungen, Wartezeiten,
+Nur-WLAN und einen echten HTTP-Download mit Fortsetzen auf der JVM.
+Kernpunkte:
 
 - **Range-Resume**: Die Teildatei heißt `<id>-<name>.part` im privaten
   App-Ordner. Bei vorhandenem Rest sendet die Engine `Range: bytes=<offset>-`

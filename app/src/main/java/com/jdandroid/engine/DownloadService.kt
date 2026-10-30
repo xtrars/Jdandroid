@@ -125,7 +125,7 @@ class DownloadService : Service() {
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
             .apply { setReferenceCounted(false) }
-        engine = DownloadEngine(this, scope) { requestRefresh() }
+        engine = DownloadEngine.create(this, scope) { requestRefresh() }
         scope.launch {
             for (request in refreshRequests) {
                 // A failing refresh goes to the scope's error handler and must not end the loop

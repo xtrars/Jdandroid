@@ -16,10 +16,12 @@ import com.jdandroid.core.formatBytes
 import com.jdandroid.data.AccountRefresher
 import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.QueueDao
 import com.jdandroid.data.PackageNaming
 import com.jdandroid.data.renameFile
 import com.jdandroid.hoster.CaptchaRequiredException
 import com.jdandroid.hoster.DirectLinks
+import com.jdandroid.hoster.Hoster
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
@@ -37,6 +39,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
@@ -52,16 +55,26 @@ import java.security.MessageDigest
  * at most every [SAVE_MS] reach the database; live values (bytes, speed,
  * extraction percent) exist in the bus only.
  */
-class DownloadEngine(
-    private val context: Context,
+class DownloadEngine internal constructor(
     private val scope: CoroutineScope,
-    /** Monotonic clock for measurements and throttling; tests can advance it. */
-    private val clock: Clock = Clock.SYSTEM,
+    private val dao: QueueDao,
+    private val settings: EngineSettings,
+    private val files: DownloadFiles,
+    private val archives: Completion,
+    private val exportRetry: ExportRetries,
+    private val freeFlow: LinkResolver,
+    private val packages: PackageStore,
+    private val hosters: (String) -> Hoster?,
+    private val http: OkHttpClient,
+    /** Cleartext is disabled in the app, so every direct link goes via HTTPS ([DirectLinks.https]). */
+    private val secureLink: (String) -> String,
+    private val network: NetworkPolicy,
+    /** Free bytes on the volume of a directory, checked before a transfer. */
+    private val freeBytes: (File) -> Long,
+    /** Monotonic time for measurements and throttling, wall time for retryAt; tests advance both. */
+    private val clock: Clock,
     private val onStateChanged: () -> Unit
 ) {
-    private val app = context.applicationContext as JdApp
-    private val dao = app.db.downloadDao()
-    private val accountDao = app.db.accountDao()
 
     // ConcurrentHashMap: size() is read by the service thread without the mutex
     private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
@@ -70,12 +83,6 @@ class DownloadEngine(
     @Volatile
     private var lastNotify = clock.nowMillis() - NOTIFY_MS
 
-    private val storage = StorageTarget(context, app.settings)
-    private val exportRetry = ExportRetry(dao, app.settings, storage, clock)
-    private val freeFlow = FreeFlow(dao, accountDao, app.settings, recheck = { AccountRefresher.check(app, it.id) })
-    private val archives = ArchiveCoordinator(
-        app, dao, app.settings, storage, scope, clock, onStateChanged
-    ) { scope.launch { pump() } }
     /** See [ArchiveCoordinator.completionMutex]. */
     private val completionMutex get() = archives.completionMutex
 
@@ -90,7 +97,7 @@ class DownloadEngine(
 
     init {
         scope.launch {
-            app.settings.speedLimitMbit.collect {
+            settings.speedLimitMbit.collect {
                 limiter.limitBps = com.jdandroid.data.SettingsRepository.mbitToBytesPerSecond(it)
             }
         }
@@ -109,7 +116,7 @@ class DownloadEngine(
         // Entries held for a captcha need no running service: solving it restarts the service
         val idle = jobs.isEmpty() && archives.activeCount == 0 && exportRetry.activeCount == 0 &&
             archives.exportingIds.isEmpty() &&
-            dao.queuedCountDue(System.currentTimeMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
+            dao.queuedCountDue(clock.wallMillis() + FreeMode.USER_ACTION_HORIZON_MS) == 0
         if (idle) session.clear()
         idle
     }
@@ -134,27 +141,19 @@ class DownloadEngine(
         }
     }
 
-    /** True when "Wi-Fi only" is set and the active network is metered. */
-    private fun blockedByMeteredNetwork(wifiOnly: Boolean): Boolean {
-        if (!wifiOnly) return false
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return true
-        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-    }
-
     /** Starts queued downloads while slots are free and arms the retry timer. */
     suspend fun pump() {
         startGate.await()
-        if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
+        if (network.blocked(settings.wifiOnly())) {
             onStateChanged()
             return
         }
-        val max = app.settings.currentMaxConcurrent()
+        val max = settings.maxConcurrent()
         mutex.withLock {
             while (jobs.size < max) {
                 // Exclude running ids and entries still being exported: never the same download twice
                 val running = jobs.keys.toList() + archives.exportingIds + listOf(-1L)
-                val next = dao.nextQueued(System.currentTimeMillis(), running) ?: break
+                val next = dao.nextQueued(clock.wallMillis(), running) ?: break
                 dao.setStatus(next.id, DownloadStatus.RUNNING)
                 jobs[next.id] = scope.launch { run(next.id) }
             }
@@ -177,7 +176,7 @@ class DownloadEngine(
      * pumps and retries pending exports at once.
      */
     suspend fun onNetworkChanged() {
-        if (blockedByMeteredNetwork(app.settings.currentWifiOnly())) {
+        if (network.blocked(settings.wifiOnly())) {
             val running = mutex.withLock {
                 val copy = jobs.toMap()
                 jobs.clear()
@@ -256,7 +255,7 @@ class DownloadEngine(
         item.fileName?.let { File(archives.archiveDir(item.packageId), it).delete() }
         val key = item.archiveKey
         if (key == null) {
-            item.localPath?.let { runCatching { storage.deleteExported(it) } }
+            item.localPath?.let { runCatching { files.deleteExported(it) } }
         } else {
             archives.markReplaceOnExtract(item.packageId, key)
             // The other volumes must be present for the re-extraction; gone ones are loaded again
@@ -289,10 +288,7 @@ class DownloadEngine(
             val items = dao.byPackage(packageId)
             items.forEach { jobs.remove(it.id)?.cancel(); FreeDownloads.forget(it.id) }
             ProgressBus.removeAll(items.map { it.id })
-            app.db.withTransaction {
-                dao.deletePackageItems(packageId)
-                app.db.packageDao().delete(packageId)
-            }
+            packages.deletePackage(packageId)
             items
         }
         items.forEach { tempFile(it).delete() }
@@ -318,7 +314,7 @@ class DownloadEngine(
 
     private fun tempFile(item: DownloadItem): File {
         val name = item.fileName ?: "download-${item.id}"
-        return File(storage.downloadDir(), "${item.id}-$name.part")
+        return File(files.downloadDir(), "${item.id}-$name.part")
     }
 
     private suspend fun run(id: Long) {
@@ -335,7 +331,7 @@ class DownloadEngine(
                     return
                 }
             }
-            val hoster = HosterRegistry.byId(item.hosterId)
+            val hoster = hosters(item.hosterId)
                 ?: throw HosterException(Texts.t("engine_unknown_hoster"), true)
             val resolved = freeFlow.resolve(id, item, hoster)
 
@@ -343,10 +339,10 @@ class DownloadEngine(
             val resolvedName = resolved.fileName?.let { FileNames.sanitize(it) }
             if (resolvedName != null && FileNames.preferName(current.fileName, resolvedName)) {
                 current = adoptFileName(current, resolvedName)
-                PackageNaming.refineAutoName(app.db, current.packageId)
+                packages.refineAutoName(current.packageId)
             }
-            // Cleartext is disabled: every direct link goes via HTTPS, whichever hoster path produced it
-            download(self, current, DirectLinks.https(resolved.directUrl), resolved.hash, resolved.headers)
+            // Whichever hoster path produced the link
+            download(self, current, secureLink(resolved.directUrl), resolved.hash, resolved.headers)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: WaitException) {
@@ -402,7 +398,7 @@ class DownloadEngine(
         }
         val backoff = backoffMillis(attempts)
         dao.scheduleRetry(
-            id, attempts, System.currentTimeMillis() + backoff,
+            id, attempts, clock.wallMillis() + backoff,
             Texts.t("engine_retry_scheduled", message, attempts, MAX_ATTEMPTS, backoff / 1000)
         )
     }
@@ -422,7 +418,7 @@ class DownloadEngine(
      * the wall clock here.
      */
     private suspend fun armRetryTimer() {
-        val now = System.currentTimeMillis()
+        val now = clock.wallMillis()
         val next = dao.nextRetryAt(now, now + FreeMode.USER_ACTION_HORIZON_MS) ?: return
         synchronized(timerLock) {
             if (retryTimer?.isActive == true && retryTimerAt <= next) return
@@ -469,7 +465,7 @@ class DownloadEngine(
         // effect only after the next socket read (up to 60 s). invokeOnCompletion
         // fires only in the job's final state, i.e. after the blocking read
         // returned anyway; the watcher reacts to the "cancelling" transition.
-        val call = Http.client.newCall(builder.build())
+        val call = http.newCall(builder.build())
         val vanished = !coroutineScope {
             val watcher = launch { try { awaitCancellation() } finally { call.cancel() } }
             try {
@@ -539,7 +535,7 @@ class DownloadEngine(
         // Check free space up front, or the download fails minutes later with
         // an unhelpful IO error
         val needed = if (total > 0) total - offset else 0
-        val free = android.os.StatFs(storage.downloadDir().path).availableBytes
+        val free = freeBytes(files.downloadDir())
         if (needed > 0 && free in 0 until needed) {
             throw HosterException(
                 Texts.t("engine_not_enough_space", formatBytes(needed), formatBytes(free)),
@@ -652,6 +648,54 @@ class DownloadEngine(
     }
 
     internal companion object {
+        /** The engine wired to the app's database, settings, storage, hosters and network. */
+        fun create(context: Context, scope: CoroutineScope, onStateChanged: () -> Unit): DownloadEngine {
+            val app = context.applicationContext as JdApp
+            val dao = app.db.downloadDao()
+            val repo = app.settings
+            val storage = StorageTarget(context, repo)
+            val clock = Clock.SYSTEM
+            lateinit var engine: DownloadEngine
+            val archives = ArchiveCoordinator(app, dao, repo, storage, scope, clock, onStateChanged) {
+                scope.launch { engine.pump() }
+            }
+            engine = DownloadEngine(
+                scope = scope,
+                dao = dao,
+                settings = object : EngineSettings {
+                    override suspend fun maxConcurrent() = repo.currentMaxConcurrent()
+                    override suspend fun wifiOnly() = repo.currentWifiOnly()
+                    override val speedLimitMbit = repo.speedLimitMbit
+                },
+                files = storage,
+                archives = archives,
+                exportRetry = ExportRetry(dao, repo, storage, clock),
+                freeFlow = FreeFlow(dao, app.db.accountDao(), repo, recheck = { AccountRefresher.check(app, it.id) }),
+                packages = object : PackageStore {
+                    override suspend fun refineAutoName(packageId: Long?) = PackageNaming.refineAutoName(app.db, packageId)
+                    override suspend fun deletePackage(packageId: Long) = app.db.withTransaction {
+                        dao.deletePackageItems(packageId)
+                        app.db.packageDao().delete(packageId)
+                    }
+                },
+                hosters = HosterRegistry::byId,
+                http = Http.client,
+                secureLink = DirectLinks::https,
+                network = NetworkPolicy { wifiOnly -> wifiOnly && meteredNetwork(context) },
+                freeBytes = { dir -> android.os.StatFs(dir.path).availableBytes },
+                clock = clock,
+                onStateChanged = onStateChanged
+            )
+            return engine
+        }
+
+        /** The active network is metered or unknown. */
+        private fun meteredNetwork(context: Context): Boolean {
+            val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return true
+            return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        }
+
         const val MAX_ATTEMPTS = 5
 
         /** Wait before the [attempt]-th retry: 10 s, 20 s, ... capped at 5 min. */

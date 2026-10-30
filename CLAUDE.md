@@ -166,17 +166,20 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.9 (versionCode 74), Release v0.9.9 mit
-  CI-signierter APK; `release/` enthält 0.9.5 bis 0.9.9. 0.9.9: SOLID-Umbau 1
-  erledigt (`AccountInfo.premium` Pflichtfeld, `Account.premium`, Schema 12,
-  `hasPremium` ohne Textvergleich; JVM-Migrationstests teilen `MigrationSql`).
-  Offen: Umbauten 2–4 (siehe unten). 0.9.8: Fehler aus
+- Zuletzt veröffentlicht: 0.9.10 (versionCode 75), Release v0.9.10 mit
+  CI-signierter APK; `release/` enthält 0.9.6 bis 0.9.10. 0.9.10:
+  SOLID-Umbau 2 erledigt (DownloadEngine über `engine/EnginePorts.kt` und
+  `QueueDao` injiziert, `DownloadEngine.create` verdrahtet,
+  `DownloadEngineTest` mit Fakes und MockWebServer, `Clock.wallMillis`).
+  0.9.9: SOLID-Umbau 1 (`AccountInfo.premium` Pflichtfeld, `Account.premium`,
+  Schema 12, `hasPremium` ohne Textvergleich; JVM-Migrationstests teilen
+  `MigrationSql`). Offen: Umbauten 3–4 (siehe unten). 0.9.8: Fehler aus
   der SOLID-Prüfung behoben (Export-Teilfehler behält Einträge,
   `StorageTarget.exportedAt` nach Anzeigepfad, Rapidgator-Login unter Sperre,
   HTTPS zentral), ddownload wartet bei Sperre 15, bei Wartung 20 Minuten
   (Wunsch des Nutzers). Als Nächstes vereinbart, einzeln mit Tests: SOLID-
-  Umbauten 2. DownloadEngine-Abhängigkeiten injizieren, 3. Exportziele als
-  Klassen (Muster `NfsShare`), 4. gemeinsamer Free-Ablauf der Hoster.
+  Umbauten 3. Exportziele als Klassen (Muster `NfsShare`), 4. gemeinsamer
+  Free-Ablauf der Hoster.
   0.9.7: R8 an
   (APK 22,2 → 12,5 MB, siehe „Technik in Kürze“). 0.9.6: Effizienz
   (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen

@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.10] – 2026-10-30
+
+### Geändert
+
+- Umbau ohne Änderung im Verhalten: Die Download-Engine holt sich Datenbank,
+  Einstellungen, Speicherziel, Hoster, HTTP-Client und Netzprüfung nicht
+  mehr selbst, sondern bekommt sie übergeben. Damit ist ihr heikelster Teil
+  erstmals mit Tests abgesichert: freie Plätze, Pause, Wiederholungen mit
+  wachsendem Abstand, Wartezeiten der Hoster, „Nur WLAN“ und ein echter
+  HTTP-Download, der nach einem Abbruch fortgesetzt wird.
+
 ## [0.9.9] – 2026-10-30
 
 ### Geändert
@@ -1233,6 +1244,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.10]: https://github.com/xtrars/Jdandroid/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/xtrars/Jdandroid/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/xtrars/Jdandroid/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/xtrars/Jdandroid/compare/v0.9.6...v0.9.7

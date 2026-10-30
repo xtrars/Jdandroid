@@ -25,13 +25,13 @@ internal class FreeFlow(
     private val accountDao: AccountDao,
     private val settings: SettingsRepository,
     private val recheck: suspend (Account) -> Unit = {}
-) {
+) : LinkResolver {
     /**
      * Only a premium account takes the premium path; a valid free account
      * would fail there permanently. Browser hints (direct link, cookies)
      * apply to this one attempt.
      */
-    suspend fun resolve(id: Long, item: DownloadItem, hoster: Hoster): ResolvedLink {
+    override suspend fun resolve(id: Long, item: DownloadItem, hoster: Hoster): ResolvedLink {
         val account = usableAccount(item.hosterId)
         return when (choosePath(account, settings.currentFreeMode())) {
             FreePath.PREMIUM -> hoster.resolve(item.url, account!!)
@@ -82,7 +82,7 @@ internal class FreeFlow(
      * does not count as a failed attempt. The note stores [FreeMode.WAIT_CODE]
      * plus the hoster's reason, from which the UI builds countdown and text.
      */
-    suspend fun scheduleWait(id: Long, seconds: Int, reason: String?) {
+    override suspend fun scheduleWait(id: Long, seconds: Int, reason: String?) {
         val item = dao.byId(id) ?: return
         val retryAt = FreeMode.retryAt(System.currentTimeMillis(), seconds)
         dao.scheduleRetry(id, item.attempts, retryAt, FreeMode.waitNote(reason))
@@ -93,7 +93,7 @@ internal class FreeFlow(
      * captcha in the browser releases it. Page and session cookies go to
      * [FreeDownloads], the note stores [FreeMode.CAPTCHA_CODE] plus the reason.
      */
-    suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
+    override suspend fun holdForCaptcha(id: Long, e: CaptchaRequiredException) {
         val item = dao.byId(id) ?: return
         FreeDownloads.captchaRequired(id, CaptchaPage(e.pageUrl, e.cookieUrl, e.cookies))
         dao.scheduleRetry(

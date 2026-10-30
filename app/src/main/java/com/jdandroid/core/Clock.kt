@@ -11,6 +11,9 @@ fun interface Clock {
 
     fun nowMillis(): Long = nowNanos() / 1_000_000L
 
+    /** Wall-clock milliseconds for persisted timestamps (retryAt); tests fix it. */
+    fun wallMillis(): Long = System.currentTimeMillis()
+
     companion object {
         val SYSTEM: Clock = Clock(System::nanoTime)
     }

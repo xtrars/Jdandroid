@@ -43,23 +43,23 @@ internal class ArchiveCoordinator(
     private val onStateChanged: () -> Unit,
     /** Called after each extraction so the engine can pump again. */
     private val onExtractionFinished: () -> Unit
-) {
+) : Completion {
     /**
      * Serialises download completion so two parts of the same archive that
      * finish at once cannot each see the other as still pending (which would
      * skip extraction). The engine also holds it while pausing or requeueing
      * so a completion in progress runs to the end.
      */
-    val completionMutex = Mutex()
+    override val completionMutex = Mutex()
 
     private val extractLimiter = Semaphore(1)
     private val extracting get() = ExtractionRegistry.count
 
     /** Running extractions across all service instances. */
-    val activeCount: Int get() = extracting.get()
+    override val activeCount: Int get() = extracting.get()
 
     /** Entries whose finished file is being exported, see [ExtractionRegistry.exportingIds]. */
-    val exportingIds: List<Long> get() = ExtractionRegistry.exportingIds()
+    override val exportingIds: List<Long> get() = ExtractionRegistry.exportingIds()
 
     /** Triggering entry, its package and the archive key. */
     private data class ArchiveSet(val id: Long, val packageId: Long?, val base: String) {
@@ -67,12 +67,12 @@ internal class ArchiveCoordinator(
         val key get() = setKey(packageId, base)
     }
 
-    fun archiveDir(packageId: Long?): File = archiveDir(storage.downloadDir(), packageId)
+    override fun archiveDir(packageId: Long?): File = archiveDir(storage.downloadDir(), packageId)
 
     /** Sets whose next export replaces same-named files instead of adding "(2)"; filled by a re-download. */
     private val replaceSets = java.util.Collections.synchronizedSet(HashSet<String>())
 
-    fun markReplaceOnExtract(packageId: Long?, base: String) {
+    override fun markReplaceOnExtract(packageId: Long?, base: String) {
         replaceSets += setKey(packageId, base)
     }
 
@@ -82,7 +82,7 @@ internal class ArchiveCoordinator(
      * pause during export must not let the copy finish while the status change
      * fails, which would leave a paused entry without its part file.
      */
-    suspend fun completeDownload(id: Long, temp: File, originalName: String) = withContext(NonCancellable) {
+    override suspend fun completeDownload(id: Long, temp: File, originalName: String): Unit = withContext(NonCancellable) {
         var fileName = originalName
         var base = ArchiveNames.archiveBase(fileName)
         if (base == null) {
@@ -184,7 +184,7 @@ internal class ArchiveCoordinator(
      * last pending entry gets a name or completes as a non-archive, nothing
      * else would trigger the extraction.
      */
-    suspend fun retryWaitingSets(packageId: Long?) = withContext(NonCancellable) {
+    override suspend fun retryWaitingSets(packageId: Long?): Unit = withContext(NonCancellable) {
         if (packageId == null) return@withContext
         val ready = completionMutex.withLock {
             (dao.waitingParts(packageId, WAITING_NOTE) + dao.waitingParts(packageId, FIRST_VOLUME_NOTE))
@@ -232,7 +232,7 @@ internal class ArchiveCoordinator(
      * set back into the app directory if needed. Returns an error message, or
      * null when extraction was started.
      */
-    suspend fun extractNow(id: Long): String? {
+    override suspend fun extractNow(id: Long): String? {
         // Count as active before fetching files: otherwise a freshly started
         // service considers itself idle, stops, and the next instance requeues
         // the EXTRACTING entries.

@@ -114,20 +114,48 @@ fun List<Account>.preferredValid(now: Long = System.currentTimeMillis()): Accoun
     return valid.firstOrNull { it.hasPremium(now) } ?: valid.firstOrNull()
 }
 
+/**
+ * The download rows [com.jdandroid.engine.DownloadEngine] works on, a role of
+ * [DownloadDao]; tests drive the engine with an in-memory implementation.
+ */
+interface QueueDao {
+    suspend fun byId(id: Long): DownloadItem?
+    suspend fun byPackage(packageId: Long): List<DownloadItem>
+    suspend fun completedParts(packageId: Long?, key: String): List<DownloadItem>
+    suspend fun countByArchiveKey(packageId: Long?, key: String): Int
+    suspend fun delete(id: Long)
+    suspend fun deletePackageItems(packageId: Long)
+    suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
+    suspend fun nextRetryAt(now: Long, horizon: Long): Long?
+    suspend fun openIds(): List<Long>
+    suspend fun pauseActiveInPackage(packageId: Long)
+    suspend fun pauseIfActive(id: Long)
+    suspend fun pauseQueued()
+    suspend fun queuedCountDue(before: Long): Int
+    suspend fun requeueForRedownload(id: Long): Int
+    suspend fun requeueIfRunning(id: Long)
+    suspend fun resetAttempts(id: Long)
+    suspend fun saveProgress(id: Long, bytes: Long, total: Long)
+    suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
+    suspend fun sessionBytes(ids: List<Long>): List<SessionBytes>
+    suspend fun setStatus(id: Long, status: DownloadStatus, error: String? = null)
+    suspend fun setFileName(id: Long, name: String, archiveKey: String?)
+}
+
 @Dao
-interface DownloadDao {
+interface DownloadDao : QueueDao {
     @Query("SELECT * FROM downloads ORDER BY addedAt DESC")
     fun observeAll(): Flow<List<DownloadItem>>
 
     @Query("SELECT * FROM downloads WHERE id = :id")
-    suspend fun byId(id: Long): DownloadItem?
+    override suspend fun byId(id: Long): DownloadItem?
 
     @Query("SELECT * FROM downloads")
     suspend fun all(): List<DownloadItem>
 
     /** See [DownloadQueries.NEXT_QUEUED]. */
     @Query(DownloadQueries.NEXT_QUEUED)
-    suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
+    override suspend fun nextQueued(now: Long, running: List<Long>): DownloadItem?
 
     /** See [DownloadQueries.OPEN_COUNT_DUE]. */
     @Query(DownloadQueries.OPEN_COUNT_DUE)
@@ -138,25 +166,25 @@ interface DownloadDao {
 
     /** Queued entries starting by themselves before [before]; captcha waiters (far-future retryAt) do not keep the service alive. */
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED' AND retryAt <= :before")
-    suspend fun queuedCountDue(before: Long): Int
+    override suspend fun queuedCountDue(before: Long): Int
 
     @Query(DownloadQueries.NEXT_RETRY_AT)
-    suspend fun nextRetryAt(now: Long, horizon: Long): Long?
+    override suspend fun nextRetryAt(now: Long, horizon: Long): Long?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status = 'PAUSED'")
     suspend fun pausedCount(): Int
 
     /** Entries the engine works on or will start by itself. */
     @Query("SELECT id FROM downloads WHERE status IN ('RUNNING', 'QUEUED')")
-    suspend fun openIds(): List<Long>
+    override suspend fun openIds(): List<Long>
 
     /** Only what the notification bar needs; it reads the session every second. */
     @Query("SELECT id, fileSize, downloadedBytes, status FROM downloads WHERE id IN (:ids)")
-    suspend fun sessionBytes(ids: List<Long>): List<SessionBytes>
+    override suspend fun sessionBytes(ids: List<Long>): List<SessionBytes>
 
     /** "Pause all" must include queued entries, otherwise pump() starts the next ones at once. */
     @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")
-    suspend fun pauseQueued()
+    override suspend fun pauseQueued()
 
     @Query("UPDATE downloads SET status = 'QUEUED', errorMessage = NULL WHERE status = 'COLLECTED' AND packageId = :packageId")
     suspend fun startCollected(packageId: Long)
@@ -192,11 +220,11 @@ interface DownloadDao {
     suspend fun update(item: DownloadItem)
 
     @Query("UPDATE downloads SET status = :status, errorMessage = :error WHERE id = :id")
-    suspend fun setStatus(id: Long, status: DownloadStatus, error: String? = null)
+    override suspend fun setStatus(id: Long, status: DownloadStatus, error: String?)
 
     /** Persisted at transfer start, at most every 30 s and on leaving the transfer; speed is a live ProgressBus value only. */
     @Query("UPDATE downloads SET downloadedBytes = :bytes, fileSize = :total WHERE id = :id")
-    suspend fun saveProgress(id: Long, bytes: Long, total: Long)
+    override suspend fun saveProgress(id: Long, bytes: Long, total: Long)
 
     /** After a process restart: re-queue running and extracting entries. */
     @Query(
@@ -228,15 +256,15 @@ interface DownloadDao {
     suspend fun completeExtractingSetKeepPath(ids: List<Long>, note: String?)
 
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE id = :id AND status IN ('RUNNING', 'QUEUED')")
-    suspend fun pauseIfActive(id: Long)
+    override suspend fun pauseIfActive(id: Long)
 
     /** [pauseIfActive] for every entry of a package in one statement. */
     @Query("UPDATE downloads SET status = 'PAUSED', speedBps = 0 WHERE packageId = :packageId AND status IN ('RUNNING', 'QUEUED')")
-    suspend fun pauseActiveInPackage(packageId: Long)
+    override suspend fun pauseActiveInPackage(packageId: Long)
 
     /** "Wi-Fi only": send a running download back to the queue. */
     @Query(DownloadQueries.REQUEUE_IF_RUNNING)
-    suspend fun requeueIfRunning(id: Long)
+    override suspend fun requeueIfRunning(id: Long)
 
     /** Completes only if the entry was not paused or deleted meanwhile. */
     @Query(
@@ -269,11 +297,11 @@ interface DownloadDao {
         "UPDATE downloads SET status = 'QUEUED', attempts = :attempts, retryAt = :retryAt, " +
             "errorMessage = :error, speedBps = 0 WHERE id = :id"
     )
-    suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
+    override suspend fun scheduleRetry(id: Long, attempts: Int, retryAt: Long, error: String?)
 
     /** Name and archive key belong together, see [renameFile]. */
     @Query("UPDATE downloads SET fileName = :name, archiveKey = :archiveKey WHERE id = :id")
-    suspend fun setFileName(id: Long, name: String, archiveKey: String?)
+    override suspend fun setFileName(id: Long, name: String, archiveKey: String?)
 
     @Query(ArchiveSets.PENDING_ACTIVE)
     suspend fun pendingActiveParts(packageId: Long?, key: String, selfId: Long): Int
@@ -285,7 +313,7 @@ interface DownloadDao {
     suspend fun archiveSetIds(packageId: Long?, key: String, selfId: Long): List<Long>
 
     @Query(ArchiveSets.COMPLETED_PARTS)
-    suspend fun completedParts(packageId: Long?, key: String): List<DownloadItem>
+    override suspend fun completedParts(packageId: Long?, key: String): List<DownloadItem>
 
     @Query(ArchiveSets.DELETE_EXTRACTED)
     suspend fun deleteExtractedSet(packageId: Long?, key: String, selfId: Long)
@@ -297,7 +325,7 @@ interface DownloadDao {
     suspend fun completedArchives(packageId: Long): List<DownloadItem>
 
     @Query(ArchiveSets.COUNT_KEY)
-    suspend fun countByArchiveKey(packageId: Long?, key: String): Int
+    override suspend fun countByArchiveKey(packageId: Long?, key: String): Int
 
     @Query(
         "UPDATE downloads SET status = 'QUEUED', errorMessage = NULL, attempts = 0, retryAt = 0, " +
@@ -306,11 +334,11 @@ interface DownloadDao {
     suspend fun requeueCompleted(id: Long)
 
     @Query(DownloadQueries.REQUEUE_FOR_REDOWNLOAD)
-    suspend fun requeueForRedownload(id: Long): Int
+    override suspend fun requeueForRedownload(id: Long): Int
 
     /** After real progress the attempt counter starts over. */
     @Query("UPDATE downloads SET attempts = 0 WHERE id = :id")
-    suspend fun resetAttempts(id: Long)
+    override suspend fun resetAttempts(id: Long)
 
     /** Manual restart, also of a captcha hold (retryAt from [heldFrom]); never for running entries (would start twice). */
     @Query(
@@ -330,19 +358,19 @@ interface DownloadDao {
     suspend fun requeuePausedAndFailed(heldFrom: Long)
 
     @Query("DELETE FROM downloads WHERE id = :id")
-    suspend fun delete(id: Long)
+    override suspend fun delete(id: Long)
 
     @Query("DELETE FROM downloads WHERE status = 'COMPLETED'")
     suspend fun clearCompleted()
 
     @Query("SELECT * FROM downloads WHERE packageId = :packageId")
-    suspend fun byPackage(packageId: Long): List<DownloadItem>
+    override suspend fun byPackage(packageId: Long): List<DownloadItem>
 
     @Query("SELECT fileName FROM downloads WHERE packageId = :packageId AND fileName IS NOT NULL")
     suspend fun fileNamesOfPackage(packageId: Long): List<String>
 
     @Query("DELETE FROM downloads WHERE packageId = :packageId")
-    suspend fun deletePackageItems(packageId: Long)
+    override suspend fun deletePackageItems(packageId: Long)
 
     @Query("UPDATE downloads SET online = 3 WHERE id IN (:ids) AND status = 'COLLECTED'")
     suspend fun setCheckingAll(ids: List<Long>)
@@ -358,7 +386,7 @@ interface DownloadDao {
 }
 
 /** Sets the file name and derives the archive key from it. */
-suspend fun DownloadDao.renameFile(id: Long, name: String) =
+suspend fun QueueDao.renameFile(id: Long, name: String) =
     setFileName(id, name, ArchiveNames.archiveKey(name))
 
 @Dao

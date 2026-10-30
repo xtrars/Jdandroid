@@ -47,8 +47,8 @@ internal class StorageTarget(
     private val context: Context,
     private val settings: SettingsRepository,
     private val nfs: NfsTarget = NfsTarget()
-) {
-    fun downloadDir(): File =
+) : DownloadFiles {
+    override fun downloadDir(): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "downloads")
             .apply { mkdirs() }
 
@@ -340,7 +340,7 @@ internal class StorageTarget(
      * Downloads/JDAndroid or the app folder), for a re-download that must not
      * leave the corrupt copy behind. Best effort; false when nothing was removed.
      */
-    suspend fun deleteExported(displayPath: String): Boolean {
+    override suspend fun deleteExported(displayPath: String): Boolean {
         val name = storedName(displayPath)
         if (name.isBlank()) return false
         val root = targetTree()

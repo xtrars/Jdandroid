@@ -44,16 +44,16 @@ internal class ExportRetry(
     private val settings: SettingsRepository,
     private val storage: StorageTarget,
     private val clock: Clock
-) {
+) : ExportRetries {
     private val mutex = Mutex()
     private var lastRunMs: Long? = null
     private val running = AtomicInteger()
 
     /** 1 while a pass uploads, so the service does not stop underneath it. */
-    val activeCount: Int get() = running.get()
+    override val activeCount: Int get() = running.get()
 
     /** Runs a pass if due; true when entries were attempted (the list may have changed). */
-    suspend fun run(forced: Boolean): Boolean {
+    override suspend fun run(forced: Boolean): Boolean {
         // One pass at a time; a second caller has nothing to add
         if (!mutex.tryLock()) return false
         try {
