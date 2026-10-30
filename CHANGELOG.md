@@ -27,6 +27,18 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.11] – 2026-10-30
+
+### Geändert
+
+- Umbau ohne Änderung im Verhalten: Die Ablageziele für fertige Dateien
+  (NAS, gewählter Ordner, Downloads/JDAndroid, App-Ordner) sind jeweils eine
+  eigene Klasse mit gleicher Schnittstelle. Die Speicherverwaltung legt nur
+  noch die Reihenfolge fest; ein weiteres Ziel braucht keine neue Abzweigung
+  in jeder Methode mehr. Neue Tests für App-Ordner und NAS (Ausfall hält die
+  Datei lokal für den Wiederversuch) sowie im Emulator für Downloads/JDAndroid
+  (Ablegen, von Android vergebener Name bei Kollision, Zurückholen, Löschen).
+
 ## [0.9.10] – 2026-10-30
 
 ### Geändert
@@ -1244,6 +1256,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.11]: https://github.com/xtrars/Jdandroid/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/xtrars/Jdandroid/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/xtrars/Jdandroid/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/xtrars/Jdandroid/compare/v0.9.7...v0.9.8

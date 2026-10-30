@@ -1,19 +1,9 @@
 package com.jdandroid.engine
 
-import android.content.ContentResolver
-import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
-import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.DocumentsContract
-import android.provider.MediaStore
-import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import com.jdandroid.core.FileNames
-import com.jdandroid.core.Texts
 import com.jdandroid.data.DownloadNotes
 import com.jdandroid.data.SettingsRepository
 import com.jdandroid.engine.nfs.NfsFailure
@@ -36,12 +26,11 @@ internal data class Placed(val path: String, val pending: Boolean = false, val e
 }
 
 /**
- * Storage locations for finished files: the app directory (part files,
- * archives, extraction target), the user's SAF target folder and the public
- * Downloads/JDAndroid folder (MediaStore). An enabled NFS target comes
- * first and keeps files local when it fails; otherwise targets are tried in
- * the order SAF, MediaStore, app directory. Exported files can be fetched
- * back for later extraction.
+ * Storage locations for finished files, built from the current settings: an
+ * enabled NFS target comes first and keeps files local when it fails;
+ * otherwise the SAF folder, Downloads/JDAndroid (MediaStore) and the app
+ * directory are tried in this order. Exported files can be fetched back for
+ * later extraction.
  */
 internal class StorageTarget(
     private val context: Context,
@@ -59,154 +48,28 @@ internal class StorageTarget(
             .getOrNull()?.takeIf { it.canWrite() }
     }
 
-    private class Child(val uri: Uri, val isDir: Boolean)
+    private fun appFolder() = AppFolderTarget(downloadDir())
 
-    /**
-     * SAF directory whose listing is queried once; name checks and child
-     * lookups then run in memory. DocumentFile.findFile would list the
-     * directory and query each child's name per call.
-     */
-    private inner class TreeDir(val uri: Uri, val name: String?) {
-        private val children = HashMap<String, Child>()
-        private val subDirs = HashMap<String, TreeDir>()
+    private suspend fun nas(): NasTarget? =
+        settings.currentNfs().takeIf { it.isUsable }?.let { NasTarget(nfs, it, appFolder()) }
 
-        init {
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-                uri, DocumentsContract.getDocumentId(uri)
-            )
-            val projection = arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE
-            )
-            runCatching {
-                context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getString(0) ?: continue
-                        val childName = cursor.getString(1) ?: continue
-                        val isDir = cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR
-                        children[childName] = Child(DocumentsContract.buildDocumentUriUsingTree(uri, id), isDir)
-                    }
-                }
-            }
-        }
+    private suspend fun saf(): SafTarget? = targetTree()?.let { SafTarget(context, it) }
 
-        fun contains(childName: String): Boolean = childName in children
-
-        fun fileUri(childName: String): Uri? = children[childName]?.takeIf { !it.isDir }?.uri
-
-        /** Creates a file; the provider may still rename it if the name is taken. */
-        fun createFile(mime: String, childName: String): Uri? =
-            create(mime, childName)?.also { children[childName] = Child(it, false) }
-
-        /** Existing or newly created directory below this one, cached per path. */
-        fun subDir(path: String): TreeDir? {
-            var current: TreeDir = this
-            path.split('/').filter { it.isNotBlank() }.forEach { part ->
-                current = current.subDirs[part] ?: current.openOrCreateDir(part)?.also { current.subDirs[part] = it }
-                    ?: return null
-            }
-            return current
-        }
-
-        private fun openOrCreateDir(childName: String): TreeDir? {
-            val dirUri = children[childName]?.takeIf { it.isDir }?.uri
-                ?: create(DocumentsContract.Document.MIME_TYPE_DIR, childName)
-                    ?.also { children[childName] = Child(it, true) }
-                ?: return null
-            return TreeDir(dirUri, childName)
-        }
-
-        private fun create(mime: String, childName: String): Uri? =
-            runCatching { DocumentsContract.createDocument(context.contentResolver, uri, mime, childName) }
-                .getOrNull()
-    }
-
-    private fun deleteDocument(uri: Uri) {
-        runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
-    }
-
-    /** Name the provider actually stored the document under; providers rename on collision ("x (1).rar"). */
-    private fun displayName(uri: Uri): String? = runCatching {
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
-        }
-    }.getOrNull()
-
-    /** Copies a file into the SAF directory; returns the display path (with the stored name) or null on failure. */
-    private fun copyToTree(dir: TreeDir, file: File, name: String): String? {
-        val mime = android.webkit.MimeTypeMap.getSingleton()
-            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
-            ?: "application/octet-stream"
-        val candidate = FileNames.uniqueName(name) { dir.contains(it) }
-        val target = dir.createFile(mime, candidate) ?: return null
-        return try {
-            context.contentResolver.openOutputStream(target)?.use { out ->
-                file.inputStream().use { it.copyTo(out, COPY_BUFFER) }
-            } ?: run { deleteDocument(target); return null }
-            "${dir.name ?: Texts.t("engine_target_folder")}/${displayName(target) ?: candidate}"
-        } catch (e: Exception) {
-            deleteDocument(target)
-            null
-        }
-    }
+    // Lint only recognises the version guard as a direct SDK_INT comparison.
+    private suspend fun mediaStore(): ExportTarget? =
+        if (settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29) MediaStoreTarget(context) else null
 
     /** Moves a finished file to its target and returns where it went; [progress] reports NAS uploads only. */
     suspend fun finish(temp: File, fileName: String, progress: ((done: Long, total: Long) -> Unit)? = null): Placed {
-        val nfsSettings = settings.currentNfs()
-        if (nfsSettings.isUsable) {
-            val total = temp.length()
-            val outcome = nfs.finish(nfsSettings, temp, fileName, progress?.let { p -> { done: Long -> p(done, total) } })
-            return when (outcome) {
-                is NfsTarget.Outcome.Done -> { temp.delete(); Placed(outcome.displayPath) }
-                is NfsTarget.Outcome.Failed -> Placed.local(storeLocally(temp, fileName), outcome.failure)
-            }
-        }
-        targetTree()?.let { root ->
-            copyToTree(TreeDir(root.uri, root.name), temp, fileName)?.let { path ->
-                temp.delete()
-                return Placed(path)
-            }
-        }
-        val export = settings.currentExportToDownloads() && Build.VERSION.SDK_INT >= 29
-        if (export) {
-            try {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/JDAndroid")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null && copyToMediaStore(resolver, uri, temp)) {
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    temp.delete()
-                    return Placed("$MEDIA_STORE_DISPLAY${displayName(uri) ?: fileName}")
-                }
-            } catch (_: Exception) {
-            }
-        }
-        return Placed(storeLocally(temp, fileName))
-    }
-
-    /** Final place in the app folder; a file already stored there (re-download, export retry) keeps its name. */
-    private fun storeLocally(temp: File, fileName: String): String {
-        val dir = downloadDir()
-        if (temp.path == File(dir, fileName).path) return temp.absolutePath
-        if (temp.parentFile?.path == dir.path && !temp.name.endsWith(".part")) return temp.absolutePath
-        val dest = FileNames.uniqueFile(dir, fileName)
-        if (temp.path != dest.path) {
-            temp.renameTo(dest)
-        }
-        return dest.absolutePath
+        nas()?.let { return it.finish(temp, fileName, progress) }
+        saf()?.finish(temp, fileName, progress)?.let { return it }
+        mediaStore()?.finish(temp, fileName, progress)?.let { return it }
+        return appFolder().finish(temp, fileName, progress)
     }
 
     /**
-     * Exports all extracted files to the SAF folder or to
-     * Downloads/JDAndroid/[base]/... and returns the display path; without
-     * export they stay in [dir].
+     * Exports all extracted files to the first configured target below the
+     * folder [base] and returns the display path; without export they stay in [dir].
      */
     suspend fun exportDirectory(
         dir: File,
@@ -214,91 +77,8 @@ internal class StorageTarget(
         progress: ((done: Long, total: Long) -> Unit)? = null,
         replace: Boolean = false
     ): Placed {
-        val nfsSettings = settings.currentNfs()
-        if (nfsSettings.isUsable) {
-            return when (val outcome = nfs.exportDirectory(nfsSettings, dir, base, progress, replace)) {
-                is NfsTarget.Outcome.Done -> Placed(outcome.displayPath)
-                is NfsTarget.Outcome.Failed -> Placed.local(dir.absolutePath, outcome.failure)
-            }
-        }
-        targetTree()?.let { root ->
-            val files = FileTrees.regularFiles(dir)
-            val target = TreeDir(root.uri, root.name).subDir(base) ?: return incomplete(dir, files.size, files.size)
-            var failed = 0
-            files.forEach { file ->
-                val relDir = file.parentFile!!.relativeTo(dir).path
-                val destDir = if (relDir.isEmpty()) target else target.subDir(relDir)
-                if (destDir == null || copyToTree(destDir, file, file.name) == null) failed++
-                else file.delete()
-            }
-            return if (failed == 0) {
-                FileTrees.deleteTree(dir)
-                Placed("${root.name ?: Texts.t("engine_target_folder")}/$base")
-            } else incomplete(dir, failed, files.size)
-        }
-        // Lint only recognises the version guard as a direct SDK_INT comparison.
-        if (!settings.currentExportToDownloads() || Build.VERSION.SDK_INT < 29) return Placed(dir.absolutePath)
-        val resolver = context.contentResolver
-        val files = FileTrees.regularFiles(dir)
-        var failed = 0
-        files.forEach { file ->
-            val relDir = file.parentFile!!.relativeTo(dir).path
-            val relativePath = buildString {
-                append(Environment.DIRECTORY_DOWNLOADS).append("/JDAndroid/").append(base)
-                if (relDir.isNotEmpty()) append('/').append(relDir)
-            }
-            try {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    if (!copyToMediaStore(resolver, uri, file)) {
-                        failed++
-                    } else {
-                        values.clear()
-                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        resolver.update(uri, values, null, null)
-                        file.delete()
-                    }
-                } else {
-                    failed++
-                }
-            } catch (_: Exception) {
-                failed++
-            }
-        }
-        return if (failed == 0) {
-            FileTrees.deleteTree(dir)
-            Placed("$MEDIA_STORE_DISPLAY$base")
-        } else incomplete(dir, failed, files.size)
-    }
-
-    /**
-     * Some files stayed in the app folder: the error keeps the entries in the
-     * list (no "remove after extraction"), otherwise they would vanish unseen.
-     */
-    private fun incomplete(dir: File, failed: Int, total: Int): Placed =
-        Placed(dir.absolutePath, error = Texts.t("engine_export_incomplete", failed, total))
-
-    /**
-     * Copies a file into a MediaStore entry. On failure the half-written entry
-     * is deleted, otherwise an empty file would remain in Downloads.
-     */
-    private fun copyToMediaStore(resolver: ContentResolver, uri: Uri, source: File): Boolean {
-        try {
-            val out = resolver.openOutputStream(uri) ?: run {
-                resolver.delete(uri, null, null)
-                return false
-            }
-            out.use { o -> source.inputStream().use { it.copyTo(o, COPY_BUFFER) } }
-            return true
-        } catch (e: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            return false
-        }
+        val target = nas() ?: saf() ?: mediaStore() ?: appFolder()
+        return target.exportDirectory(dir, base, progress, replace)
     }
 
     /**
@@ -307,32 +87,10 @@ internal class StorageTarget(
      * [storedName]), which differs from the download name after a collision.
      */
     suspend fun restoreExported(name: String, dest: File): Boolean {
-        val nfsSettings = settings.currentNfs()
-        if (nfsSettings.isUsable && nfs.restoreExported(nfsSettings, name, dest)) return true
-        targetTree()?.let { root -> TreeDir(root.uri, null).fileUri(name) }?.let { uri ->
-            return copyUriTo(uri, dest)
-        }
-        if (Build.VERSION.SDK_INT >= 29) {
-            val resolver = context.contentResolver
-            val projection = arrayOf(MediaStore.MediaColumns._ID)
-            // Exact folder: a LIKE prefix would also match extracted files of the same name in sub folders
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
-                "${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
-            val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid/")
-            runCatching {
-                resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, null)
-                    ?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val mediaId = cursor.getLong(0)
-                            val uri = ContentUris.withAppendedId(
-                                MediaStore.Downloads.EXTERNAL_CONTENT_URI, mediaId
-                            )
-                            return copyUriTo(uri, dest)
-                        }
-                    }
-            }
-        }
-        return false
+        nas()?.let { if (it.restore(name, dest)) return true }
+        saf()?.let { if (it.restore(name, dest)) return true }
+        // Regardless of the current setting: the file may have been exported while it was on
+        return Build.VERSION.SDK_INT >= 29 && MediaStoreTarget(context).restore(name, dest)
     }
 
     /**
@@ -341,44 +99,18 @@ internal class StorageTarget(
      * leave the corrupt copy behind. Best effort; false when nothing was removed.
      */
     override suspend fun deleteExported(displayPath: String): Boolean {
-        val name = storedName(displayPath)
-        if (name.isBlank()) return false
-        val root = targetTree()
-        return when (exportedAt(displayPath, root?.let { it.name ?: Texts.t("engine_target_folder") })) {
-            ExportedAt.APP_FOLDER -> File(displayPath).let { it.isFile && it.startsWith(downloadDir()) && it.delete() }
-            ExportedAt.NFS -> {
-                val nfsSettings = settings.currentNfs()
-                nfsSettings.isUsable && nfs.deleteExported(nfsSettings, name)
-            }
-            ExportedAt.MEDIA_STORE -> {
-                if (Build.VERSION.SDK_INT < 29) return false
-                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
-                    "${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
-                val args = arrayOf(name, "${Environment.DIRECTORY_DOWNLOADS}/JDAndroid/")
-                runCatching {
-                    context.contentResolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, selection, args) > 0
-                }.getOrDefault(false)
-            }
-            ExportedAt.SAF -> root?.let { TreeDir(it.uri, null).fileUri(name) }?.let { uri ->
-                runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
-            } ?: false
+        if (storedName(displayPath).isBlank()) return false
+        val saf = saf()
+        return when (exportedAt(displayPath, saf?.displayRoot)) {
+            ExportedAt.APP_FOLDER -> appFolder().delete(displayPath)
+            ExportedAt.NFS -> nas()?.delete(displayPath) ?: false
+            ExportedAt.MEDIA_STORE -> Build.VERSION.SDK_INT >= 29 && MediaStoreTarget(context).delete(displayPath)
+            ExportedAt.SAF -> saf?.delete(displayPath) ?: false
             ExportedAt.UNKNOWN -> false
         }
     }
 
-    private fun copyUriTo(uri: Uri, dest: File): Boolean = try {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { input.copyTo(it, COPY_BUFFER) }
-        } != null
-    } catch (_: Exception) {
-        dest.delete()
-        false
-    }
-
     companion object {
-        /** Streams over ParcelFileDescriptor are unbuffered; 1 MiB keeps syscalls low on multi-GiB files. */
-        private const val COPY_BUFFER = 1 shl 20
-
         /**
          * Name a finished file was stored under, taken from the display path
          * in `localPath` ("Downloads/JDAndroid/x (1).rar", "Target/x (1).rar",

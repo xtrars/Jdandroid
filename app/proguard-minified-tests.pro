@@ -4,6 +4,10 @@
 -keep class com.jdandroid.engine.Extractor { public *; }
 -keep interface com.jdandroid.engine.Extractor$ProgressListener { *; }
 -keep class com.jdandroid.data.** { *; }
+-keep class com.jdandroid.engine.MediaStoreTarget { *; }
+-keep class com.jdandroid.engine.Placed { *; }
+-keep class com.jdandroid.engine.StorageTarget { *; }
+-keep class com.jdandroid.engine.StorageTarget$Companion { *; }
 -keep class androidx.room.** { *; }
 -keep class androidx.sqlite.** { *; }
 -keep class kotlin.** { *; }
