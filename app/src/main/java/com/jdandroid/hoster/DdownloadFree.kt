@@ -139,7 +139,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         var hops = 0
         while (direct == null && hops++ < 6) {
             if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
-                val target = hoster.resolveLocation(currentUrl, resp.location!!)
+                val target = hoster.resolveLocation(currentUrl, resp.location)
                 if (hoster.isFileServerUrl(target)) { direct = target; break }
                 resp = with(hoster) { client.fetch(target, referer = currentUrl, followRedirects = false) }
                 currentUrl = target

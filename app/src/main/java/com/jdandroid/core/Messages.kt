@@ -1,5 +1,6 @@
 package com.jdandroid.core
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -19,6 +20,7 @@ object AppMessages {
     val events: SharedFlow<AppMessage> = _events
 
     /** Call after display so the message is not replayed. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun markShown() = _events.resetReplayCache()
 
     fun post(text: String, kind: MessageKind = MessageKind.INFO) {

@@ -158,8 +158,10 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.4 (versionCode 69), Release v0.9.4 mit
-  CI-signierter APK; `release/` enthält 0.9.0 bis 0.9.4. 0.9.4: AGP 9.5.0
+- Zuletzt veröffentlicht: 0.9.5 (versionCode 70), Release v0.9.5 mit
+  CI-signierter APK; `release/` enthält 0.9.1 bis 0.9.5. 0.9.5: Build ohne
+  Compiler-Warnungen (Stand nach Kotlin 2.4); neue Warnungen gleich
+  beheben. 0.9.4: AGP 9.5.0
   mit eingebautem Kotlin (kein `kotlin-android` im App-Modul; im Root-Build
   mit `apply false`, damit die KGP-Version 2.4.10 gilt), Gradle 9.8.2,
   compileSdk 37 (targetSdk 36), APK-Name über `androidComponents.onVariants`;

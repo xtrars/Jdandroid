@@ -181,7 +181,7 @@ class OneFichierHoster internal constructor(
             var currentUrl = action
             while (direct == null && hops++ < 4) {
                 if (resp.code in 300..399 && !resp.location.isNullOrBlank()) {
-                    val target = resolveLocation(currentUrl, resp.location!!)
+                    val target = resolveLocation(currentUrl, resp.location)
                     if (isDirectDownloadUrl(target)) { direct = target; break }
                     resp = session.fetch(target, referer = currentUrl, followRedirects = false)
                     currentUrl = target

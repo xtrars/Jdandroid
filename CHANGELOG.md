@@ -27,6 +27,17 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.5] – 2026-10-30
+
+### Geändert
+
+- Aufräumen ohne Änderung im Verhalten: Der Build läuft ohne
+  Compiler-Warnungen. Veraltete Aufrufe ersetzt (Room-Downgrade-Fallback mit
+  ausdrücklichem `dropAllTables = false`, `LocalLifecycleOwner` aus
+  lifecycle-compose, gespiegelte Pfeil-Symbole für ausklappbare Pakete),
+  bewusste Nutzung experimenteller Coroutine-APIs gekennzeichnet,
+  überflüssige `!!` und eine immer wahre Bedingung entfernt.
+
 ## [0.9.4] – 2026-10-30
 
 ### Geändert
@@ -1117,6 +1128,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.5]: https://github.com/xtrars/Jdandroid/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/xtrars/Jdandroid/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/xtrars/Jdandroid/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/xtrars/Jdandroid/compare/v0.9.1...v0.9.2

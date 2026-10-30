@@ -220,7 +220,7 @@ class DdownloadHoster internal constructor(
                     // Redirect: if it points to a file, that is the direct link;
                     // otherwise follow the next page (without loading the file).
                     // Relative targets resolve against the last fetched address.
-                    val target = resolveLocation(currentUrl, page.location!!)
+                    val target = resolveLocation(currentUrl, page.location)
                     if (isFileServerUrl(target)) { direct = target; break }
                     page = client.fetch(target, referer = currentUrl, followRedirects = false)
                     currentUrl = target

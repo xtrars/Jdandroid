@@ -141,7 +141,7 @@ class RapidgatorFreeTest {
         )!!
         assertEquals("error", early.state)
         assertTrue(early.code!!.startsWith("You didn`t wait"))
-        assertEquals(RapidgatorBlock.Restart, RapidgatorFreePage.classify(early.code!!))
+        assertEquals(RapidgatorBlock.Restart, RapidgatorFreePage.classify(early.code))
 
         val done = RapidgatorFreePage.ajaxReply("""{"state":"done"}""")!!
         assertEquals("done", done.state)

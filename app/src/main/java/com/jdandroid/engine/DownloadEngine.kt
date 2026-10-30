@@ -478,7 +478,7 @@ class DownloadEngine(
         }
         if (vanished) return
 
-        if (digest != null && expectedHash != null) verifyHash(target, digest, expectedHash)
+        if (digest != null) verifyHash(target, digest, expectedHash)
 
         val finalName = dao.byId(item.id)?.fileName ?: target.name.removeSuffix(".part")
         archives.completeDownload(item.id, target, finalName)

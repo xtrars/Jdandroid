@@ -25,11 +25,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -323,7 +323,7 @@ private fun PackageHeader(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onToggle) {
                     Icon(
-                        if (collapsed) Icons.Default.KeyboardArrowRight
+                        if (collapsed) Icons.AutoMirrored.Filled.KeyboardArrowRight
                         else Icons.Default.KeyboardArrowDown,
                         contentDescription = stringResource(
                             if (collapsed) R.string.downloads_expand else R.string.downloads_collapse

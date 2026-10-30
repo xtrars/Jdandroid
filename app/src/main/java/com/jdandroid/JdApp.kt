@@ -46,7 +46,7 @@ class JdApp : Application() {
             .addMigrations(*AppDatabase.ALL_MIGRATIONS)
             // Early schema versions are rebuilt; later ones migrate losslessly.
             .fallbackToDestructiveMigrationFrom(true, *AppDatabase.DESTRUCTIVE_FROM)
-            .fallbackToDestructiveMigrationOnDowngrade()
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = false)
             .build()
         settings = SettingsRepository(this)
         // The data layer does not know the download service; wire it up here.

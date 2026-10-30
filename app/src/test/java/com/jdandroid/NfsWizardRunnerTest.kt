@@ -64,7 +64,7 @@ class NfsWizardRunnerTest {
         runner.enter("film")
         s = runner.settled()
         assertEquals("film", s.browser!!.path)
-        assertEquals(NfsWizardResult(nas.host, "/volume1/dl", "film"), runner.result(s.browser!!.path))
+        assertEquals(NfsWizardResult(nas.host, "/volume1/dl", "film"), runner.result(s.browser.path))
 
         runner.back()
         s = runner.settled()
@@ -109,7 +109,7 @@ class NfsWizardRunnerTest {
         val s = runner.settled()
         assertEquals(NfsWizardStep.EXPORT, s.step)
         assertEquals("no route to 10.0.0.9", s.discovery!!.error!!.message)
-        assertTrue(s.discovery!!.error!!.unreachable)
+        assertTrue(s.discovery.error.unreachable)
         assertEquals(NfsWizardResult("10.0.0.9", null, null), runner.result(null))
         assertNull(runner.result("sub"))
         runner.close()

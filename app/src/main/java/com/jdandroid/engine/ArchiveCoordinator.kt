@@ -16,6 +16,7 @@ import com.jdandroid.data.SettingsRepository
 import com.jdandroid.data.renameFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -118,7 +119,7 @@ internal class ArchiveCoordinator(
                 archiveFile.delete()
                 temp.renameTo(archiveFile)
             }
-            val set = ArchiveSet(id, packageId, base!!)
+            val set = ArchiveSet(id, packageId, base)
             val pending = dao.pendingActiveParts(packageId, set.base, id) > 0
             if (pending || ExtractionRegistry.isActive(set.key)) {
                 markCompleted(id, archiveFile.absolutePath, WAITING_NOTE)
@@ -205,6 +206,7 @@ internal class ArchiveCoordinator(
     private suspend fun archiveSetIds(set: ArchiveSet): List<Long> =
         dao.archiveSetIds(set.packageId, set.base, set.id)
 
+    @OptIn(DelicateCoroutinesApi::class)
     private suspend fun launchExtraction(set: ArchiveSet, primary: File, archiveFile: File) {
         val setIds = archiveSetIds(set)
         // Already running (possibly in an earlier service instance): that instance completes the set
