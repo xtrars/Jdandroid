@@ -27,6 +27,50 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.6] – 2026-10-30
+
+### Geändert
+
+- Download-Schleife: Sie liest pro Durchlauf bis zu 128 KiB statt der 8 KiB,
+  die OkHttp je Aufruf liefert, und gibt nicht mehr bei jedem Block an andere
+  Aufgaben ab. Gemessen über 1 GiB ohne Netzwerk sinkt der Aufwand der
+  Schleife von 2,4–3,0 s auf 0,13 s, mit SHA-256-Prüfung von 4,4 s auf
+  0,9 s: weniger CPU-Last und Akkuverbrauch bei schnellen Leitungen. Bei
+  langsamen Leitungen bleibt die Anzeige so flüssig wie bisher (spätestens
+  alle 500 ms ein Block).
+- Benachrichtigung: Aktualisierungen laufen nacheinander statt parallel,
+  gleiche Inhalte werden nicht erneut gesendet, bei ausgeschaltetem
+  Bildschirm kommen Tempo und Prozent nur noch alle 15 s (Statuswechsel
+  sofort). Der Fortschritt liest dafür nur noch vier Spalten statt ganzer
+  Einträge, die Knöpfe der Benachrichtigung entstehen einmal statt jede
+  Sekunde.
+- Schema „Space“: Der Rahmen laufender Einträge pulsiert, ohne die Karte neu
+  aufzubauen, das Lauflicht der Balken läuft nur noch bei laufenden
+  Downloads. Bei „Animationen entfernen“ und im Energiesparmodus stehen
+  Rahmen und Lauflicht still.
+- Entpacken: Verschlüsselte RAR-Archive ohne Passwort werden sofort erkannt
+  statt erst nach dem Entpacken der ersten Datei; ZIP-Archive mit 1-MiB- statt
+  4-KiB-Puffer.
+- Linkprüfung und Paketnamen: Suchmuster werden einmal übersetzt statt für
+  jeden Dateinamen neu, der Paketname liest nur noch die Dateinamen des
+  Pakets statt ganzer Einträge.
+- ddownload nutzt die Verbindungen und Threads der App mit, statt eigene zu
+  öffnen.
+- Die CI baut nicht mehr für Commits, die nur die APK unter `release/` oder
+  Dokumentation ändern.
+
+### Behoben
+
+- Wake-Lock: Zwei gleichzeitige Aktualisierungen des Download-Dienstes
+  konnten ihn bis zum 6-Stunden-Timeout festhalten und so den Akku belasten.
+- ZIP-Archive blieben nach dem Entpacken geöffnet.
+
+### Tests
+
+- `ReadChunkTest` für die Download-Schleife, `RarExtractionTest` im Emulator:
+  entpackt ein- und dreiteilige RAR-Archive über die native 7-Zip-Bibliothek
+  (Testarchive aus `tools/mkrar.py`).
+
 ## [0.9.5] – 2026-10-30
 
 ### Geändert
@@ -1128,6 +1172,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.6]: https://github.com/xtrars/Jdandroid/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/xtrars/Jdandroid/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/xtrars/Jdandroid/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/xtrars/Jdandroid/compare/v0.9.2...v0.9.3

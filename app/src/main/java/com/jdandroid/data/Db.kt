@@ -39,6 +39,9 @@ data class DownloadPackage(
     val addedAt: Long = System.currentTimeMillis()
 )
 
+/** Columns of a download that the session progress needs. */
+data class SessionBytes(val id: Long, val fileSize: Long, val downloadedBytes: Long, val status: DownloadStatus)
+
 @Entity(
     tableName = "downloads",
     indices = [
@@ -148,8 +151,9 @@ interface DownloadDao {
     @Query("SELECT id FROM downloads WHERE status IN ('RUNNING', 'QUEUED')")
     suspend fun openIds(): List<Long>
 
-    @Query("SELECT * FROM downloads WHERE id IN (:ids)")
-    suspend fun byIds(ids: List<Long>): List<DownloadItem>
+    /** Only what the notification bar needs; it reads the session every second. */
+    @Query("SELECT id, fileSize, downloadedBytes, status FROM downloads WHERE id IN (:ids)")
+    suspend fun sessionBytes(ids: List<Long>): List<SessionBytes>
 
     /** "Pause all" must include queued entries, otherwise pump() starts the next ones at once. */
     @Query("UPDATE downloads SET status = 'PAUSED' WHERE status = 'QUEUED'")
@@ -334,6 +338,9 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE packageId = :packageId")
     suspend fun byPackage(packageId: Long): List<DownloadItem>
+
+    @Query("SELECT fileName FROM downloads WHERE packageId = :packageId AND fileName IS NOT NULL")
+    suspend fun fileNamesOfPackage(packageId: Long): List<String>
 
     @Query("DELETE FROM downloads WHERE packageId = :packageId")
     suspend fun deletePackageItems(packageId: Long)

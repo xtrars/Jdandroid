@@ -41,6 +41,8 @@ object Extractor {
     /** Progress is reported at most every 4 MiB. */
     private const val PROGRESS_STEP = 4L * 1024 * 1024
 
+    private const val ZIP_BUFFER = 1 shl 20
+
     /** Windows attribute flags as stored by 7-Zip and RAR. */
     private const val ATTR_REPARSE_POINT = 0x400
     private const val ATTR_UNIX_EXTENSION = 0x8000
@@ -206,7 +208,15 @@ object Extractor {
         archive: File, target: Destination, password: String?, filter: ExcludeFilter,
         progress: ProgressListener?, flat: Boolean
     ) {
-        val zip = ZipFile(archive)
+        ZipFile(archive).use { zip -> extractZip(zip, target, password, filter, progress, flat) }
+    }
+
+    private fun extractZip(
+        zip: ZipFile, target: Destination, password: String?, filter: ExcludeFilter,
+        progress: ProgressListener?, flat: Boolean
+    ) {
+        // zip4j's default buffer is 4 KiB
+        zip.bufferSize = ZIP_BUFFER
         val encrypted = zip.isEncrypted
         if (encrypted) {
             if (password == null) throw PasswordException(Texts.t("engine_password_required"))
@@ -379,6 +389,10 @@ object Extractor {
                 var total = 0L
                 for (i in 0 until inArchive.numberOfItems) {
                     val path = inArchive.getProperty(i, PropID.PATH) as? String ?: continue
+                    // RAR4 checks a password only through the CRC after a whole file is decoded
+                    if (password == null && inArchive.getProperty(i, PropID.ENCRYPTED) == true) {
+                        throw PasswordException(Texts.t("engine_password_required"))
+                    }
                     if (filter.matches(path)) continue
                     if (inArchive.getProperty(i, PropID.IS_FOLDER) == true) {
                         if (!flat) target.child(path).mkdirs()

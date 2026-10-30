@@ -423,8 +423,10 @@ Datenbank neu aufgebaut.
 
 Der instrumentierte `MigrationTest` (`app/src/androidTest/`) prüft die
 Migrationen ab Version 5 gegen die exportierten Schemata mit
-`MigrationTestHelper`; im CI wird er nur kompiliert, ausgeführt wird er mit
-`connectedDebugAndroidTest`. Wer eine Entity ändert, muss die Version
+`MigrationTestHelper`. Daneben entpackt `RarExtractionTest` ein- und
+mehrteilige RAR-Archive über die native 7-Zip-Bibliothek (Testarchive aus
+`tools/mkrar.py` unter `app/src/androidTest/assets/rar/`). Beide laufen in
+der CI auf einem Emulator (`connectedDebugAndroidTest`). Wer eine Entity ändert, muss die Version
 erhöhen, eine Migration ergänzen, das Schema exportieren (KSP-Argument
 `room.schemaLocation`) und den Test erweitern. Unit-Tests und Release-Build
 dabei nacheinander ausführen: parallele KSP-Läufe legen sonst eine leere

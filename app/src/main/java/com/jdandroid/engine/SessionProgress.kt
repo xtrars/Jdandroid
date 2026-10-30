@@ -1,8 +1,8 @@
 package com.jdandroid.engine
 
 import com.jdandroid.core.LiveProgress
-import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.SessionBytes
 
 /**
  * Entries of the current download session for the notification bar. Finished
@@ -24,7 +24,7 @@ internal class SessionProgress {
          * a finished entry counts in full, live bytes replace the database
          * snapshot and never exceed the size.
          */
-        fun ratio(items: List<DownloadItem>, live: Map<Long, LiveProgress>): Pair<Long, Long> {
+        fun ratio(items: List<SessionBytes>, live: Map<Long, LiveProgress>): Pair<Long, Long> {
             var done = 0L
             var total = 0L
             for (item in items) {

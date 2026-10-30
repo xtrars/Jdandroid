@@ -158,8 +158,16 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.5 (versionCode 70), Release v0.9.5 mit
-  CI-signierter APK; `release/` enthält 0.9.1 bis 0.9.5. 0.9.5: Build ohne
+- Zuletzt veröffentlicht: 0.9.6 (versionCode 71), Release v0.9.6 mit
+  CI-signierter APK; `release/` enthält 0.9.2 bis 0.9.6. 0.9.6: Effizienz
+  (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen
+  Channel und bei aus Bildschirm alle 15 s, Wake-Lock ohne Referenzzählung,
+  `LocalCalmMotion` für Neon-Effekte, RAR ohne Passwort sofort erkannt,
+  Regex vorübersetzt), `RarExtractionTest` im Emulator mit Archiven aus
+  `tools/mkrar.py` (7-Zip prüft sie: `apt-get install 7zip`, `7z t`).
+  In Arbeit: 0.9.7 mit R8 (siehe unten). Bewusst offen: direkter Export beim
+  Entpacken (doppeltes Kopieren in MediaStore) und Fortschritt der
+  Download-Liste ohne Neuberechnung aller Gruppen alle 500 ms. 0.9.5: Build ohne
   Compiler-Warnungen (Stand nach Kotlin 2.4); neue Warnungen gleich
   beheben. 0.9.4: AGP 9.5.0
   mit eingebautem Kotlin (kein `kotlin-android` im App-Modul; im Root-Build

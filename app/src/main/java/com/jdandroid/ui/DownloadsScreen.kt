@@ -418,7 +418,8 @@ private fun PackageHeader(
                 Spacer(Modifier.height(6.dp))
                 ThinProgress(
                     group.done.toFloat() / group.total,
-                    Modifier.padding(horizontal = 12.dp)
+                    Modifier.padding(horizontal = 12.dp),
+                    moving = group.active
                 )
             }
         }
@@ -615,7 +616,11 @@ private fun DownloadRow(
             } else if (item.status == DownloadStatus.RUNNING || item.status == DownloadStatus.PAUSED) {
                 Spacer(Modifier.height(6.dp))
                 if (item.fileSize > 0) {
-                    ThinProgress(item.downloadedBytes.toFloat() / item.fileSize, Modifier.padding(end = 8.dp))
+                    ThinProgress(
+                        item.downloadedBytes.toFloat() / item.fileSize,
+                        Modifier.padding(end = 8.dp),
+                        moving = item.status == DownloadStatus.RUNNING
+                    )
                 } else if (item.status == DownloadStatus.RUNNING) {
                     ThinProgress(null, Modifier.padding(end = 8.dp))
                 }

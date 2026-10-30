@@ -121,7 +121,7 @@ class DownloadEngine(
     suspend fun sessionProgress(): Pair<Long, Long> {
         val ids = session.ids()
         if (ids.isEmpty()) return 0L to 0L
-        val items = ids.chunked(SQL_IN_CHUNK).flatMap { dao.byIds(it) }
+        val items = ids.chunked(SQL_IN_CHUNK).flatMap { dao.sessionBytes(it) }
         return SessionProgress.ratio(items, ProgressBus.state.value)
     }
 
@@ -574,9 +574,9 @@ class DownloadEngine(
         try {
             body.byteStream().use { input ->
                 java.io.FileOutputStream(target, offset > 0).use { out ->
-                    val buffer = ByteArray(64 * 1024)
+                    val buffer = ByteArray(TRANSFER_BUFFER)
                     while (true) {
-                        val read = input.read(buffer)
+                        val read = input.readChunk(buffer, clock, SAMPLE_MS)
                         if (read < 0) break
                         out.write(buffer, 0, read)
                         digest?.update(buffer, 0, read)
@@ -603,7 +603,7 @@ class DownloadEngine(
                                 lastSave = now
                             }
                         }
-                        kotlinx.coroutines.yield()
+                        coroutineContext.ensureActive()
                     }
                 }
             }
@@ -666,6 +666,9 @@ class DownloadEngine(
 
         const val SAMPLE_MS = 500L
 
+        /** Bytes written per loop pass on a fast connection. */
+        const val TRANSFER_BUFFER = 128 * 1024
+
         const val SPEED_WINDOW_MS = 5_000L
 
         /** Minimum interval between byte-count checkpoints in the database. */
@@ -684,6 +687,23 @@ internal fun hashAlgorithmFor(hash: String): String? = when (hash.length) {
     40 -> "SHA-1"
     64 -> "SHA-256"
     else -> null
+}
+
+/**
+ * Fills [buffer] until it is full, the stream ends or [maxMillis] have passed,
+ * and returns the byte count, -1 at the end. OkHttp hands out at most one
+ * 8 KiB segment per read; a loop around plain reads would run 16 times as often.
+ */
+internal fun java.io.InputStream.readChunk(buffer: ByteArray, clock: Clock, maxMillis: Long): Int {
+    val start = clock.nowMillis()
+    var filled = 0
+    while (filled < buffer.size) {
+        val read = read(buffer, filled, buffer.size - filled)
+        if (read < 0) return if (filled == 0) -1 else filled
+        filled += read
+        if (clock.nowMillis() - start >= maxMillis) break
+    }
+    return filled
 }
 
 /**

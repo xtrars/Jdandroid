@@ -74,7 +74,10 @@ class DdownloadHoster internal constructor(
     private fun jarFor(accountId: Long): MemoryCookieJar = cookieJars.getOrPut(accountId) { MemoryCookieJar() }
 
     internal fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
+        // Own cookie jar and no cross-site interceptor, but the app-wide connections and threads
         OkHttpClient.Builder()
+            .connectionPool(Http.client.connectionPool)
+            .dispatcher(Http.client.dispatcher)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)

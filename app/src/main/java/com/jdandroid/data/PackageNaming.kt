@@ -16,7 +16,7 @@ object PackageNaming {
         val id = packageId ?: return
         val pkg = db.packageDao().byId(id) ?: return
         if (!pkg.autoNamed) return
-        val name = refinedName(pkg, db.downloadDao().byPackage(id).mapNotNull { it.fileName }) ?: return
+        val name = refinedName(pkg, db.downloadDao().fileNamesOfPackage(id)) ?: return
         db.packageDao().refineAutoName(id, name)
     }
 
@@ -59,15 +59,20 @@ object PackageNaming {
         return Texts.t("engine_package_from_date", stamp)
     }
 
+    private val partSuffix = Regex("\\.part\\d+\\.rar$", RegexOption.IGNORE_CASE)
+    private val sevenZipSuffix = Regex("\\.7z\\.\\d+$", RegexOption.IGNORE_CASE)
+    private val archiveSuffix = Regex("\\.(rar|zip|7z|[rz]\\d{2})$", RegexOption.IGNORE_CASE)
+    private val trailingPart = Regex("[._\\- ]*part\\d*$", RegexOption.IGNORE_CASE)
+
     private fun stripArchiveSuffix(name: String): String =
-        name.replace(Regex("\\.part\\d+\\.rar$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\.7z\\.\\d+$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\.(rar|zip|7z|[rz]\\d{2})$", RegexOption.IGNORE_CASE), "")
+        name.replace(partSuffix, "")
+            .replace(sevenZipSuffix, "")
+            .replace(archiveSuffix, "")
             .trim()
 
     private fun tidy(value: String): String? {
         val trimmed = value.trim()
-            .replace(Regex("[._\\- ]*part\\d*$", RegexOption.IGNORE_CASE), "")
+            .replace(trailingPart, "")
             .trimEnd('.', '-', '_', ' ', '(', '[')
         return trimmed.ifBlank { null }?.takeIf { it.length >= 3 }
     }

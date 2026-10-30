@@ -14,7 +14,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +27,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.view.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -41,7 +41,6 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -51,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
@@ -74,6 +74,12 @@ import kotlin.random.Random
 
 /** True while the gamer scheme is active; components switch to their neon variants. */
 val LocalGamer = compositionLocalOf { false }
+
+/**
+ * True while the gamer effects hold still: the system removed animations or
+ * battery saver is on. Set by [GamerBackdrop].
+ */
+internal val LocalCalmMotion = compositionLocalOf { false }
 
 /** Neon accents of the gamer scheme, in the order the gradients run. */
 internal object Neon {
@@ -298,9 +304,25 @@ internal object Tilt {
 @Composable
 fun GamerBackdrop(enabled: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier.fillMaxSize()) {
-        if (enabled) SpaceCanvas()
-        content()
+        val motion = if (enabled) rememberBackdropMotion() else null
+        if (motion != null) SpaceCanvas(motion)
+        CompositionLocalProvider(LocalCalmMotion provides (motion?.calm == true), content)
     }
+}
+
+/** Whether the activity is started, the system lets animations run, and battery saver is on. */
+private data class BackdropMotion(val started: Boolean, val animate: Boolean, val saver: Boolean) {
+    val calm: Boolean get() = !animate || saver
+}
+
+@Composable
+private fun rememberBackdropMotion(): BackdropMotion {
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val started = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    // Re-read on every start: the switch sits in the system settings, so changing it means leaving the app.
+    val animate = remember(started) { ValueAnimator.areAnimatorsEnabled() }
+    val saver by rememberPowerSave()
+    return BackdropMotion(started, animate, saver)
 }
 
 /**
@@ -336,14 +358,10 @@ private fun rememberFlightTime(running: Boolean, minFrameNanos: Long): State<Dou
  * saver.
  */
 @Composable
-private fun SpaceCanvas() {
+private fun SpaceCanvas(motion: BackdropMotion) {
     val field = remember { Starfield() }
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val started = lifecycle.isAtLeast(Lifecycle.State.STARTED)
-    // Re-read on every start: the switch sits in the system settings, so changing it means leaving the app.
-    val animate = remember(started) { ValueAnimator.areAnimatorsEnabled() }
-    val saver by rememberPowerSave()
-    val clock = rememberFlightTime(started && animate, if (saver) FramePacing.SAVER_NANOS else 0L)
+    val animate = motion.animate
+    val clock = rememberFlightTime(motion.started && animate, if (motion.saver) FramePacing.SAVER_NANOS else 0L)
     val tilt = rememberTilt(enabled = animate)
     val background = MaterialTheme.colorScheme.background
     Spacer(
@@ -424,41 +442,55 @@ private fun Density.horizonGrid(size: Size): Path = Path().apply {
     }
 }
 
-/** Border alpha of a neon frame: steady, or breathing while [pulse] is set (transferring entry). */
+/**
+ * Border alpha of a neon frame, read while drawing so a breathing frame
+ * redraws without recomposing the card: steady, or breathing while [pulse]
+ * is set (transferring entry) unless motion is calm.
+ */
 @Composable
-fun neonAlpha(pulse: Boolean): Float {
-    if (!pulse) return 0.75f
+fun neonAlpha(pulse: Boolean): () -> Float {
+    if (!pulse) return steadyAlpha
+    if (LocalCalmMotion.current) return fullAlpha
     val transition = rememberInfiniteTransition(label = "pulse")
-    val alpha by transition.animateFloat(
+    val alpha = transition.animateFloat(
         initialValue = 0.45f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "alpha"
     )
-    return alpha
+    return remember(alpha) { { alpha.value } }
 }
 
-/** Neon frame for cards: gradient border at [alpha], coloured glow and optional HUD corner marks. */
-fun Modifier.neonFrame(shape: Shape, alpha: Float, corners: Boolean = false, glow: Dp = 12.dp): Modifier {
-    val brush = Brush.linearGradient(Neon.gradient.map { it.copy(alpha = alpha) })
-    val corner = Neon.cyan.copy(alpha = alpha)
-    return this
-        .shadow(glow, shape, ambientColor = Neon.cyan, spotColor = Neon.magenta)
-        .border(1.dp, brush, shape)
-        .drawBehind {
-            if (!corners) return@drawBehind
-            val len = 10.dp.toPx()
-            val inset = 4.dp.toPx()
-            val w = 2.dp.toPx()
-            val cap = StrokeCap.Round
-            fun mark(x: Float, y: Float, dx: Float, dy: Float) {
-                drawLine(corner, Offset(x, y), Offset(x + dx * len, y), w, cap)
-                drawLine(corner, Offset(x, y), Offset(x, y + dy * len), w, cap)
+private val steadyAlpha = { 0.75f }
+private val fullAlpha = { 1f }
+
+/** Neon frame for cards: gradient border at [alpha], coloured glow and optional HUD corner marks behind the card. */
+fun Modifier.neonFrame(shape: Shape, alpha: () -> Float, corners: Boolean = false, glow: Dp = 12.dp): Modifier = this
+    .shadow(glow, shape, ambientColor = Neon.cyan, spotColor = Neon.magenta)
+    .drawWithCache {
+        val width = 1.dp.toPx()
+        // Inset by half the stroke so the border stays inside the card, as Modifier.border draws it
+        val border = shape.createOutline(Size(size.width - width, size.height - width), layoutDirection, this)
+        val stroke = Stroke(width)
+        val brush = Brush.linearGradient(Neon.gradient)
+        val len = 10.dp.toPx()
+        val inset = 4.dp.toPx()
+        val markWidth = 2.dp.toPx()
+        onDrawWithContent {
+            val a = alpha()
+            if (corners) {
+                val corner = Neon.cyan.copy(alpha = a)
+                fun mark(x: Float, y: Float, dx: Float, dy: Float) {
+                    drawLine(corner, Offset(x, y), Offset(x + dx * len, y), markWidth, StrokeCap.Round)
+                    drawLine(corner, Offset(x, y), Offset(x, y + dy * len), markWidth, StrokeCap.Round)
+                }
+                mark(inset, inset, 1f, 1f)
+                mark(size.width - inset, inset, -1f, 1f)
+                mark(inset, size.height - inset, 1f, -1f)
+                mark(size.width - inset, size.height - inset, -1f, -1f)
             }
-            mark(inset, inset, 1f, 1f)
-            mark(size.width - inset, inset, -1f, 1f)
-            mark(inset, size.height - inset, 1f, -1f)
-            mark(size.width - inset, size.height - inset, -1f, -1f)
+            drawContent()
+            translate(width / 2, width / 2) { drawOutline(border, brush, alpha = a, style = stroke) }
         }
-}
+    }
 
 /** Thin gradient line with glow, used above the navigation bar. */
 @Composable
@@ -471,16 +503,18 @@ fun NeonLine(modifier: Modifier = Modifier) {
 }
 
 /**
- * Gradient progress bar with a travelling highlight and a glow underneath;
- * null is the indeterminate sweep.
+ * Gradient progress bar with a glow underneath and, while [moving] and motion
+ * is not calm, a travelling highlight; null is the indeterminate sweep.
  */
 @Composable
-fun NeonProgress(fraction: Float?, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "sweep")
-    val sweep by transition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "x"
-    )
+fun NeonProgress(fraction: Float?, modifier: Modifier = Modifier, moving: Boolean = true) {
+    val sweep = if (fraction == null || (moving && !LocalCalmMotion.current)) {
+        val transition = rememberInfiniteTransition(label = "sweep")
+        transition.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "x"
+        )
+    } else null
     val track = MaterialTheme.colorScheme.surfaceVariant
     Canvas(modifier.fillMaxWidth().height(6.dp)) {
         val h = size.height
@@ -488,15 +522,15 @@ fun NeonProgress(fraction: Float?, modifier: Modifier = Modifier) {
         drawLine(track, Offset(h / 2, h / 2), Offset(size.width - h / 2, h / 2), h, StrokeCap.Round)
         val (start, end) = if (fraction == null) {
             val w = size.width * 0.3f
-            val x = (size.width + w) * sweep - w
+            val x = (size.width + w) * (sweep?.value ?: 0f) - w
             x.coerceAtLeast(0f) to (x + w).coerceAtMost(size.width)
         } else 0f to size.width * fraction.coerceIn(0f, 1f)
         if (end - start < h) return@Canvas
         val brush = Brush.horizontalGradient(Neon.gradient, startX = 0f, endX = size.width)
         drawLine(brush, Offset(start + h / 2, h / 2), Offset(end - h / 2, h / 2), h * 1.9f, StrokeCap.Round, alpha = 0.25f)
         drawLine(brush, Offset(start + h / 2, h / 2), Offset(end - h / 2, h / 2), stroke.width, StrokeCap.Round)
-        if (fraction != null) {
-            val x = start + (end - start) * sweep
+        if (fraction != null && sweep != null) {
+            val x = start + (end - start) * sweep.value
             drawLine(Color.White.copy(alpha = 0.7f), Offset(x, 0f), Offset(x + 3.dp.toPx(), h), 2.dp.toPx(), StrokeCap.Round)
         }
     }

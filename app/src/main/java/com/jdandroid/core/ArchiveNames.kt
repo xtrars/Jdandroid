@@ -27,15 +27,15 @@ object ArchiveNames {
      */
     fun repairName(name: String): String {
         if (name.contains('.')) return name
-        val tokens = name.trim().split(Regex("""\s+""")).filter { it.isNotEmpty() }
+        val tokens = name.trim().split(whitespace).filter { it.isNotEmpty() }
         if (tokens.size < 2) return name
         var words = tokens
         var ext = words.last().lowercase()
         // "name 7z 001" -> name.7z.001
-        if (Regex("""^\d{3}$""").matches(ext) && words.size >= 3 && words[words.size - 2].equals("7z", true)) {
+        if (threeDigits.matches(ext) && words.size >= 3 && words[words.size - 2].equals("7z", true)) {
             words = words.dropLast(2)
             ext = "7z.$ext"
-        } else if (ext in knownExtensions || Regex("""^[rz]\d{2}$""").matches(ext)) {
+        } else if (ext in knownExtensions || oldVolumeExt.matches(ext)) {
             words = words.dropLast(1)
         } else {
             return name
@@ -61,22 +61,32 @@ object ArchiveNames {
     /** Common base name of all parts, e.g. "film.part2.rar" -> "film"; null if not an archive. */
     fun archiveBase(fileName: String): String? {
         val lower = fileName.lowercase()
-        Regex("""^(.*?)\.part\d+\.rar$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.7z\.\d+$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.(rar|zip|7z)$""").find(lower)?.let { return it.groupValues[1] }
-        Regex("""^(.*?)\.[rz]\d{2}$""").find(lower)?.let { return it.groupValues[1] }
+        for (pattern in basePatterns) pattern.find(lower)?.let { return it.groupValues[1] }
         return null
     }
 
     /** Secondary volumes (part2, .r00, .z01 ...) are extracted via the first part, never on their own. */
     fun isSecondaryVolume(fileName: String): Boolean {
         val lower = fileName.lowercase()
-        Regex("""\.part(\d+)\.rar$""").find(lower)?.let {
+        partVolume.find(lower)?.let {
             return (it.groupValues[1].toIntOrNull() ?: 1) > 1
         }
-        Regex("""\.7z\.(\d+)$""").find(lower)?.let {
+        sevenZipVolume.find(lower)?.let {
             return (it.groupValues[1].toIntOrNull() ?: 1) > 1
         }
-        return Regex("""\.[rz]\d{2}$""").containsMatchIn(lower)
+        return oldVolumeSuffix.containsMatchIn(lower)
     }
+
+    private val whitespace = Regex("""\s+""")
+    private val threeDigits = Regex("""^\d{3}$""")
+    private val oldVolumeExt = Regex("""^[rz]\d{2}$""")
+    private val basePatterns = listOf(
+        Regex("""^(.*?)\.part\d+\.rar$"""),
+        Regex("""^(.*?)\.7z\.\d+$"""),
+        Regex("""^(.*?)\.(rar|zip|7z)$"""),
+        Regex("""^(.*?)\.[rz]\d{2}$""")
+    )
+    private val partVolume = Regex("""\.part(\d+)\.rar$""")
+    private val sevenZipVolume = Regex("""\.7z\.(\d+)$""")
+    private val oldVolumeSuffix = Regex("""\.[rz]\d{2}$""")
 }

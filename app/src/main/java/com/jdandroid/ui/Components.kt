@@ -115,11 +115,16 @@ fun RowCard(modifier: Modifier = Modifier, active: Boolean = false, content: @Co
     ) { Column { content() } }
 }
 
-/** Thin rounded progress bar; null means indeterminate. */
+/** Thin rounded progress bar; null means indeterminate. [moving] lets the gamer bar run its highlight. */
 @Composable
-fun ThinProgress(fraction: Float?, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
+fun ThinProgress(
+    fraction: Float?,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    moving: Boolean = true
+) {
     if (LocalGamer.current) {
-        NeonProgress(fraction, modifier)
+        NeonProgress(fraction, modifier, moving)
         return
     }
     val m = modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp))

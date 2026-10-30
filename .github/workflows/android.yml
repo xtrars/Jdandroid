@@ -6,6 +6,11 @@ on:
       - main
       - master
       - "claude/**"
+    # Release-Commits bringen nur die APK aus der CI, Doku braucht keinen Build.
+    paths-ignore:
+      - "release/**"
+      - "docs/**"
+      - "**.md"
   pull_request:
   workflow_dispatch:
 

@@ -1,8 +1,8 @@
 package com.jdandroid
 
 import com.jdandroid.core.LiveProgress
-import com.jdandroid.data.DownloadItem
 import com.jdandroid.data.DownloadStatus
+import com.jdandroid.data.SessionBytes
 import com.jdandroid.engine.SessionProgress
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -10,10 +10,8 @@ import org.junit.Test
 /** The notification bar only moves forward: finished entries keep their share, unknown sizes do not count. */
 class SessionProgressTest {
 
-    private fun item(id: Long, status: DownloadStatus, size: Long, bytes: Long = 0) = DownloadItem(
-        id = id, url = "https://example.org/$id", hosterId = "rapidgator", packageId = 1,
-        fileName = "$id.bin", fileSize = size, downloadedBytes = bytes, status = status
-    )
+    private fun item(id: Long, status: DownloadStatus, size: Long, bytes: Long = 0) =
+        SessionBytes(id = id, fileSize = size, downloadedBytes = bytes, status = status)
 
     @Test
     fun fertigerEintragZaehltVollUndFaelltNichtHeraus() {

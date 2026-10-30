@@ -12,6 +12,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.jdandroid.JdApp
 import com.jdandroid.R
@@ -27,7 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
 /**
  * Foreground service that hosts the [DownloadEngine], the Click'n'Load
@@ -48,6 +51,27 @@ class DownloadService : Service() {
     private lateinit var engine: DownloadEngine
     private var wakeLock: PowerManager.WakeLock? = null
     private var cnlServer: ClickNLoadServer? = null
+
+    /**
+     * Refresh requests, handled one after the other: concurrent refreshes
+     * raced on the stop decision and the wake lock. Conflated, so a burst of
+     * state changes costs a single refresh.
+     */
+    private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
+
+    /** Last posted notification, to skip identical posts and pace them while the screen is off. */
+    private var shown: ShownNotification? = null
+
+    private data class ShownNotification(
+        val active: Int, val queued: Int, val paused: Boolean, val cnl: Boolean,
+        val text: String, val progress: Int, val at: Long
+    )
+
+    private val contentIntent by lazy {
+        PendingIntent.getActivity(this, 0, appLaunchIntent(), PendingIntent.FLAG_IMMUTABLE)
+    }
+    private val pauseAllIntent by lazy { servicePendingIntent(ACTION_PAUSE_ALL, 1) }
+    private val resumeAllIntent by lazy { servicePendingIntent(ACTION_RESUME_ALL, 2) }
 
     /**
      * Desired Click'n'Load state, set synchronously while the server starts
@@ -100,7 +124,14 @@ class DownloadService : Service() {
         super.onCreate()
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jdandroid:downloads")
-        engine = DownloadEngine(this, scope) { scope.launch { refresh() } }
+            .apply { setReferenceCounted(false) }
+        engine = DownloadEngine(this, scope) { requestRefresh() }
+        scope.launch {
+            for (request in refreshRequests) {
+                // A failing refresh goes to the scope's error handler and must not end the loop
+                supervisorScope { launch { refresh() } }
+            }
+        }
         startForegroundCompat(buildNotification(getString(R.string.service_preparing)))
         // Already stopping: no startup, no network callback
         if (foregroundRefused) return
@@ -140,21 +171,21 @@ class DownloadService : Service() {
             ACTION_EXTRACT -> scope.launch {
                 engine.extractNow(id)?.let { AppMessages.error(it) }
             }
-            ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); refresh() }
+            ACTION_PAUSE_ALL -> scope.launch { engine.pauseAll(); requestRefresh() }
             ACTION_RESUME_ALL -> scope.launch {
                 (application as JdApp).db.downloadDao().requeuePausedAndFailed(FreeMode.heldFrom())
                 engine.pump()
             }
             ACTION_START_CNL -> {
                 cnlWanted = true
-                scope.launch { startClickNLoadServer(); refresh() }
+                scope.launch { startClickNLoadServer(); requestRefresh() }
             }
             ACTION_STOP_CNL -> {
                 cnlWanted = false
                 cnlServer?.stop()
                 cnlServer = null
                 CnlStatus.stopped()
-                scope.launch { refresh() }
+                requestRefresh()
             }
             else -> scope.launch { engine.pump() }
         }
@@ -248,6 +279,10 @@ class DownloadService : Service() {
         AppLog.w("DownloadService", "CNL-Start fehlgeschlagen: $reason")
     }
 
+    private fun requestRefresh() {
+        refreshRequests.trySend(Unit)
+    }
+
     private suspend fun refresh() {
         val dao = (application as JdApp).db.downloadDao()
         val queued = dao.queuedCount()
@@ -264,6 +299,14 @@ class DownloadService : Service() {
             return
         }
         ensureForegroundType(active > 0)
+        val paused = dao.pausedCount() > 0
+        val now = SystemClock.elapsedRealtime()
+        val last = shown
+        val sameState = last != null && last.active == active && last.queued == queued &&
+            last.paused == paused && last.cnl == cnlActive
+        // With the screen off nobody sees the speed and percent tick; state changes still go out at once
+        val screenOn = getSystemService(PowerManager::class.java)?.isInteractive != false
+        if (sameState && !screenOn && now - last.at < SCREEN_OFF_NOTIFY_MS) return
         val text = if (active == 0 && queued == 0 && cnlActive) {
             getString(R.string.service_status_cnl_active, ClickNLoadServer.PORT)
         } else {
@@ -276,12 +319,15 @@ class DownloadService : Service() {
             if (cnlActive) parts += getString(R.string.service_status_cnl_on)
             parts.joinToString(" · ")
         }
-        val (done, total) = engine.sessionProgress()
-        val progress = if (active > 0) SessionProgress.percent(done, total) else -1
-        val paused = dao.pausedCount()
+        val progress = if (active > 0) {
+            val (done, total) = engine.sessionProgress()
+            SessionProgress.percent(done, total)
+        } else -1
+        if (sameState && last.text == text && last.progress == progress) return
         val manager = getSystemService(NotificationManager::class.java)
         runCatching {
-            manager.notify(NOTIFICATION_ID, buildNotification(text, progress, active > 0, paused > 0))
+            manager.notify(NOTIFICATION_ID, buildNotification(text, progress, active > 0, paused))
+            shown = ShownNotification(active, queued, paused, cnlActive, text, progress, now)
         }
     }
 
@@ -325,11 +371,6 @@ class DownloadService : Service() {
         showPause: Boolean = false,
         showResume: Boolean = false
     ): Notification {
-        val contentIntent = PendingIntent.getActivity(
-            this, 0,
-            appLaunchIntent(),
-            PendingIntent.FLAG_IMMUTABLE
-        )
         val builder = NotificationCompat.Builder(this, JdApp.CHANNEL_DOWNLOADS)
             .setSmallIcon(com.jdandroid.R.drawable.ic_stat_download)
             .setContentTitle(getString(R.string.app_name))
@@ -340,12 +381,12 @@ class DownloadService : Service() {
         if (progress >= 0) builder.setProgress(100, progress, false)
         if (showPause) {
             builder.addAction(
-                0, getString(R.string.service_action_pause_all), servicePendingIntent(ACTION_PAUSE_ALL, 1)
+                0, getString(R.string.service_action_pause_all), pauseAllIntent
             )
         }
         if (showResume) {
             builder.addAction(
-                0, getString(R.string.common_resume), servicePendingIntent(ACTION_RESUME_ALL, 2)
+                0, getString(R.string.common_resume), resumeAllIntent
             )
         }
         return builder.build()
@@ -415,6 +456,9 @@ class DownloadService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1
+
+        /** Notification refresh interval while the screen is off and nothing but speed and percent changes. */
+        private const val SCREEN_OFF_NOTIFY_MS = 15_000L
         private const val NOTIFICATION_CNL = 2
         private const val NOTIFICATION_TIMEOUT = 4
         const val ACTION_PUMP = "com.jdandroid.action.PUMP"
