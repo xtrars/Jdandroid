@@ -185,9 +185,8 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 - Nur geschätzt, nicht begonnen: Linux-/Flatpak-Fassung (zwei bis drei
   Wochen; Kern und Hoster in ein gemeinsames Gradle-Modul, Compose
   Multiplatform für den Desktop, Browser-Login und Captcha als größte Hürde).
-- `release/JDAndroid-0.8.2.apk` und älter sind lokale Builds und byteweise
-  nicht gleich den CI-Assets, tragen aber dieselbe Signatur; ab 0.9.0 liegt
-  in `release/` die CI-Datei.
+- In `release/` liegen seit 0.9.4 nur CI-Dateien (ab 0.9.0 byteweise gleich
+  den Release-Assets); ältere lokale Builds trugen dieselbe Signatur.
 - Die Git-Historie bis 0.8.2 ist auf den 08.09.2026 datiert, die Sitzung
   danach lief mit Datum 27.10.2026; CHANGELOG-Daten folgen dem Sitzungsdatum.
 
