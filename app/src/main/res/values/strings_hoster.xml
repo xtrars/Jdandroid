@@ -31,7 +31,7 @@
     <!-- ddownload -->
     <string name="hoster_ddownload_account_hint">Anmeldung nur über „Im Browser anmelden“: Benutzername und Passwort im eingebetteten Browser eingeben und das Captcha lösen; die App übernimmt die Session-Cookies.</string>
     <string name="hoster_ddownload_invalid_link">Ungültiger ddownload-Link</string>
-    <string name="hoster_ddownload_cloudflare_blocked">ddownload: Zugriff von Cloudflare blockiert (HTTP %1$d). Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.</string>
+    <string name="hoster_ddownload_cloudflare_blocked">ddownload: Zugriff von Cloudflare blockiert (HTTP %1$d). Bleibt es dabei, im Browser neu anmelden.</string>
     <string name="hoster_ddownload_no_login">ddownload: keine Anmeldung hinterlegt. Bitte unter Konten „Im Browser anmelden“ verwenden (der Login verlangt ein Captcha).</string>
     <string name="hoster_ddownload_account_page_unreachable">ddownload: Kontoseite nicht erreichbar (HTTP %1$d)</string>
     <string name="hoster_ddownload_session_expired">ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut „Im Browser anmelden“.</string>
@@ -51,7 +51,7 @@
     <string name="hoster_ddownload_countdown_skipped">ddownload: Countdown nicht eingehalten</string>
     <string name="hoster_ddownload_free_countdown">ddownload: Countdown vor dem Free-Download</string>
     <string name="hoster_ddownload_free_locked">ddownload: Sperre bis zum nächsten Free-Download</string>
-    <string name="hoster_ddownload_maintenance">ddownload: Server in Wartung – später erneut</string>
+    <string name="hoster_ddownload_maintenance">ddownload: Server in Wartung</string>
     <string name="hoster_ddownload_free_size_limit">ddownload: Free-Download nur bis %1$s – für diese Datei ist ein Premium-Konto nötig</string>
     <string name="hoster_ddownload_premium_only">ddownload: Datei ist nur mit Premium-Konto ladbar</string>
     <string name="hoster_ddownload_limit_reached_hour">ddownload: Download-Limit erreicht – in einer Stunde erneut</string>

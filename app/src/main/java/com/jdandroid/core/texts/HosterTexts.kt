@@ -39,7 +39,7 @@ object HosterTexts {
         // ddownload
         "hoster_ddownload_account_hint" to "Anmeldung nur über „Im Browser anmelden“: Benutzername und Passwort im eingebetteten Browser eingeben und das Captcha lösen; die App übernimmt die Session-Cookies.",
         "hoster_ddownload_invalid_link" to "Ungültiger ddownload-Link",
-        "hoster_ddownload_cloudflare_blocked" to "ddownload: Zugriff von Cloudflare blockiert (HTTP %1\$d). Bitte später erneut versuchen oder im Browser einmal die Seite öffnen.",
+        "hoster_ddownload_cloudflare_blocked" to "ddownload: Zugriff von Cloudflare blockiert (HTTP %1\$d). Bleibt es dabei, im Browser neu anmelden.",
         "hoster_ddownload_no_login" to "ddownload: keine Anmeldung hinterlegt. Bitte unter Konten „Im Browser anmelden“ verwenden (der Login verlangt ein Captcha).",
         "hoster_ddownload_account_page_unreachable" to "ddownload: Kontoseite nicht erreichbar (HTTP %1\$d)",
         "hoster_ddownload_session_expired" to "ddownload: Browser-Session abgelaufen. Bitte unter Konten erneut „Im Browser anmelden“.",
@@ -59,7 +59,7 @@ object HosterTexts {
         "hoster_ddownload_countdown_skipped" to "ddownload: Countdown nicht eingehalten",
         "hoster_ddownload_free_countdown" to "ddownload: Countdown vor dem Free-Download",
         "hoster_ddownload_free_locked" to "ddownload: Sperre bis zum nächsten Free-Download",
-        "hoster_ddownload_maintenance" to "ddownload: Server in Wartung – später erneut",
+        "hoster_ddownload_maintenance" to "ddownload: Server in Wartung",
         "hoster_ddownload_free_size_limit" to "ddownload: Free-Download nur bis %1\$s – für diese Datei ist ein Premium-Konto nötig",
         "hoster_ddownload_premium_only" to "ddownload: Datei ist nur mit Premium-Konto ladbar",
         "hoster_ddownload_limit_reached_hour" to "ddownload: Download-Limit erreicht – in einer Stunde erneut",

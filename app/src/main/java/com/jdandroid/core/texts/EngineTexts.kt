@@ -8,8 +8,8 @@ package com.jdandroid.core.texts
 object EngineTexts {
     val texts: Map<String, String> = mapOf(
         // FreeMode
-        "engine_free_wait" to "Wartezeit im Free-Modus: %1\$s",
-        "engine_free_wait_reason" to "Wartezeit im Free-Modus: %1\$s – %2\$s",
+        "engine_free_wait" to "Wartezeit: %1\$s",
+        "engine_free_wait_reason" to "Wartezeit: %1\$s – %2\$s",
         "engine_free_captcha" to "Captcha nötig – im Menü „Captcha lösen“",
         "engine_free_captcha_reason" to "%1\$s – im Menü „Captcha lösen“",
         "engine_free_disabled" to "Kein Konto und Free-Modus aus",
@@ -17,6 +17,7 @@ object EngineTexts {
 
         // DownloadEngine
         "engine_target_folder" to "Zielordner",
+        "engine_export_incomplete" to "Export unvollständig, im App-Ordner geblieben: %1\$d/%2\$d",
         "engine_unknown_hoster" to "Unbekannter Hoster",
         "engine_generic_error" to "Fehler",
         "engine_invalid_download_url" to "Ungültige Download-Adresse: %1\$s",

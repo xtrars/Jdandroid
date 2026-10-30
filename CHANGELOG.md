@@ -27,6 +27,37 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.8] – 2026-10-30
+
+### Geändert
+
+- ddownload: Eine Cloudflare-Sperre oder eine nicht erreichbare Kontoseite
+  führt zu 15 Minuten Wartezeit, Wartung (HTTP 503 oder Wartungsseite) zu
+  20 Minuten, wie bei 1fichier. Bisher scheiterte der Eintrag nach fünf
+  schnellen Versuchen, also nach etwa fünf Minuten. Die Meldung rät bei
+  anhaltender Sperre zur neuen Anmeldung im Browser; das Konto bleibt gültig.
+- Wartezeiten heißen in der Liste „Wartezeit: …“ statt „Wartezeit im
+  Free-Modus: …“, weil sie jetzt auch Premium-Downloads betreffen.
+
+### Behoben
+
+- Export nach dem Entpacken: Konnten Dateien nicht in den gewählten Ordner
+  oder nach Downloads/JDAndroid kopiert werden, verschwanden die Einträge
+  trotzdem aus der Liste (Standard „Links nach dem Entpacken entfernen“), und
+  die übrigen Dateien blieben ohne Meldung im App-Ordner. Jetzt bleiben die
+  Einträge mit „Export unvollständig, im App-Ordner geblieben: x/y“ stehen;
+  das gilt auch für einen dauerhaften NAS-Fehler.
+- „Erneut laden“ löscht die alte Kopie nach ihrem gespeicherten Ort: Eine
+  Kopie in Downloads/JDAndroid wurde bisher nie gefunden (falscher
+  Ordnername), nach einem Wechsel des Zielordners konnte stattdessen eine
+  gleichnamige Datei im neuen Ordner gelöscht werden.
+- Rapidgator: Die Kontoabfrage meldet sich unter derselben Sperre an wie die
+  Downloads und öffnet so keine zweite Sitzung neben einem laufenden
+  Download.
+- Jeder Direktlink läuft über HTTPS, auch der aus dem Browser übernommene
+  ddownload-Link und der Premium-Link von 1fichier; ein `http://`-Link wäre
+  an der gesperrten Klartext-Verbindung gescheitert.
+
 ## [0.9.7] – 2026-10-30
 
 ### Geändert
@@ -1189,6 +1220,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.8]: https://github.com/xtrars/Jdandroid/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/xtrars/Jdandroid/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/xtrars/Jdandroid/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/xtrars/Jdandroid/compare/v0.9.4...v0.9.5

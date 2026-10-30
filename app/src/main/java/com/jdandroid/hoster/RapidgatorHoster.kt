@@ -373,8 +373,10 @@ class RapidgatorHoster internal constructor(
         return token to (resp.optJSONObject("user") ?: JSONObject())
     }
 
+    private fun loginLock(account: Account): Any = loginLocks.getOrPut(account.id) { Any() }
+
     private fun tokenFor(account: Account): String =
-        tokens[account.id] ?: synchronized(loginLocks.getOrPut(account.id) { Any() }) {
+        tokens[account.id] ?: synchronized(loginLock(account)) {
             tokens[account.id] ?: login(account).first
         }
 
@@ -387,14 +389,15 @@ class RapidgatorHoster internal constructor(
             val json = callRaw("user/info", mapOf("token" to cached))
             when (json.optInt("status")) {
                 200 -> json.optJSONObject("response")?.optJSONObject("user") ?: JSONObject()
-                401 -> {
+                401 -> synchronized(loginLock(account)) {
                     tokens.remove(account.id)
                     login(account).second
                 }
                 else -> fail(json, loginCall = false)
             }
         } else {
-            login(account).second
+            // Under the same lock as downloads: a parallel second login would replace their session
+            synchronized(loginLock(account)) { login(account).second }
         }
         val premiumEnd = user.optLong("premium_end_time", 0) * 1000
         val premium = user.optBoolean("is_premium", false) ||

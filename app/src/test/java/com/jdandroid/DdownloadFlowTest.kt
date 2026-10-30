@@ -146,6 +146,9 @@ class DdownloadFlowTest {
                 server.enqueue(html("<html><body>Error</body></html>", code))
                 val fehler = failure { hoster.checkAccount(session) }
                 assertTrue("$code: $fehler", fehler is HosterException && !fehler.permanent)
+                // Waited out like at the other hosters instead of failing after a few quick retries
+                val wait = if (code == 503) DdownloadHoster.MAINTENANCE_WAIT_SECONDS else DdownloadHoster.BLOCK_WAIT_SECONDS
+                assertEquals("$code", wait, (fehler as WaitException).seconds)
                 assertEquals("$code", 1, server.requestCount)
             }
         }

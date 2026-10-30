@@ -3,8 +3,8 @@
     <!-- Engine without a context (DownloadEngine, Extractor, FreeMode, Format) via Texts.t; every key mirrors core/texts/EngineTexts.kt. Keys: engine_<meaning>. -->
 
     <!-- Free mode: display of the stored codes -->
-    <string name="engine_free_wait">Free mode wait: %1$s</string>
-    <string name="engine_free_wait_reason">Free mode wait: %1$s – %2$s</string>
+    <string name="engine_free_wait">Waiting: %1$s</string>
+    <string name="engine_free_wait_reason">Waiting: %1$s – %2$s</string>
     <string name="engine_free_captcha">Captcha required – use “Solve captcha” in the menu</string>
     <string name="engine_free_captcha_reason">%1$s – use “Solve captcha” in the menu</string>
     <string name="engine_free_disabled">No account and free mode is off</string>
@@ -12,6 +12,7 @@
 
     <!-- Download flow -->
     <string name="engine_target_folder">Target folder</string>
+    <string name="engine_export_incomplete">Export incomplete, left in the app folder: %1$d/%2$d</string>
     <string name="engine_unknown_hoster">Unknown hoster</string>
     <string name="engine_generic_error">Error</string>
     <string name="engine_invalid_download_url">Invalid download URL: %1$s</string>

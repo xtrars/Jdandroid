@@ -166,8 +166,15 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 
 ## Stand für die nächste Sitzung (30.10.2026)
 
-- Zuletzt veröffentlicht: 0.9.7 (versionCode 72), Release v0.9.7 mit
-  CI-signierter APK; `release/` enthält 0.9.3 bis 0.9.7. 0.9.7: R8 an
+- Zuletzt veröffentlicht: 0.9.8 (versionCode 73), Release v0.9.8 mit
+  CI-signierter APK; `release/` enthält 0.9.4 bis 0.9.8. 0.9.8: Fehler aus
+  der SOLID-Prüfung behoben (Export-Teilfehler behält Einträge,
+  `StorageTarget.exportedAt` nach Anzeigepfad, Rapidgator-Login unter Sperre,
+  HTTPS zentral), ddownload wartet bei Sperre 15, bei Wartung 20 Minuten
+  (Wunsch des Nutzers). Als Nächstes vereinbart, einzeln mit Tests: SOLID-
+  Umbauten 1. `premium`-Feld statt Statustext-Präfix (Migration 11→12),
+  2. DownloadEngine-Abhängigkeiten injizieren, 3. Exportziele als Klassen
+  (Muster `NfsShare`), 4. gemeinsamer Free-Ablauf der Hoster. 0.9.7: R8 an
   (APK 22,2 → 12,5 MB, siehe „Technik in Kürze“). 0.9.6: Effizienz
   (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen
   Channel und bei aus Bildschirm alle 15 s, Wake-Lock ohne Referenzzählung,

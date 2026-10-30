@@ -19,6 +19,7 @@ import com.jdandroid.data.DownloadStatus
 import com.jdandroid.data.PackageNaming
 import com.jdandroid.data.renameFile
 import com.jdandroid.hoster.CaptchaRequiredException
+import com.jdandroid.hoster.DirectLinks
 import com.jdandroid.hoster.HosterException
 import com.jdandroid.hoster.HosterRegistry
 import com.jdandroid.hoster.Http
@@ -344,7 +345,8 @@ class DownloadEngine(
                 current = adoptFileName(current, resolvedName)
                 PackageNaming.refineAutoName(app.db, current.packageId)
             }
-            download(self, current, resolved.directUrl, resolved.hash, resolved.headers)
+            // Cleartext is disabled: every direct link goes via HTTPS, whichever hoster path produced it
+            download(self, current, DirectLinks.https(resolved.directUrl), resolved.hash, resolved.headers)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: WaitException) {

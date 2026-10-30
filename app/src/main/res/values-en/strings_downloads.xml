@@ -73,8 +73,8 @@
     <string name="downloads_menu_solve_captcha">Solve captcha</string>
     <string name="downloads_menu_retry">Retry</string>
     <string name="downloads_menu_redownload">Download again</string>
-    <string name="downloads_free_wait">Free mode wait: %1$s</string>
-    <string name="downloads_free_wait_reason">Free mode wait: %1$s – %2$s</string>
+    <string name="downloads_free_wait">Waiting: %1$s</string>
+    <string name="downloads_free_wait_reason">Waiting: %1$s – %2$s</string>
     <string name="downloads_in_queue">queued</string>
     <string name="downloads_not_started">not started yet</string>
     <string name="downloads_loaded_bytes">%1$s downloaded</string>

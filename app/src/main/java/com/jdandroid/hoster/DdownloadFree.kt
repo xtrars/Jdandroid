@@ -188,7 +188,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      */
     private fun checkFreeBlockers(html: String) {
         if (DdownloadFreePage.isMaintenance(html)) {
-            throw HosterException(Texts.t("hoster_ddownload_maintenance"), permanent = false)
+            throw WaitException(DdownloadHoster.MAINTENANCE_WAIT_SECONDS, Texts.t("hoster_ddownload_maintenance"))
         }
         DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException(it, true) }
         val wait = DdownloadFreePage.waitSeconds(html)

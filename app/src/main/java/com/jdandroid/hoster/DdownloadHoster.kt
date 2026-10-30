@@ -92,15 +92,20 @@ class DdownloadHoster internal constructor(
         followRedirects: Boolean = true
     ): PageResponse = fetchPage(url, referer, form, acceptLanguage = "de,en;q=0.8", followRedirects = followRedirects)
 
-    /** Detects Cloudflare/WAF blocks so the message does not read "wrong password". */
+    /**
+     * Detects maintenance and Cloudflare/WAF blocks so the message does not
+     * read "wrong password". Both are waited out like at the other hosters;
+     * a few quick retries would only fail the queue after minutes.
+     */
     internal fun checkBlocked(resp: PageResponse) {
-        val blocked = resp.code == 403 || resp.code == 503 ||
+        if (resp.code == 503) throw WaitException(MAINTENANCE_WAIT_SECONDS, Texts.t("hoster_ddownload_maintenance"))
+        val blocked = resp.code == 403 ||
             resp.body.contains("Just a moment", true) ||
             resp.body.contains("cf-browser-verification", true) ||
             resp.body.contains("Attention Required", true) ||
             resp.body.contains("Enable JavaScript and cookies", true)
         if (blocked) {
-            throw HosterException(Texts.t("hoster_ddownload_cloudflare_blocked", resp.code), permanent = false)
+            throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_cloudflare_blocked", resp.code))
         }
     }
 
@@ -125,8 +130,8 @@ class DdownloadHoster internal constructor(
         var page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
         checkBlocked(page)
         if (page.code !in 200..299) {
-            // Server error or maintenance page: temporary, no reason to disable the account
-            throw HosterException(Texts.t("hoster_ddownload_account_page_unreachable", page.code), permanent = false)
+            // Server error: temporary, no reason to disable the account
+            throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_account_page_unreachable", page.code))
         }
         if (!isLoggedIn(page.body)) {
             // The cookie store may hold a session the server "deleted"
@@ -136,7 +141,7 @@ class DdownloadHoster internal constructor(
             page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
             checkBlocked(page)
             if (page.code !in 200..299) {
-                throw HosterException(Texts.t("hoster_ddownload_account_page_unreachable", page.code), permanent = false)
+                throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_account_page_unreachable", page.code))
             }
         }
         if (!isLoggedIn(page.body)) {
@@ -432,4 +437,10 @@ class DdownloadHoster internal constructor(
         !limitReached && code !in 500..599 && code != 429
 
     private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
+
+    internal companion object {
+        /** Wait after a Cloudflare block or an unreachable account page, as at 1fichier. */
+        const val BLOCK_WAIT_SECONDS = 15 * 60 + 1
+        const val MAINTENANCE_WAIT_SECONDS = 20 * 60 + 1
+    }
 }

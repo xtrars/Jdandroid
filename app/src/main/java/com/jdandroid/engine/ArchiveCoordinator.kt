@@ -370,8 +370,8 @@ internal class ArchiveCoordinator(
                     dao.byId(id)?.let { AccountRefresher.refreshHoster(app, it.hosterId) }
                     dao.completeExtractingSet(setIds, exported.path, exported.note)
                     finished = true
-                    // A pending NFS upload needs its rows for the retry
-                    if (!exported.pending && settings.currentRemoveLinksAfterExtract()) {
+                    // A pending NFS upload needs its rows for the retry, a failed export its note
+                    if (exported.note == null && settings.currentRemoveLinksAfterExtract()) {
                         removeExtractedEntries(set)
                     }
                 } catch (e: Throwable) {

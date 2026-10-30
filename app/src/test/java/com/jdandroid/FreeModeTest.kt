@@ -47,7 +47,7 @@ class FreeModeTest {
         // Display counts down from retryAt and appends the reason
         val now = 5_000_000L
         assertEquals(
-            "Wartezeit im Free-Modus: 2:59:00 – Rapidgator: Tageslimit im Free-Modus erreicht",
+            "Wartezeit: 2:59:00 – Rapidgator: Tageslimit im Free-Modus erreicht",
             FreeMode.displayText(note, now + (3 * 3600 - 60) * 1000L, now)
         )
         // A reason containing a dash is kept whole
@@ -56,7 +56,7 @@ class FreeModeTest {
         // Without a reason only the countdown
         assertEquals("FREE_WAIT", FreeMode.waitNote(null))
         assertEquals("FREE_WAIT", FreeMode.waitNote("  "))
-        assertEquals("Wartezeit im Free-Modus: 01:30", FreeMode.displayText(FreeMode.waitNote(), now + 90_000, now))
+        assertEquals("Wartezeit: 01:30", FreeMode.displayText(FreeMode.waitNote(), now + 90_000, now))
         assertNull(FreeMode.waitReason(FreeMode.waitNote()))
         assertNull(FreeMode.waitReason("Fehler – Versuch 2/5 in 20s"))
         assertNull(FreeMode.waitReason(null))
