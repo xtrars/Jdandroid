@@ -248,6 +248,8 @@ class RapidgatorPremiumFlowTest {
             fileInfo = { token -> if (token == "T1") error(401, "Session not exist") else fileInfo }
         )
         server.dispatcher = api
+        // The account check caches T1, which has expired by the time of the link check
+        runBlocking { hoster.checkAccount(account) }
         val info = runBlocking { hoster.checkLink(fileUrl, account) }
         assertEquals(true, info.online)
         assertEquals("archiv.part1.rar", info.fileName)
@@ -258,6 +260,38 @@ class RapidgatorPremiumFlowTest {
         assertEquals(mapOf("file_id" to fileId, "token" to "T1"), server.takeRequest().form())
         assertEquals("/api/user/login", server.takeRequest().path)
         assertEquals(mapOf("file_id" to fileId, "token" to "T2"), server.takeRequest().form())
+    }
+
+    @Test
+    fun linkpruefungMitAbgelehntemFrischemTokenMeldetSichNichtErneutAn() = withServer { server, hoster ->
+        val api = ApiDispatcher(
+            loginReply = ::loginReply,
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { error(401, "Session not exist") }
+        )
+        server.dispatcher = api
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertNull(info.online)
+        assertEquals(1, api.logins)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun scheiterndeNeuanmeldungIstKeinOfflineBefund() = withServer { server, hoster ->
+        var logins = 0
+        server.dispatcher = ApiDispatcher(
+            loginReply = { token -> if (++logins == 1) loginReply(token) else error(401, "Login or password is wrong") },
+            download = { MockResponse().setResponseCode(500) },
+            fileInfo = { error(401, "Session not exist") }
+        )
+        runBlocking { hoster.checkAccount(account) }
+        val info = runBlocking { hoster.checkLink(fileUrl, account) }
+        assertNull(info.online)
+        assertEquals(Texts.t("hoster_rapidgator_api_error", "Login or password is wrong"), info.note)
+        // The download sees the same permanent account error, not a missing file
+        val fehler = failure { hoster.resolve(fileUrl, account) }
+        assertTrue("$fehler", fehler is HosterException && fehler.permanent)
+        assertEquals(Texts.t("hoster_rapidgator_api_error", "Login or password is wrong"), fehler!!.message)
     }
 
     @Test

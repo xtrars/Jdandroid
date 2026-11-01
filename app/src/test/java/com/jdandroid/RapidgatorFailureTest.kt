@@ -1,6 +1,7 @@
 package com.jdandroid
 
-import com.jdandroid.hoster.RapidgatorHoster
+import com.jdandroid.hoster.Http
+import com.jdandroid.hoster.RapidgatorApi
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,39 +13,39 @@ import org.junit.Test
  */
 class RapidgatorFailureTest {
 
-    private val hoster = RapidgatorHoster()
+    private val api = RapidgatorApi("https://rapidgator.net/api/v2", Http.client)
 
     @Test
     fun abgelaufenerTokenIstTokenExpiredUndNichtPermanent() {
-        val e = hoster.failure(401, "Session not exist", loginCall = false)
-        assertTrue(e is RapidgatorHoster.TokenExpired)
+        val e = api.failure(401, "Session not exist", loginCall = false)
+        assertTrue(e is RapidgatorApi.TokenExpired)
         assertFalse(e.permanent)
-        assertTrue(hoster.failure(401, "", loginCall = false) is RapidgatorHoster.TokenExpired)
+        assertTrue(api.failure(401, "", loginCall = false) is RapidgatorApi.TokenExpired)
     }
 
     @Test
     fun falschesPasswortBeimLoginIstPermanentUndKeinTokenExpired() {
-        val e = hoster.failure(401, "Wrong password", loginCall = true)
-        assertFalse(e is RapidgatorHoster.TokenExpired)
+        val e = api.failure(401, "Wrong password", loginCall = true)
+        assertFalse(e is RapidgatorApi.TokenExpired)
         assertTrue(e.permanent)
     }
 
     @Test
     fun sperrenUndServerfehlerSindVoruebergehendAberKeinTokenExpired() {
         listOf(
-            hoster.failure(403, "Denied by IP", loginCall = false),
-            hoster.failure(403, "Daily traffic limit exceeded", loginCall = false),
-            hoster.failure(500, "", loginCall = false),
-            hoster.failure(503, "Service unavailable", loginCall = false)
+            api.failure(403, "Denied by IP", loginCall = false),
+            api.failure(403, "Daily traffic limit exceeded", loginCall = false),
+            api.failure(500, "", loginCall = false),
+            api.failure(503, "Service unavailable", loginCall = false)
         ).forEach { e ->
-            assertFalse(e.message, e is RapidgatorHoster.TokenExpired)
+            assertFalse(e.message, e is RapidgatorApi.TokenExpired)
             assertFalse(e.message, e.permanent)
         }
     }
 
     @Test
     fun fehlendeDateiUndFehlendesPremiumSindPermanent() {
-        assertTrue(hoster.failure(404, "File not found", loginCall = false).permanent)
-        assertTrue(hoster.failure(402, "Premium required", loginCall = false).permanent)
+        assertTrue(api.failure(404, "File not found", loginCall = false).permanent)
+        assertTrue(api.failure(402, "Premium required", loginCall = false).permanent)
     }
 }

@@ -1,6 +1,6 @@
 package com.jdandroid
 
-import com.jdandroid.hoster.DdownloadHoster
+import com.jdandroid.hoster.DdownloadPage
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,27 +12,25 @@ import org.junit.Test
  */
 class DdownloadResolveFailureTest {
 
-    private val hoster = DdownloadHoster()
-
     @Test
     fun serverfehlerUndDrosselungSindVoruebergehend() {
-        assertFalse(hoster.resolveFailurePermanent(500, limitReached = false))
-        assertFalse(hoster.resolveFailurePermanent(502, limitReached = false))
-        assertFalse(hoster.resolveFailurePermanent(599, limitReached = false))
-        assertFalse(hoster.resolveFailurePermanent(429, limitReached = false))
+        assertFalse(DdownloadPage.resolveFailurePermanent(500, limitReached = false))
+        assertFalse(DdownloadPage.resolveFailurePermanent(502, limitReached = false))
+        assertFalse(DdownloadPage.resolveFailurePermanent(599, limitReached = false))
+        assertFalse(DdownloadPage.resolveFailurePermanent(429, limitReached = false))
     }
 
     @Test
     fun limitHinweisIstVoruebergehend() {
-        assertFalse(hoster.resolveFailurePermanent(200, limitReached = true))
-        assertFalse(hoster.resolveFailurePermanent(404, limitReached = true))
+        assertFalse(DdownloadPage.resolveFailurePermanent(200, limitReached = true))
+        assertFalse(DdownloadPage.resolveFailurePermanent(404, limitReached = true))
     }
 
     @Test
     fun unerwarteteAntwortOhneLimitIstDauerhaft() {
-        assertTrue(hoster.resolveFailurePermanent(200, limitReached = false))
-        assertTrue(hoster.resolveFailurePermanent(302, limitReached = false))
-        assertTrue(hoster.resolveFailurePermanent(404, limitReached = false))
-        assertTrue(hoster.resolveFailurePermanent(499, limitReached = false))
+        assertTrue(DdownloadPage.resolveFailurePermanent(200, limitReached = false))
+        assertTrue(DdownloadPage.resolveFailurePermanent(302, limitReached = false))
+        assertTrue(DdownloadPage.resolveFailurePermanent(404, limitReached = false))
+        assertTrue(DdownloadPage.resolveFailurePermanent(499, limitReached = false))
     }
 }

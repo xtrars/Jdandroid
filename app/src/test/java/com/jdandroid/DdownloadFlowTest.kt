@@ -4,6 +4,7 @@ import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
 import com.jdandroid.hoster.CaptchaRequiredException
 import com.jdandroid.hoster.DdownloadHoster
+import com.jdandroid.hoster.DdownloadPage
 import com.jdandroid.hoster.FileOfflineException
 import com.jdandroid.hoster.FreeHints
 import com.jdandroid.hoster.HosterException
@@ -148,7 +149,7 @@ class DdownloadFlowTest {
                 val fehler = failure { hoster.checkAccount(session) }
                 assertTrue("$code: $fehler", fehler is HosterException && !fehler.permanent)
                 // Waited out like at the other hosters instead of failing after a few quick retries
-                val wait = if (code == 503) DdownloadHoster.MAINTENANCE_WAIT_SECONDS else DdownloadHoster.BLOCK_WAIT_SECONDS
+                val wait = if (code == 503) DdownloadPage.MAINTENANCE_WAIT_SECONDS else DdownloadPage.BLOCK_WAIT_SECONDS
                 assertEquals("$code", wait, (fehler as WaitException).seconds)
                 assertEquals("$code", 1, server.requestCount)
             }
@@ -442,16 +443,16 @@ class DdownloadFlowTest {
         val hoster = DdownloadHoster()
         assertEquals(
             "scn-smps8-S37E02.rar",
-            hoster.pageFileName("<html><head><title>Download scn-smps8-S37E02 rar</title></head></html>")
+            DdownloadPage.fileName("<html><head><title>Download scn-smps8-S37E02 rar</title></head></html>")
         )
         assertEquals(
             "scn-smps8-S37E02.rar",
-            hoster.pageFileName("<html><head><title>Download scn-smps8-S37E02 rar - DDownload</title></head></html>")
+            DdownloadPage.fileName("<html><head><title>Download scn-smps8-S37E02 rar - DDownload</title></head></html>")
         )
         assertEquals(
             "Serie.S01E01.mkv",
-            hoster.pageFileName("<html><head><title>Download Serie.S01E01.mkv | ddownload</title></head></html>")
+            DdownloadPage.fileName("<html><head><title>Download Serie.S01E01.mkv | ddownload</title></head></html>")
         )
-        assertNull(hoster.pageFileName("<html><head><title>Download - ddownload</title></head></html>"))
+        assertNull(DdownloadPage.fileName("<html><head><title>Download - ddownload</title></head></html>"))
     }
 }

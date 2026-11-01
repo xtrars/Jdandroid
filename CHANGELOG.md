@@ -27,6 +27,26 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.13] – 2026-11-01
+
+### Geändert
+
+- Umbau: Die Rapidgator-API (Anfragen, Fehlerauswertung, Sitzung je Konto)
+  ist eine eigene Klasse. Download, Link-Prüfung und Kontoprüfung melden
+  sich nach einer abgelaufenen Sitzung über denselben Weg genau einmal neu
+  an; vorher gab es dafür drei eigene Varianten.
+- Umbau: Bei ddownload sind die Seitenauswertung (Dateiname, Größe,
+  Formular, Direktlinks, Sperren) und die Sitzung (Cookies, Client,
+  Browser-Anmeldung) aus der Hoster-Klasse gelöst. Der Free-Ablauf greift
+  nicht mehr in die Hoster-Klasse hinein.
+
+### Behoben
+
+- Rapidgator: Die Link-Prüfung meldet sich nicht mehr erneut an, wenn ein
+  gerade erst ausgestelltes Token abgelehnt wird (gleiche Regel wie beim
+  Download, schont Login-Zähler und Sitzungsgrenze). Scheitert die
+  Neuanmeldung, zeigt die Prüfung „unbekannt“ statt „offline“.
+
 ## [0.9.12] – 2026-10-30
 
 ### Geändert
@@ -1273,6 +1293,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.13]: https://github.com/xtrars/Jdandroid/compare/v0.9.12...v0.9.13
 [0.9.12]: https://github.com/xtrars/Jdandroid/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/xtrars/Jdandroid/compare/v0.9.10...v0.9.11
 [0.9.10]: https://github.com/xtrars/Jdandroid/compare/v0.9.9...v0.9.10

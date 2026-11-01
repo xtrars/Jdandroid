@@ -6,19 +6,19 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
- * ddownload free flow (no account). Page parsing lives in [DdownloadFreePage],
- * network access (client, cookies, redirects) in [DdownloadHoster]; this class
- * holds only the flow: fetch the file page, check blocks, determine the captcha
- * type, wait out the countdown or hand it to the engine as wait time, submit
- * the form and follow the direct link.
+ * ddownload free flow (no account). Page parsing lives in [DdownloadFreePage]
+ * and [DdownloadPage], network access (client, cookies) in [DdownloadSession];
+ * this class holds only the flow: fetch the file page, check blocks, determine
+ * the captcha type, wait out the countdown or hand it to the engine as wait
+ * time, submit the form and follow the direct link.
  */
-internal class DdownloadFree(private val hoster: DdownloadHoster) {
+internal class DdownloadFree(private val site: DdownloadSession) {
 
     /**
      * Intermediate state of a free flow per file code: the parsed form ("rand"
      * id, solved span captcha), name and size, and the time from which the
-     * form may be submitted. The cookies live in the free client's store
-     * (clientFor(0)). Without this state every retry would reload the page,
+     * form may be submitted. The cookies live in the session's store
+     * ([DdownloadSession.FREE]). Without this state every retry would reload the page,
      * the countdown would show the same value again and the entry would loop
      * without progress (a wait does not count as an attempt).
      */
@@ -61,8 +61,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      * the user agent it was issued for.
      */
     suspend fun resolve(url: String, hints: FreeHints): ResolvedLink = withContext(Dispatchers.IO) {
-        val code = hoster.fileCode(url)
-        val pageUrl = "${hoster.siteBase}/$code"
+        val code = DdownloadPage.fileCode(url)
+        val pageUrl = "${site.siteBase}/$code"
         hints.browserLink()?.let { direct ->
             freeSessions.remove(code)
             return@withContext ResolvedLink(
@@ -72,12 +72,11 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             )
         }
 
-        val client = hoster.clientFor(0L)
         // Form from an earlier attempt (long countdown): do not reload the
         // page, otherwise the countdown would start over
         val session = freeSessions[code] ?: run {
-            val page = with(hoster) { client.fetch(pageUrl, referer = siteBase) }
-            hoster.checkBlocked(page)
+            val page = site.fetch(DdownloadSession.FREE, pageUrl, referer = site.siteBase)
+            DdownloadPage.checkBlocked(page)
             if (page.code == 404 || DdownloadFreePage.isOffline(page.body)) {
                 throw FileOfflineException()
             }
@@ -85,8 +84,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
                 throw HosterException(Texts.t("hoster_ddownload_file_page_unreachable", page.code), permanent = false)
             }
             checkFreeBlockers(page.body)
-            val fileName = hoster.pageFileName(page.body)
-            val fileSize = hoster.pageFileSize(page.body)
+            val fileName = DdownloadPage.fileName(page.body)
+            val fileSize = DdownloadPage.fileSize(page.body)
 
             val captchaFields = when (val captcha = DdownloadFreePage.captcha(page.body)) {
                 is FreeCaptcha.Span -> mapOf("code" to captcha.code)
@@ -109,16 +108,16 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
 
         // The form is used up: another attempt reloads the page
         freeSessions.remove(code)
-        val first = with(hoster) { client.fetch(pageUrl, form = session.form, referer = pageUrl, followRedirects = false) }
-        hoster.checkBlocked(first)
+        val first = site.fetch(DdownloadSession.FREE, pageUrl, session.form, referer = pageUrl, followRedirects = false)
+        DdownloadPage.checkBlocked(first)
         val walk = walkToFile(
             first = first,
             firstUrl = pageUrl,
             maxHops = 6,
-            isDirect = hoster::isFileServerUrl,
-            fetch = { target, referer -> with(hoster) { client.fetch(target, referer = referer, followRedirects = false) } },
-            linkIn = hoster::extractDirectLink,
-            onPage = hoster::checkBlocked
+            isDirect = DdownloadPage::isFileServerUrl,
+            fetch = { target, referer -> site.fetch(DdownloadSession.FREE, target, referer = referer, followRedirects = false) },
+            linkIn = DdownloadPage::extractDirectLink,
+            onPage = DdownloadPage::checkBlocked
         )
         val direct = walk.direct
         val resp = walk.last
@@ -143,7 +142,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
             direct,
             session.fileName ?: fileNameFromUrl(direct),
             session.fileSize,
-            headers = freeHeaders(pageUrl, direct, hoster.cookieHeader(0L, direct))
+            headers = freeHeaders(pageUrl, direct, site.cookieHeader(DdownloadSession.FREE, direct))
         )
     }
 
@@ -154,7 +153,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      */
     private fun checkFreeBlockers(html: String) {
         if (DdownloadFreePage.isMaintenance(html)) {
-            throw WaitException(DdownloadHoster.MAINTENANCE_WAIT_SECONDS, Texts.t("hoster_ddownload_maintenance"))
+            throw WaitException(DdownloadPage.MAINTENANCE_WAIT_SECONDS, Texts.t("hoster_ddownload_maintenance"))
         }
         DdownloadFreePage.premiumOnlyReason(html)?.let { throw HosterException(it, true) }
         val wait = DdownloadFreePage.waitSeconds(html)
@@ -174,8 +173,8 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
         pageUrl: String,
         captchaFields: Map<String, String> = emptyMap()
     ): Map<String, String> {
-        val block = hoster.formBlock(html) ?: html
-        val inputs = hoster.hiddenInputs(block).toMutableMap()
+        val block = DdownloadPage.formBlock(html) ?: html
+        val inputs = DdownloadPage.hiddenInputs(block).toMutableMap()
         inputs["op"] = "download2"
         inputs["id"] = inputs["id"]?.ifBlank { code } ?: code
         inputs.putIfAbsent("rand", "")
@@ -194,7 +193,7 @@ internal class DdownloadFree(private val hoster: DdownloadHoster) {
      * hosts, never for a foreign CDN [directUrl].
      */
     fun freeHeaders(pageUrl: String, directUrl: String, cookies: String?): Map<String, String> =
-        freeFileHeaders(pageUrl, directUrl, cookies, hoster.siteHosts)
+        freeFileHeaders(pageUrl, directUrl, cookies, DdownloadPage.SITE_HOSTS)
 
     /** File name from the last path segment of a file server address (only with an extension). */
     fun fileNameFromUrl(url: String): String? =

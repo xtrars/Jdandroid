@@ -164,10 +164,16 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 - Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
   Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
 
-## Stand für die nächste Sitzung (30.10.2026)
+## Stand für die nächste Sitzung (01.11.2026)
 
-- Zuletzt veröffentlicht: 0.9.12 (versionCode 77), Release v0.9.12 mit
-  CI-signierter APK; `release/` enthält 0.9.8 bis 0.9.12. 0.9.12:
+- Zuletzt veröffentlicht: 0.9.13 (versionCode 78), Release v0.9.13 mit
+  CI-signierter APK; `release/` enthält 0.9.9 bis 0.9.13. 0.9.13:
+  `hoster/RapidgatorApi.kt` (Transport, `failure`, Token je Konto,
+  `withToken`: Neuanmeldung genau einmal und nur bei gemerktem Token,
+  `LoginFailed` für Kontofehler), ddownload aufgeteilt in `DdownloadPage`
+  (reine Auswertung, `SITE_HOSTS`, Wartezeiten) und `DdownloadSession`
+  (Client/Cookies je Konto, `FREE` = 0, `accountPage`); Tests
+  `DdownloadPageTest`, zwei neue in `RapidgatorPremiumFlowTest`. 0.9.12:
   SOLID-Umbau 4 erledigt: `hoster/FreeFlowKit.kt` (`browserLink`,
   `awaitCountdown`, `walkToFile`, `freeFileHeaders`, `FreeSessions`,
   `FreeBrowserSession`) für alle drei Free-Abläufe, `FreeFlowKitTest`; damit
@@ -186,11 +192,8 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   der SOLID-Prüfung behoben (Export-Teilfehler behält Einträge,
   `StorageTarget.exportedAt` nach Anzeigepfad, Rapidgator-Login unter Sperre,
   HTTPS zentral), ddownload wartet bei Sperre 15, bei Wartung 20 Minuten
-  (Wunsch des Nutzers). Aus der SOLID-Prüfung nicht beauftragt (nur
-  auf Wunsch): `RapidgatorApi` mit einem `withToken` statt dreier Varianten des
-  erneuten Logins,
-  `DdownloadPage`/`DdownloadSession` aus `DdownloadHoster` lösen,
-  `DownloadViewModel` aufteilen.
+  (Wunsch des Nutzers). Aus der SOLID-Prüfung offen (nur auf Wunsch):
+  `DownloadViewModel` aufteilen, vorher Tests für das ViewModel schreiben.
   0.9.7: R8 an
   (APK 22,2 → 12,5 MB, siehe „Technik in Kürze“). 0.9.6: Effizienz
   (Download-Schleife `readChunk` 128 KiB, Benachrichtigung seriell über einen

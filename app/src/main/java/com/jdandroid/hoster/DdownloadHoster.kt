@@ -1,16 +1,11 @@
 package com.jdandroid.hoster
 
-import com.jdandroid.core.Texts
 import com.jdandroid.core.FileNames
+import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
-import com.jdandroid.data.plainCookies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Cookie
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * ddownload.com, an XFileSharing hoster. Login only in the embedded browser
@@ -18,11 +13,12 @@ import java.util.concurrent.TimeUnit
  * taken over; premium direct download via the two-step download form. Free
  * downloads go through [DdownloadFree]: blocks and wait times are read from
  * the page, the Turnstile in the download form is only solvable in the
- * embedded browser. The account page is parsed by [DdownloadAccountPage].
+ * embedded browser. Pages are parsed by [DdownloadPage] and
+ * [DdownloadAccountPage], cookies and clients live in [DdownloadSession].
  */
 class DdownloadHoster internal constructor(
     /** Website address; tests replace it with a local server. */
-    internal val siteBase: String
+    private val siteBase: String
 ) : Hoster {
 
     constructor() : this("https://ddownload.com")
@@ -39,143 +35,17 @@ class DdownloadHoster internal constructor(
 
     override val supportsFree = true
 
-    /** Host of [siteBase]; domain of the session cookies taken over from the browser. */
-    private val siteHost = siteBase.toHttpUrl().host
+    override val siteHosts = DdownloadPage.SITE_HOSTS
 
-    /**
-     * File codes are exactly 12 chars [a-z0-9]; the lookahead prevents longer
-     * paths (e.g. /register.html) from being read as a code.
-     */
-    private val pattern =
-        Regex("""https?://(?:www\.)?(?:ddownload\.com|ddl\.to)/(?:f/|d/)?([a-z0-9]{12})(?![A-Za-z0-9])""")
+    private val session = DdownloadSession(siteBase)
 
-    /**
-     * Direct links live on file servers (subdomain other than www), never on
-     * the main domain and never under /cgi-bin/ (tracker.cgi lives there).
-     */
-    private val fileServerRegex =
-        Regex("""https?://(?!www\.)[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)(?::\d+)?/[^\s"'<>]+""")
+    /** Free flow (blocks, countdown, Turnstile), see [DdownloadFree]. */
+    internal val free = DdownloadFree(session)
 
-    /** Main domains that never serve a file (pages only). */
-    override val siteHosts = setOf("ddownload.com", "www.ddownload.com", "ddl.to", "www.ddl.to")
-
-    /** One cookie store (session) per account id. */
-    private val cookieJars = java.util.concurrent.ConcurrentHashMap<Long, MemoryCookieJar>()
-    private val clients = java.util.concurrent.ConcurrentHashMap<Long, OkHttpClient>()
-
-    override fun matches(url: String) = pattern.containsMatchIn(url)
-
-    internal fun fileCode(url: String): String =
-        pattern.find(url)?.groupValues?.get(1)
-            ?: throw HosterException(Texts.t("hoster_ddownload_invalid_link"), true)
-
-    private fun jarFor(accountId: Long): MemoryCookieJar = cookieJars.getOrPut(accountId) { MemoryCookieJar() }
-
-    internal fun clientFor(accountId: Long): OkHttpClient = clients.getOrPut(accountId) {
-        // Own cookie jar and no cross-site interceptor, but the app-wide connections and threads
-        OkHttpClient.Builder()
-            .connectionPool(Http.client.connectionPool)
-            .dispatcher(Http.client.dispatcher)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .cookieJar(jarFor(accountId))
-            .build()
-    }
-
-    internal fun OkHttpClient.fetch(
-        url: String,
-        form: Map<String, String>? = null,
-        referer: String? = null,
-        followRedirects: Boolean = true
-    ): PageResponse = fetchPage(url, referer, form, acceptLanguage = "de,en;q=0.8", followRedirects = followRedirects)
-
-    /**
-     * Detects maintenance and Cloudflare/WAF blocks so the message does not
-     * read "wrong password". Both are waited out like at the other hosters;
-     * a few quick retries would only fail the queue after minutes.
-     */
-    internal fun checkBlocked(resp: PageResponse) {
-        if (resp.code == 503) throw WaitException(MAINTENANCE_WAIT_SECONDS, Texts.t("hoster_ddownload_maintenance"))
-        val blocked = resp.code == 403 ||
-            resp.body.contains("Just a moment", true) ||
-            resp.body.contains("cf-browser-verification", true) ||
-            resp.body.contains("Attention Required", true) ||
-            resp.body.contains("Enable JavaScript and cookies", true)
-        if (blocked) {
-            throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_cloudflare_blocked", resp.code))
-        }
-    }
-
-    /** The logout link is the reliable sign of being logged in, not a cookie name. */
-    private fun isLoggedIn(html: String): Boolean =
-        html.contains("op=logout", true) ||
-            (html.contains("?op=my_account", true) && html.contains("Account type", true))
-
-    /**
-     * Returns the client and the account page HTML based on the session
-     * cookies taken over from the browser. A headless form login is impossible
-     * because of the Turnstile captcha.
-     */
-    private fun sessionAndAccountPage(account: Account): Pair<OkHttpClient, String> {
-        val raw = account.plainCookies
-        if (raw.isNullOrBlank()) {
-            throw HosterException(Texts.t("hoster_ddownload_no_login"), permanent = true)
-        }
-        val client = clientFor(account.id)
-        seedCookies(account.id, raw)
-
-        var page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
-        checkBlocked(page)
-        if (page.code !in 200..299) {
-            // Server error: temporary, no reason to disable the account
-            throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_account_page_unreachable", page.code))
-        }
-        if (!isLoggedIn(page.body)) {
-            // The cookie store may hold a session the server "deleted"
-            // (Set-Cookie with an expiry in the past). Start over once with the
-            // stored browser cookies before treating the session as expired.
-            seedCookies(account.id, raw, force = true)
-            page = client.fetch("$siteBase/?op=my_account", referer = siteBase)
-            checkBlocked(page)
-            if (page.code !in 200..299) {
-                throw WaitException(BLOCK_WAIT_SECONDS, Texts.t("hoster_ddownload_account_page_unreachable", page.code))
-            }
-        }
-        if (!isLoggedIn(page.body)) {
-            throw HosterException(Texts.t("hoster_ddownload_session_expired"), permanent = true)
-        }
-        return client to page.body
-    }
-
-    /** Seeds the OkHttp cookie store with the cookie string from the browser. */
-    private fun seedCookies(accountId: Long, raw: String, force: Boolean = false) {
-        val cookies = raw.split(';').mapNotNull { part ->
-            val name = part.substringBefore('=').trim()
-            val value = part.substringAfter('=', "").trim()
-            if (name.isEmpty()) null else Cookie.Builder().name(name).value(value).domain(siteHost).path("/").build()
-        }
-        jarFor(accountId).seed(cookies, force)
-    }
-
-    /** Collects all hidden fields of a form (attribute order does not matter). */
-    internal fun hiddenInputs(html: String): Map<String, String> {
-        val result = LinkedHashMap<String, String>()
-        Regex("""<input\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(html).forEach { tag ->
-            val t = tag.value
-            // Remember the opening quote: an apostrophe in the value
-            // ("It's.a.file.mkv") must not cut the value short
-            val name = Regex("""\bname=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
-                .find(t)?.groupValues?.get(2)?.takeIf { it.isNotBlank() } ?: return@forEach
-            val value = Regex("""\bvalue=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
-                .find(t)?.groupValues?.get(2) ?: ""
-            result[name] = value
-        }
-        return result
-    }
+    override fun matches(url: String) = DdownloadPage.matches(url)
 
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        val (_, html) = sessionAndAccountPage(account)
+        val html = session.accountPage(account)
         val (expire, premium, tier) = DdownloadAccountPage.status(DdownloadAccountPage.visibleText(html))
 
         val traffic = DdownloadAccountPage.plausibleTraffic(DdownloadAccountPage.parseTraffic(html))
@@ -202,12 +72,16 @@ class DdownloadHoster internal constructor(
     override suspend fun resolve(url: String, account: Account?): ResolvedLink =
         withContext(Dispatchers.IO) {
             if (account == null) throw HosterException(Texts.t("hoster_ddownload_premium_required"), true)
-            val code = fileCode(url)
-            val (client, _) = sessionAndAccountPage(account)
+            val code = DdownloadPage.fileCode(url)
+            session.accountPage(account)
             val pageUrl = "$siteBase/$code"
+            val fetch = { target: String, form: Map<String, String>?, referer: String ->
+                session.fetch(account.id, target, form, referer, followRedirects = false)
+                    .also(DdownloadPage::checkBlocked)
+            }
 
-            var page = client.fetch(pageUrl, referer = siteBase)
-            checkBlocked(page)
+            var page = session.fetch(account.id, pageUrl, referer = siteBase)
+            DdownloadPage.checkBlocked(page)
             // Account with "Direct Downloads": the page redirects straight to
             // the file; the client followed it, the final address is the link
             if (page.isFile && page.finalUrl.toHttpUrlOrNull()?.host?.lowercase() !in siteHosts) {
@@ -216,9 +90,9 @@ class DdownloadHoster internal constructor(
             checkOffline(page.body)
             // Remember the name from the file page: after the redirect chain
             // the page text is a redirect without content
-            val pageName = pageFileName(page.body)
+            val pageName = DdownloadPage.fileName(page.body)
 
-            var direct = extractDirectLink(page.body)
+            var direct = DdownloadPage.extractDirectLink(page.body)
             var formsSent = 0
             var hops = 0
             var currentUrl = pageUrl
@@ -228,31 +102,29 @@ class DdownloadHoster internal constructor(
                     // otherwise follow the next page (without loading the file).
                     // Relative targets resolve against the last fetched address.
                     val target = resolveLocation(currentUrl, page.location)
-                    if (isFileServerUrl(target)) { direct = target; break }
-                    page = client.fetch(target, referer = currentUrl, followRedirects = false)
+                    if (DdownloadPage.isFileServerUrl(target)) { direct = target; break }
+                    page = fetch(target, null, currentUrl)
                     currentUrl = target
-                    checkBlocked(page)
                     // Response is already the file (address without extension,
                     // e.g. dl.cgi/<token>): the body was not read
                     if (page.code in 200..299 && page.isFile) { direct = target; break }
-                    direct = extractDirectLink(page.body)
+                    direct = DdownloadPage.extractDirectLink(page.body)
                     continue
                 }
                 if (formsSent >= 2) break
                 // Submit the download form (op=download2, method_premium)
                 // without following redirects: XFileSharing answers with a
                 // redirect whose Location is already the direct link.
-                val form = downloadForm(page.body, code)
+                val form = DdownloadPage.downloadForm(page.body, code)
                 formsSent++
-                page = client.fetch(pageUrl, form = form, referer = pageUrl, followRedirects = false)
+                page = fetch(pageUrl, form, pageUrl)
                 currentUrl = pageUrl
-                checkBlocked(page)
                 if (page.code in 200..299 && page.isFile) {
                     // The file itself came back on the POST: its address fetched
                     // via GET is only the file page, so there is no usable link
                     throw HosterException(Texts.t("hoster_ddownload_no_direct_link", page.code), permanent = false)
                 }
-                direct = extractDirectLink(page.body)
+                direct = DdownloadPage.extractDirectLink(page.body)
                 if (direct == null && page.code !in 300..399) checkOffline(page.body)
             }
             if (direct.isNullOrBlank()) {
@@ -275,28 +147,22 @@ class DdownloadHoster internal constructor(
                     DdownloadFreePage.isSkippedCountdown(page.body)
                 throw HosterException(
                     Texts.t("hoster_ddownload_no_direct_link_hint", page.code, hint),
-                    permanent = !transientForm && resolveFailurePermanent(page.code, limitReached)
+                    permanent = !transientForm && DdownloadPage.resolveFailurePermanent(page.code, limitReached)
                 )
             }
-            val fileName = pageName ?: pageFileName(page.body)
+            val fileName = pageName ?: DdownloadPage.fileName(page.body)
                 ?: direct.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.ifBlank { null }
             ResolvedLink(DirectLinks.https(direct), fileName)
         }
 
-    /** Free flow (blocks, countdown, Turnstile), see [DdownloadFree]. */
-    internal val free = DdownloadFree(this)
-
     override suspend fun resolveFree(url: String, hints: FreeHints): ResolvedLink = free.resolve(url, hints)
-
-    /** Cookie header from the OkHttp store for [url]; null without matching cookies. */
-    internal fun cookieHeader(accountId: Long, url: String): String? = cookieJars[accountId]?.cookieHeader(url)
 
     override suspend fun checkLink(url: String, account: Account?): LinkInfo =
         withContext(Dispatchers.IO) {
-            val code = fileCode(url)
+            val code = DdownloadPage.fileCode(url)
             // The public file page needs no login, but the browser user agent:
             // otherwise Cloudflare only serves a challenge.
-            val resp = clientFor(0L).fetch("$siteBase/$code")
+            val resp = session.fetch(DdownloadSession.FREE, "$siteBase/$code")
             val html = resp.body
             if (resp.code == 404 || html.contains("File Not Found", true) || html.contains("No such file", true)) {
                 return@withContext LinkInfo(online = false, note = Texts.t("hoster_file_not_found"))
@@ -312,130 +178,14 @@ class DdownloadHoster internal constructor(
             }
             LinkInfo(
                 online = true,
-                fileName = pageFileName(html),
-                fileSize = pageFileSize(html)
+                fileName = DdownloadPage.fileName(html),
+                fileSize = DdownloadPage.fileSize(html)
             )
         }
 
-    /**
-     * File name from an XFileSharing file page. Order: the heading with class
-     * dk-dl-name (current layout), then the fname field, finally the title,
-     * where ddownload replaces dots with spaces ("Download scn smps8 S37E02
-     * rar"), so it only counts if it still carries an extension.
-     */
-    internal fun pageFileName(html: String): String? {
-        Regex(
-            """<h[12]\b[^>]*class=["'][^"']*\bdk-dl-name\b[^"']*["'][^>]*>\s*([^<]+?)\s*</h[12]>""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.groupValues?.get(1)?.trim()?.removePrefix("Download ")?.trim()
-            ?.takeIf { it.isNotBlank() }?.let { return com.jdandroid.core.ArchiveNames.repairName(it) }
-        Regex("""name=["']fname["']\s+value=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
-            .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
-        Regex("""value=(["'])(.*?)\1\s+name=["']fname["']""", RegexOption.IGNORE_CASE)
-            .find(html)?.groupValues?.get(2)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
-        // The site suffix is separated by " - " or " | "; a hyphen inside the
-        // name ("scn-smps8-S37E02 rar") is part of it
-        return Regex("""<title>([^<]+?)(?:\s+[-|–]\s+.*)?</title>""", RegexOption.IGNORE_CASE)
-            .find(html)?.groupValues?.get(1)?.trim()
-            ?.removePrefix("Download ")?.trim()
-            ?.let { com.jdandroid.core.ArchiveNames.repairName(it) }
-            ?.takeIf {
-                it.isNotBlank() && !it.contains("ddownload", true) &&
-                    Regex("""\.[A-Za-z0-9]{1,10}$""").containsMatchIn(it)
-            }
-    }
-
-    /** Size such as "1.2 GB" from the file page. */
-    internal fun pageFileSize(html: String): Long {
-        // Visible text only, starting at the file name: ads and quota figures
-        // ("200 GB traffic per day") come before it
-        val text = DdownloadAccountPage.visibleText(html)
-        val start = pageFileName(html)?.let { text.indexOf(it) }?.takeIf { it >= 0 } ?: 0
-        val m = Regex("""(\d+(?:[.,]\d+)?)\s*(KB|MB|GB|TB)\b""", RegexOption.IGNORE_CASE).find(text, start)
-            ?: return -1
-        return DdownloadAccountPage.toBytes(m.groupValues[1], m.groupValues[2])
-    }
-
     private fun checkOffline(html: String) {
-        if (html.contains("File Not Found", true) ||
-            html.contains("file was deleted", true) ||
-            html.contains("No such file", true)
-        ) {
-            throw FileOfflineException()
-        }
+        if (DdownloadPage.isDeleted(html)) throw FileOfflineException()
     }
 
-    /**
-     * Fields of the download form. The XFileSharing field names are known, so
-     * the form is built by hand if needed: for logged-in users the page
-     * sometimes lacks a complete form, and resolving must not fail on that.
-     */
-    internal fun downloadForm(html: String, code: String): Map<String, String> {
-        val block = formBlock(html) ?: html
-        val inputs = hiddenInputs(block).toMutableMap()
-        inputs["op"] = "download2"
-        inputs["id"] = inputs["id"]?.ifBlank { code } ?: code
-        inputs.putIfAbsent("rand", "")
-        inputs.putIfAbsent("referer", "")
-        inputs["method_free"] = ""
-        inputs["method_premium"] = "1"
-        return inputs
-    }
-
-    /** The form with the download operation, so no foreign fields are sent along. */
-    internal fun formBlock(html: String): String? =
-        Regex("""<form\b[^>]*>.*?</form>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            .findAll(html)
-            .firstOrNull { it.value.contains("op\"", true) && it.value.contains("download", true) }
-            ?.value
-
-    /**
-     * True for addresses with a file name on a host other than the main
-     * domain: file servers (subdomain, also with a port like :183, also under
-     * /cgi-bin/dl.cgi/) and foreign CDN hosts the form response may redirect
-     * to. Page links, tracker.cgi, relative redirects and /login.html fail the
-     * host and extension checks.
-     */
-    internal fun isFileServerUrl(url: String): Boolean {
-        if (DirectLinks.isDirectDownloadUrl(url, siteHosts)) return true
-        // File server subdomain with a download path, even without an extension
-        // (e.g. /cgi-bin/dl.cgi/<token>): this is how the free form answers
-        val http = url.toHttpUrlOrNull() ?: return false
-        val host = http.host.lowercase()
-        if (host in siteHosts || host in serviceHosts) return false
-        if (!Regex("""^[a-z0-9-]+\.(?:ddownload\.com|ddl\.to)$""").matches(host)) return false
-        return Regex("""^/(?:cgi-bin/dl\.cgi|d|files)/[^/]+""").containsMatchIn(http.encodedPath) &&
-            http.pathSegments.lastOrNull().orEmpty().isNotEmpty()
-    }
-
-    /** Subdomains serving pages, never files. */
-    private val serviceHosts = setOf("my.ddownload.com", "my.ddl.to")
-
-    override fun isDirectDownloadUrl(url: String): Boolean = isFileServerUrl(url)
-
-    /**
-     * Direct link from the HTML. Only file server addresses count: matching on
-     * "contains download" would hit every address of the site itself
-     * ("ddownload.com"), and tracker.cgi on the main domain is not a file.
-     */
-    internal fun extractDirectLink(html: String): String? =
-        fileServerRegex.findAll(html)
-            .map { it.value.trimEnd('\\', '"', '\'', ')').replace("&amp;", "&") }
-            .firstOrNull { isFileServerUrl(it) }
-
-    /**
-     * No direct link: permanent only without a limit hint and without a server
-     * error. 5xx and 429 (throttling) are temporary; checkBlocked() only
-     * catches 403/503.
-     */
-    internal fun resolveFailurePermanent(code: Int, limitReached: Boolean): Boolean =
-        !limitReached && code !in 500..599 && code != 429
-
-    private fun String.toHttpUrlOrNull(): HttpUrl? = runCatching { toHttpUrl() }.getOrNull()
-
-    internal companion object {
-        /** Wait after a Cloudflare block or an unreachable account page, as at 1fichier. */
-        const val BLOCK_WAIT_SECONDS = 15 * 60 + 1
-        const val MAINTENANCE_WAIT_SECONDS = 20 * 60 + 1
-    }
+    override fun isDirectDownloadUrl(url: String): Boolean = DdownloadPage.isFileServerUrl(url)
 }

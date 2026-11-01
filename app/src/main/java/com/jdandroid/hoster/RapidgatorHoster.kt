@@ -2,15 +2,11 @@ package com.jdandroid.hoster
 
 import com.jdandroid.core.Texts
 import com.jdandroid.data.Account
-import com.jdandroid.data.plainPassword
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
-import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -35,8 +31,7 @@ class RapidgatorHoster internal constructor(
 
     private val pattern = Regex("""https?://(?:www\.)?(?:rapidgator\.net|rg\.to)/file/\S+""")
 
-    /** Session token cache per account id. */
-    private val tokens = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    private val api = RapidgatorApi(base, client)
 
     override val siteHosts = setOf("rapidgator.net", "www.rapidgator.net", "rg.to", "www.rg.to")
 
@@ -269,109 +264,10 @@ class RapidgatorHoster internal constructor(
         Regex("""/file/([A-Za-z0-9]+)""").find(url)?.groupValues?.get(1)
             ?: throw HosterException(Texts.t("hoster_rapidgator_invalid_link"), true)
 
-    /**
-     * API call via POST with a form body: credentials and token do not belong
-     * in the URL (proxy/server logs). Response read with a limit (Http.MAX_TEXT_BYTES).
-     */
-    private fun post(url: String, form: Map<String, String>): String {
-        val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", Http.USER_AGENT)
-            .post(body)
-            .build()
-        return client.newCall(request).execute().use { resp ->
-            resp.peekBody(Http.MAX_TEXT_BYTES).string()
-        }
-    }
-
-    /** Full JSON response including "status", without evaluation. */
-    private fun callRaw(path: String, params: Map<String, String>): JSONObject {
-        val text = post("$base/$path", params)
-        return runCatching { JSONObject(text) }
-            .getOrElse { throw HosterException(Texts.t("hoster_rapidgator_unexpected_response")) }
-    }
-
-    /**
-     * Expired session (401 outside the login): the only error for which a new
-     * login makes sense. All other temporary errors (blocks, 5xx) are passed
-     * on without re-login so that login counters and the parallel session
-     * limit are not strained unnecessarily.
-     */
-    internal class TokenExpired(message: String) : HosterException(message, permanent = false)
-
-    /**
-     * Throws the error of an API response with status != 200. [loginCall]:
-     * 401 on login means wrong password/2FA, permanent, so neither engine nor
-     * account check run into a login loop. On other calls 401 is an expired
-     * token ([TokenExpired]), fixable by a new login, hence not permanent.
-     */
-    private fun fail(json: JSONObject, loginCall: Boolean): Nothing =
-        throw failure(json.optInt("status"), json.optString("details"), loginCall)
-
-    /** Classification of an API error; separated from JSON so it is testable on the JVM. */
-    internal fun failure(status: Int, details: String, loginCall: Boolean): HosterException {
-        val text = details.ifBlank { Texts.t("hoster_http_status", status) }
-        if (status == 401 && !loginCall) return TokenExpired(Texts.t("hoster_rapidgator_api_error", text))
-        // Rapidgator reports daily limit, IP block and parallel limit under 403
-        // as well, all temporary. Permanent are only wrong credentials (401 on
-        // login), missing file (404) and missing premium (402), unless the
-        // text says otherwise.
-        val transient = text.contains("traffic", true) ||
-            text.contains("limit", true) ||
-            text.contains("Denied by IP", true) ||
-            text.contains("Session", true) ||
-            status in 500..599
-        val permanent = !transient && (status in listOf(402, 404) || (loginCall && status == 401))
-        return HosterException(Texts.t("hoster_rapidgator_api_error", text), permanent = permanent)
-    }
-
-    /** Serializes logins per account: parallel downloads should share one session. */
-    private val loginLocks = java.util.concurrent.ConcurrentHashMap<Long, Any>()
-
-    private fun call(path: String, params: Map<String, String>, loginCall: Boolean = false): JSONObject {
-        val json = callRaw(path, params)
-        if (json.optInt("status") != 200) fail(json, loginCall)
-        return json.optJSONObject("response") ?: JSONObject()
-    }
-
-    /** Login; returns the token and the "user" object of the login response. */
-    private fun login(account: Account): Pair<String, JSONObject> {
-        val user = account.username ?: throw HosterException(Texts.t("hoster_no_username"), true)
-        val pass = account.plainPassword ?: throw HosterException(Texts.t("hoster_no_password"), true)
-        val resp = call("user/login", mapOf("login" to user, "password" to pass), loginCall = true)
-        val token = resp.optString("token")
-        if (token.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_login_failed"), true)
-        tokens[account.id] = token
-        return token to (resp.optJSONObject("user") ?: JSONObject())
-    }
-
-    private fun loginLock(account: Account): Any = loginLocks.getOrPut(account.id) { Any() }
-
-    private fun tokenFor(account: Account): String =
-        tokens[account.id] ?: synchronized(loginLock(account)) {
-            tokens[account.id] ?: login(account).first
-        }
-
     override suspend fun checkAccount(account: Account): AccountInfo = withContext(Dispatchers.IO) {
-        // With a cached token user/info suffices; re-login only on 401 (token
-        // expired). Without a token the login response already contains the
-        // user object, so a second call is unnecessary.
-        val cached = tokens[account.id]
-        val user: JSONObject = if (cached != null) {
-            val json = callRaw("user/info", mapOf("token" to cached))
-            when (json.optInt("status")) {
-                200 -> json.optJSONObject("response")?.optJSONObject("user") ?: JSONObject()
-                401 -> synchronized(loginLock(account)) {
-                    tokens.remove(account.id)
-                    login(account).second
-                }
-                else -> fail(json, loginCall = false)
-            }
-        } else {
-            // Under the same lock as downloads: a parallel second login would replace their session
-            synchronized(loginLock(account)) { login(account).second }
-        }
+        // With a cached token user/info suffices; after a login its response
+        // already contains the user object, so a second call is unnecessary.
+        val user = api.withToken(account, afterLogin = { it.user ?: api.user(it.token) }, block = api::user)
         val premiumEnd = user.optLong("premium_end_time", 0) * 1000
         val premium = user.optBoolean("is_premium", false) ||
             premiumEnd > System.currentTimeMillis() ||
@@ -398,32 +294,19 @@ class RapidgatorHoster internal constructor(
                 return@withContext LinkInfo(online = null, note = Texts.t("hoster_rapidgator_check_needs_account"))
             }
             val id = fileId(url)
-            // Handle the login separately: an account problem is not "file offline"
-            val token = try {
-                tokenFor(account)
-            } catch (e: Exception) {
-                return@withContext LinkInfo(online = null, note = e.message ?: Texts.t("hoster_rapidgator_login_failed"))
-            }
-            val query: (String) -> LinkInfo = { t ->
-                val file = call("file/info", mapOf("file_id" to id, "token" to t)).optJSONObject("file")
-                if (file == null) LinkInfo(online = false, note = Texts.t("hoster_file_not_found"))
-                else LinkInfo(
-                    online = true,
-                    fileName = file.optString("name").ifBlank { null },
-                    fileSize = file.optLong("size", -1)
-                )
-            }
             try {
-                query(token)
-            } catch (e: TokenExpired) {
-                // Re-login once only on an expired token and repeat the check;
-                // blocks and server errors cost no login.
-                tokens.remove(account.id)
-                val fresh = runCatching { tokenFor(account) }
-                    .getOrElse { return@withContext LinkInfo(online = null, note = it.message) }
-                runCatching { query(fresh) }.getOrElse {
-                    LinkInfo(online = if (it is HosterException && it.permanent) false else null, note = it.message)
+                api.withToken(account) { token ->
+                    val file = api.call("file/info", mapOf("file_id" to id, "token" to token)).optJSONObject("file")
+                    if (file == null) LinkInfo(online = false, note = Texts.t("hoster_file_not_found"))
+                    else LinkInfo(
+                        online = true,
+                        fileName = file.optString("name").ifBlank { null },
+                        fileSize = file.optLong("size", -1)
+                    )
                 }
+            } catch (e: RapidgatorApi.LoginFailed) {
+                // An account problem is not "file offline"
+                LinkInfo(online = null, note = e.message)
             } catch (e: HosterException) {
                 LinkInfo(online = if (e.permanent) false else null, note = e.message)
             }
@@ -435,14 +318,14 @@ class RapidgatorHoster internal constructor(
                 throw HosterException(Texts.t("hoster_rapidgator_premium_required"), permanent = true)
             }
             val id = fileId(url)
-            val attempt: (String) -> ResolvedLink = { token ->
-                val resp = call("file/download", mapOf("file_id" to id, "token" to token))
+            api.withToken(account) { token ->
+                val resp = api.call("file/download", mapOf("file_id" to id, "token" to token))
                 val direct = DirectLinks.https(resp.optString("download_url"))
                 if (direct.isBlank()) throw HosterException(Texts.t("hoster_rapidgator_no_download_url"), true)
                 // Name, size and MD5 for the integrity check; optional, an error
                 // here must not prevent the download.
                 val info = runCatching {
-                    call("file/info", mapOf("file_id" to id, "token" to token)).optJSONObject("file")
+                    api.call("file/info", mapOf("file_id" to id, "token" to token)).optJSONObject("file")
                 }.getOrNull()
                 ResolvedLink(
                     directUrl = direct,
@@ -451,17 +334,5 @@ class RapidgatorHoster internal constructor(
                     hash = info?.optString("hash")?.lowercase()?.takeIf { it.length == 32 }
                 )
             }
-            // Re-login once only if file/download fails with a cached token on
-            // an expired session. Blocks (403), server errors and permanent
-            // errors are passed on directly: no login loop, no login per error.
-            val cached = tokens[account.id]
-            if (cached != null) {
-                try {
-                    return@withContext attempt(cached)
-                } catch (e: TokenExpired) {
-                    tokens.remove(account.id)
-                }
-            }
-            attempt(tokenFor(account))
         }
 }

@@ -1,6 +1,6 @@
 package com.jdandroid
 
-import com.jdandroid.hoster.DdownloadHoster
+import com.jdandroid.hoster.DdownloadPage
 import com.jdandroid.hoster.OneFichierHoster
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,7 +12,6 @@ import org.junit.Test
 class LinkCheckTest {
 
     private val fichier = OneFichierHoster()
-    private val ddl = DdownloadHoster()
 
     @Test
     fun fichierNotFoundIstOffline() {
@@ -42,7 +41,7 @@ class LinkCheckTest {
     fun ddownloadGroesseNichtAusWerbung() {
         val html = """<div class="ad">Premium: 200 GB traffic per day</div>
             <h1 class="dk-dl-name">x.rar</h1><span>1.2 GB</span>"""
-        val size = ddl.pageFileSize(html)
+        val size = DdownloadPage.fileSize(html)
         assertTrue("Groesse $size", size > 1_200_000_000L && size < 1_300_000_000L)
     }
 
@@ -50,9 +49,9 @@ class LinkCheckTest {
     fun ddownloadApostrophImDateinamen() {
         assertEquals(
             "It's.a.file.mkv",
-            ddl.pageFileName("""<input type="hidden" name="fname" value="It's.a.file.mkv">""")
+            DdownloadPage.fileName("""<input type="hidden" name="fname" value="It's.a.file.mkv">""")
         )
-        assertEquals("It's", ddl.hiddenInputs("""<input name="fname" value="It's">""")["fname"])
+        assertEquals("It's", DdownloadPage.hiddenInputs("""<input name="fname" value="It's">""")["fname"])
     }
 
     /**
@@ -70,22 +69,22 @@ class LinkCheckTest {
 
     @Test
     fun ddownloadSeiteLiefertNameUndGroesse() {
-        assertEquals("scn-smps8-S37E02.rar", ddl.pageFileName(echteDateiseite))
-        val size = ddl.pageFileSize(echteDateiseite)
+        assertEquals("scn-smps8-S37E02.rar", DdownloadPage.fileName(echteDateiseite))
+        val size = DdownloadPage.fileSize(echteDateiseite)
         assertTrue("Groesse $size", size > 1_500_000_000L && size < 1_600_000_000L)
     }
 
     @Test
     fun ddownloadNameAusH1() {
         val html = """<h1 class="x dk-dl-name y">Serie.S01E01.mkv</h1>"""
-        assertEquals("Serie.S01E01.mkv", ddl.pageFileName(html))
+        assertEquals("Serie.S01E01.mkv", DdownloadPage.fileName(html))
     }
 
     @Test
     fun ddownloadFnameFeldVorTitel() {
         val html = """<html><head><title>Download Serie S01E01 mkv</title></head>
             <body><input type="hidden" name="fname" value="Serie.S01E01.mkv"></body></html>"""
-        assertEquals("Serie.S01E01.mkv", ddl.pageFileName(html))
+        assertEquals("Serie.S01E01.mkv", DdownloadPage.fileName(html))
     }
 
     /**
@@ -96,19 +95,19 @@ class LinkCheckTest {
     fun ddownloadTitelNurMitEndung() {
         assertEquals(
             "Serie.S01E01.mkv",
-            ddl.pageFileName("<html><head><title>Download Serie.S01E01.mkv - ddownload</title></head></html>")
+            DdownloadPage.fileName("<html><head><title>Download Serie.S01E01.mkv - ddownload</title></head></html>")
         )
         assertEquals(
             "scn.smps8.S37E02.rar",
-            ddl.pageFileName("<html><head><title>Download scn smps8 S37E02 rar</title></head></html>")
+            DdownloadPage.fileName("<html><head><title>Download scn smps8 S37E02 rar</title></head></html>")
         )
-        assertNull(ddl.pageFileName("<html><head><title>Download irgendwas ohne Endung</title></head></html>"))
+        assertNull(DdownloadPage.fileName("<html><head><title>Download irgendwas ohne Endung</title></head></html>"))
     }
 
     @Test
     fun ddownloadOhneNameLiefertNull() {
-        assertNull(ddl.pageFileName("<html><title>ddownload.com</title></html>"))
-        assertEquals(-1L, ddl.pageFileSize("<html>nix</html>"))
-        assertFalse(ddl.pageFileName("<html><title>ddownload.com</title></html>") != null)
+        assertNull(DdownloadPage.fileName("<html><title>ddownload.com</title></html>"))
+        assertEquals(-1L, DdownloadPage.fileSize("<html>nix</html>"))
+        assertFalse(DdownloadPage.fileName("<html><title>ddownload.com</title></html>") != null)
     }
 }
