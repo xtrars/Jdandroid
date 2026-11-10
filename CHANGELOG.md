@@ -43,6 +43,12 @@ _Noch nichts._
 - Mit Filter oder Suche las der Paketkopf seinen Zustand nur aus den
   sichtbaren Zeilen: „Paket löschen“ war dann auch während des Entpackens
   frei. Kopf, Löschsperre und Zähler gelten jetzt immer für das ganze Paket.
+- ddownload: Direkt nach der Browser-Anmeldung kam „Browser-Session
+  abgelaufen“. ddownload hat seine Kontoseite umgebaut (`/account`), und die
+  App suchte dort nach Merkmalen der alten Seite. Angemeldet ist jetzt, wer
+  die Kontoseite bekommt statt des Login-Formulars. Das Ablaufdatum wird in
+  weiteren Schreibweisen erkannt („2030-12-02“, „02.12.2030“, „December 2,
+  2030“, „Premium until“, „Läuft ab am“).
 
 ## [0.9.13] – 2026-11-01
 

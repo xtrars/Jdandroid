@@ -23,13 +23,20 @@ internal object DdownloadAccountPage {
     private val MAX_PLAUSIBLE_QUOTA = 16L shl 40
 
     /**
-     * Parses a day-month-year date as written on the account page
-     * ("2 December 2026", "02 Dec 2026", "2 Dezember 2026"); 0 = unknown.
+     * Parses an expiry date as written on the account page: "2 December 2026",
+     * "02 Dec 2026", "2 Dezember 2026", "2026-12-02", "02.12.2026" or
+     * "December 2, 2026"; 0 = unknown.
      */
     fun parseExpire(raw: String): Long {
-        val value = raw.trim()
+        val value = raw.trim().replace(Regex("""\s+"""), " ")
         if (value.isEmpty()) return 0L
-        for (fmt in listOf("dd MMMM yyyy", "dd MMM yyyy")) {
+        val formats = when {
+            Regex("""^\d{4}-\d{1,2}-\d{1,2}""").containsMatchIn(value) -> listOf("yyyy-MM-dd")
+            Regex("""^\d{1,2}\.\d{1,2}\.\d{4}""").containsMatchIn(value) -> listOf("dd.MM.yyyy")
+            Regex("""^[A-Za-zÄÖÜäöü]""").containsMatchIn(value) -> listOf("MMMM d, yyyy", "MMM d, yyyy", "MMM. d, yyyy")
+            else -> listOf("dd MMMM yyyy", "dd MMM yyyy", "dd. MMMM yyyy")
+        }
+        for (fmt in formats) {
             for (locale in listOf(Locale.US, Locale.GERMAN)) {
                 runCatching { SimpleDateFormat(fmt, locale).parse(value)?.time }.getOrNull()?.let { return it }
             }
@@ -47,13 +54,20 @@ internal object DdownloadAccountPage {
 
     /**
      * Expiry date from the account page: "Premium expire: 2 December 2026",
-     * "Aktiv bis 2 December 2026", "Active until 02 Dec 2026"; 0 = unknown.
+     * "Aktiv bis 2 December 2026", "Premium until: 2026-12-02", "Läuft ab am
+     * 02.12.2026"; 0 = unknown.
      */
     fun pageExpire(text: String): Long =
-        Regex("""(?i)(?:expires?|aktiv bis|active until|g[üu]ltig bis|valid until)\s*:?\s*([0-9]{1,2}\s+[A-Za-zÄÖÜäöü]+\s+[0-9]{4})""")
-            .findAll(text)
+        expireRegex.findAll(text)
             .map { parseExpire(it.groupValues[1]) }
             .firstOrNull { it > 0 } ?: 0L
+
+    private val expireRegex = Regex(
+        """(?i)(?:expires?|expiration(?:\s+date)?|aktiv bis|active until|g[üu]ltig bis|valid until|premium until|""" +
+            """premium bis|l[äa]uft ab(?:\s+am)?)\s*:?\s*""" +
+            """([0-9]{1,2}\.?\s+[A-Za-zÄÖÜäöü]+\.?\s+[0-9]{4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}|""" +
+            """[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4}|[A-Za-z]+\.?\s+[0-9]{1,2},?\s+[0-9]{4})"""
+    )
 
     /** Account status according to the account page. */
     data class Status(

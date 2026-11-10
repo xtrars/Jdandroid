@@ -59,10 +59,23 @@ internal object DdownloadPage {
         }
     }
 
-    /** The logout link is the reliable sign of being logged in, not a cookie name. */
-    fun isLoggedIn(html: String): Boolean =
-        html.contains("op=logout", true) ||
-            (html.contains("?op=my_account", true) && html.contains("Account type", true))
+    /**
+     * Whether the account page was served to a logged-in session. Logged out,
+     * ddownload redirects every account address to the login form. Page
+     * markers are no evidence: the current layout (/account) has none of the
+     * old XFileSharing ones ("op=logout", "Account type").
+     */
+    fun isLoggedIn(page: PageResponse): Boolean =
+        !isLoginPage(page.finalUrl) && !hasLoginForm(page.body)
+
+    private fun isLoginPage(url: String): Boolean {
+        val http = url.toHttpUrlOrNull() ?: return false
+        return http.encodedPath.startsWith("/login") || http.queryParameter("op") == "login"
+    }
+
+    private fun hasLoginForm(html: String): Boolean =
+        Regex("""<input\b[^>]*\bname=["']password["']""", RegexOption.IGNORE_CASE).containsMatchIn(html) &&
+            Regex("""<input\b[^>]*\bname=["']login["']""", RegexOption.IGNORE_CASE).containsMatchIn(html)
 
     fun isDeleted(html: String): Boolean =
         html.contains("File Not Found", true) ||

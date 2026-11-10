@@ -58,7 +58,18 @@ class DdownloadFlowTest {
         <a>Traffic kaufen</a><div>200 GB + Daten &euro;15.99</div></body></html>
     """.trimIndent()
 
-    private val ohneLogin = """<html><body><a href="/login.html">Login</a><div>Account-Status</div></body></html>"""
+    private val loginSeite = """
+        <html><body><form method="POST" action="/" name="FL">
+        <input type="hidden" name="op" value="login">
+        <input type="text" name="login" value=""><input type="password" name="password">
+        </form></body></html>
+    """.trimIndent()
+
+    /** Account page of the current layout: /account, none of the old XFileSharing markers. */
+    private val neueKontoseite = """
+        <html><body><nav><a href="/my-files">My Files</a><a href="/account">Account</a></nav>
+        <div>Account type</div><div>Premium</div><div>Premium until: 2030-12-02</div></body></html>
+    """.trimIndent()
 
     /** File page with the download form; [captcha] and [countdown] are inserted as given. */
     private fun dateiseite(captcha: String = "", countdown: String = "", extra: String = "") = """
@@ -128,16 +139,38 @@ class DdownloadFlowTest {
     }
 
     @Test
-    fun sitzungOhneLogoutLinkZweimalIstAbgelaufen() = withServer { server, _, hoster ->
-        server.enqueue(html(ohneLogin))
-        server.enqueue(html(ohneLogin))
+    fun sitzungDieZumLoginUmleitetIstAbgelaufen() = withServer { server, _, hoster ->
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/?op=my_account" -> redirect("/login.html")
+                "/login.html" -> html(loginSeite)
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
         val fehler = failure { hoster.checkAccount(session) }
         assertTrue("$fehler", permanent(fehler))
         assertEquals(Texts.t("hoster_ddownload_session_expired"), fehler!!.message)
         // One retry with freshly seeded browser cookies, then give up
+        assertEquals(4, server.requestCount)
+        assertEquals("xfss=abc123; lang=german", server.takeRequest().getHeader("Cookie"))
+        assertEquals("/login.html", server.takeRequest().path)
+        assertEquals("xfss=abc123; lang=german", server.takeRequest().getHeader("Cookie"))
+    }
+
+    @Test
+    fun neueKontoseiteNachAnmeldungIstGueltig() = withServer { server, _, hoster ->
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/?op=my_account" -> redirect("/account")
+                "/account" -> html(neueKontoseite)
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val info = runBlocking { hoster.checkAccount(session) }
+        assertTrue(info.valid)
+        assertTrue(info.premium)
+        assertEquals(epoch(2030, Calendar.DECEMBER, 2), info.premiumUntil)
         assertEquals(2, server.requestCount)
-        assertEquals("xfss=abc123; lang=german", server.takeRequest().getHeader("Cookie"))
-        assertEquals("xfss=abc123; lang=german", server.takeRequest().getHeader("Cookie"))
     }
 
     @Test

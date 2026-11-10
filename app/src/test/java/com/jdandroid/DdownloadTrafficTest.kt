@@ -133,4 +133,18 @@ class DdownloadExpireTest {
         assertEquals(0L, DdownloadAccountPage.parseExpire(""))
         assertEquals(0L, DdownloadAccountPage.parseExpire("irgendwann"))
     }
+
+    @Test
+    fun weitereDatumsformenUndBeschriftungen() {
+        val dec2 = epoch(2030, Calendar.DECEMBER, 2)
+        assertEquals(dec2, DdownloadAccountPage.parseExpire("2030-12-02"))
+        assertEquals(dec2, DdownloadAccountPage.parseExpire("02.12.2030"))
+        assertEquals(dec2, DdownloadAccountPage.parseExpire("December 2, 2030"))
+        assertEquals(dec2, DdownloadAccountPage.parseExpire("Dec 2, 2030"))
+        assertEquals(dec2, DdownloadAccountPage.parseExpire("2. Dezember 2030"))
+        assertEquals(dec2, DdownloadAccountPage.pageExpire("Premium until: 2030-12-02 23:59"))
+        assertEquals(dec2, DdownloadAccountPage.pageExpire("Läuft ab am 02.12.2030"))
+        assertEquals(dec2, DdownloadAccountPage.pageExpire("Expiration date December 2, 2030"))
+        assertEquals(0L, DdownloadAccountPage.pageExpire("Premium 200 GB per day"))
+    }
 }

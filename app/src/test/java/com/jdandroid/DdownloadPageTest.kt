@@ -28,12 +28,33 @@ class DdownloadPageTest {
         assertEquals(null, waitOf(PageResponse(200, "<h1 class=\"dk-dl-name\">x.rar</h1>")))
     }
 
+    private val loginForm = """
+        <form method="POST" action="https://ddownload.com/" name="FL">
+        <input type="hidden" name="op" value="login">
+        <input type="text" name="login" value=""><input type="password" name="password">
+        </form>
+    """
+
     @Test
-    fun angemeldetNurMitAbmeldelinkOderKontoseite() {
-        assertTrue(DdownloadPage.isLoggedIn("""<a href="/?op=logout">Logout</a>"""))
-        assertTrue(DdownloadPage.isLoggedIn("""<a href="/?op=my_account">Konto</a> Account type: Premium"""))
-        assertFalse(DdownloadPage.isLoggedIn("""<a href="/?op=my_account">Konto</a>"""))
-        assertFalse(DdownloadPage.isLoggedIn("""<form action="/login.html">"""))
+    fun abgemeldetLandetAufDemLoginFormular() {
+        // Logged out, every account address redirects to the login page
+        assertFalse(DdownloadPage.isLoggedIn(PageResponse(200, loginForm, finalUrl = "https://ddownload.com/login.html")))
+        assertFalse(DdownloadPage.isLoggedIn(PageResponse(200, "", finalUrl = "https://ddownload.com/?op=login&redirect=x")))
+        // The form inline on the account address counts the same
+        assertFalse(DdownloadPage.isLoggedIn(PageResponse(200, loginForm, finalUrl = "https://ddownload.com/account")))
+    }
+
+    @Test
+    fun kontoseiteOhneAlteMerkmaleGiltAlsAngemeldet() {
+        // Current layout: /account without "op=logout" or "Account type"
+        val neu = """<nav><a href="/my-files">My Files</a><a href="/account">Account</a></nav>
+            <form><input type="password" name="password_new"></form><div>Premium until 2030-12-02</div>"""
+        assertTrue(DdownloadPage.isLoggedIn(PageResponse(200, neu, finalUrl = "https://ddownload.com/account")))
+        assertTrue(
+            DdownloadPage.isLoggedIn(
+                PageResponse(200, """<a href="/?op=logout">Logout</a>""", finalUrl = "https://ddownload.com/?op=my_account")
+            )
+        )
     }
 
     @Test

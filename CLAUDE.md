@@ -107,7 +107,9 @@ Deutsch. Kommentare im Code sind Englisch.
 
 ## Hoster-Besonderheiten
 
-- ddownload: nur Browser-Login (Cloudflare Turnstile, keine API), Kontoseite
+- ddownload: nur Browser-Login (Cloudflare Turnstile, keine API), seit
+  November 2026 neue Kontoseite `/account` (abgemeldet Umleitung auf
+  `/login.html`), Kontoseite
   zeigt Kontingent falsch beschriftet („197040 GB“ = MB), daher
   Plausibilitätsgrenze ab 16 TiB; Dateiseite ersetzt Punkte in Namen durch
   Leerzeichen („name part1 rar“), `Extractor.repairName()`
@@ -174,9 +176,13 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
   schickt `ACTION_PUMP`), weil `delay` im Tiefschlaf steht und der Wake-Lock
   nur beim Übertragen gilt; `MainActivity` pumpt bei jedem Start. Paket-Knopf
   nach `DownloadGroup.pausable` (RUNNING/QUEUED), Paketkopf immer aus dem
-  ungefilterten Paket. Offen: ddownload Premium „geht nicht mehr“ (Nutzer
-  nach Meldung gefragt; Verdacht abgelaufene Browser-Sitzung, Free-Modus
-  fällt dann still auf den Free-Weg zurück) und die 28 Abweichungen aus der
+  ungefilterten Paket. ddownload hat die Kontoseite umgebaut (Login leitet
+  auf `/account`, `?op=my_account` und `/account` leiten abgemeldet auf
+  `/login.html`): `DdownloadPage.isLoggedIn(page)` prüft nur noch, dass weder
+  die Login-Adresse noch das Login-Formular zurückkommt; Ablaufdatum in mehr
+  Formen. Die neue Kontoseite (angemeldet) ist noch nie gesehen worden:
+  Premium-Wort, Ablaufdatum und Kontingent dort beim Nutzer prüfen lassen.
+  Offen: die 28 Abweichungen aus der
   Suche vom 01.11. (A Löschen/Ersetzen, B Downloads scheitern, C Bedienung,
   D Kleinkram; A1 und C12 mit 0.9.14 erledigt). 0.9.13:
   `hoster/RapidgatorApi.kt` (Transport, `failure`, Token je Konto,

@@ -65,14 +65,14 @@ internal class DdownloadSession(
         seedCookies(account.id, raw)
 
         var page = fetchAccountPage(account.id)
-        if (!DdownloadPage.isLoggedIn(page.body)) {
+        if (!DdownloadPage.isLoggedIn(page)) {
             // The cookie store may hold a session the server "deleted"
             // (Set-Cookie with an expiry in the past). Start over once with the
             // stored browser cookies before treating the session as expired.
             seedCookies(account.id, raw, force = true)
             page = fetchAccountPage(account.id)
         }
-        if (!DdownloadPage.isLoggedIn(page.body)) {
+        if (!DdownloadPage.isLoggedIn(page)) {
             throw HosterException(Texts.t("hoster_ddownload_session_expired"), permanent = true)
         }
         return page.body
