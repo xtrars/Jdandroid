@@ -1,7 +1,7 @@
 [versions]
 nfsClient = "1.1.0"
 kotlinxSerialization = "1.8.1"
-agp = "9.5.0"
+agp = "9.5.1"
 kotlin = "2.4.10"
 ksp = "2.3.12"
 coreKtx = "1.19.1"
