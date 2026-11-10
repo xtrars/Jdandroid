@@ -164,10 +164,21 @@ entfernt). Ablauf und Checkliste stehen in `docs/PRUEFUNG.md`, das Skript in
 - Checkliste in `docs/RELEASE.md`, Datenschutz in `docs/DATENSCHUTZ.md`,
   Play-Formulare in `docs/PLAY_DATA_SAFETY.md`.
 
-## Stand für die nächste Sitzung (01.11.2026)
+## Stand für die nächste Sitzung (10.11.2026)
 
-- Zuletzt veröffentlicht: 0.9.13 (versionCode 78), Release v0.9.13 mit
-  CI-signierter APK; `release/` enthält 0.9.9 bis 0.9.13. 0.9.13:
+- Zuletzt veröffentlicht: 0.9.14 (versionCode 79), Release v0.9.14 mit
+  CI-signierter APK; `release/` enthält 0.9.10 bis 0.9.14. 0.9.14:
+  Free-Wartezeiten wecken das Gerät (`engine/RetryAlarm.kt`: Port
+  `WakeUpAlarm`, `setExactAndAllowWhileIdle` mit `SCHEDULE_EXACT_ALARM`,
+  sonst `setAndAllowWhileIdle`; `RetryAlarmReceiver` hält die CPU 60 s und
+  schickt `ACTION_PUMP`), weil `delay` im Tiefschlaf steht und der Wake-Lock
+  nur beim Übertragen gilt; `MainActivity` pumpt bei jedem Start. Paket-Knopf
+  nach `DownloadGroup.pausable` (RUNNING/QUEUED), Paketkopf immer aus dem
+  ungefilterten Paket. Offen: ddownload Premium „geht nicht mehr“ (Nutzer
+  nach Meldung gefragt; Verdacht abgelaufene Browser-Sitzung, Free-Modus
+  fällt dann still auf den Free-Weg zurück) und die 28 Abweichungen aus der
+  Suche vom 01.11. (A Löschen/Ersetzen, B Downloads scheitern, C Bedienung,
+  D Kleinkram; A1 und C12 mit 0.9.14 erledigt). 0.9.13:
   `hoster/RapidgatorApi.kt` (Transport, `failure`, Token je Konto,
   `withToken`: Neuanmeldung genau einmal und nur bei gemerktem Token,
   `LoginFailed` für Kontofehler), ddownload aufgeteilt in `DdownloadPage`

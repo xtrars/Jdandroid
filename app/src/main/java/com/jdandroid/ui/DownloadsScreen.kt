@@ -192,7 +192,8 @@ fun DownloadsScreen(
     val focusManager = LocalFocusManager.current
     LaunchedEffect(searchOpen) { if (searchOpen) searchFocus.requestFocus() }
 
-    // Packages without a matching item disappear.
+    // Packages without a matching item disappear. The header keeps the whole
+    // package: its state, delete lock and actions cover hidden entries too.
     val groups = remember(allGroups, query, filter) {
         val q = query.trim().lowercase()
         allGroups.mapNotNull { g ->
@@ -202,7 +203,7 @@ fun DownloadsScreen(
                         (item.fileName ?: item.url).lowercase().contains(q)
                     )
             }
-            if (items.isEmpty()) null else g.copy(items = items)
+            if (items.isEmpty()) null else g to items
         }
     }
 
@@ -283,7 +284,7 @@ fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(12.dp)
             ) {
-                groups.forEach { group ->
+                groups.forEach { (group, visible) ->
                     val isCollapsed = collapsed[group.pkg.id] ?: false
                     item(key = "pkg-${group.pkg.id}") {
                         PackageHeader(
@@ -294,7 +295,7 @@ fun DownloadsScreen(
                         )
                     }
                     if (!isCollapsed) {
-                        items(group.items, key = { it.id }) { item ->
+                        items(visible, key = { it.id }) { item ->
                             DownloadRow(item, group.extractPercent(item), group.uploadPercent(item), vm, Modifier.padding(start = 10.dp))
                         }
                     }
@@ -361,13 +362,13 @@ private fun PackageHeader(
                 if (group.pkg.id != 0L) {
                     // One direct action (start/pause); everything else goes in the menu.
                     IconButton(onClick = {
-                        if (group.active) vm.pausePackage(group.pkg.id)
+                        if (group.pausable) vm.pausePackage(group.pkg.id)
                         else vm.startPackage(group.pkg.id)
                     }) {
                         Icon(
-                            if (group.active) JdIcons.Pause else Icons.Default.PlayArrow,
+                            if (group.pausable) JdIcons.Pause else Icons.Default.PlayArrow,
                             contentDescription = stringResource(
-                                if (group.active) R.string.downloads_pause_package
+                                if (group.pausable) R.string.downloads_pause_package
                                 else R.string.downloads_start_package
                             )
                         )

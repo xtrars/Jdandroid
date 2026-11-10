@@ -73,6 +73,7 @@ class DownloadEngine internal constructor(
     private val freeBytes: (File) -> Long,
     /** Monotonic time for measurements and throttling, wall time for retryAt; tests advance both. */
     private val clock: Clock,
+    private val wakeUp: WakeUpAlarm,
     private val onStateChanged: () -> Unit
 ) {
 
@@ -419,11 +420,16 @@ class DownloadEngine internal constructor(
      */
     private suspend fun armRetryTimer() {
         val now = clock.wallMillis()
-        val next = dao.nextRetryAt(now, now + FreeMode.USER_ACTION_HORIZON_MS) ?: return
+        val next = dao.nextRetryAt(now, now + FreeMode.USER_ACTION_HORIZON_MS)
+        if (next == null) {
+            wakeUp.cancel()
+            return
+        }
         synchronized(timerLock) {
             if (retryTimer?.isActive == true && retryTimerAt <= next) return
             retryTimer?.cancel()
             retryTimerAt = next
+            wakeUp.schedule(next + RETRY_TIMER_SLACK_MS)
             retryTimer = scope.launch {
                 kotlinx.coroutines.delay((next - now + RETRY_TIMER_SLACK_MS).coerceAtLeast(0))
                 // Deregister before pump() arms the next timer, or pump() would
@@ -684,6 +690,7 @@ class DownloadEngine internal constructor(
                 network = NetworkPolicy { wifiOnly -> wifiOnly && meteredNetwork(context) },
                 freeBytes = { dir -> android.os.StatFs(dir.path).availableBytes },
                 clock = clock,
+                wakeUp = RetryAlarm(context),
                 onStateChanged = onStateChanged
             )
             return engine

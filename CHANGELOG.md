@@ -27,6 +27,23 @@ Die Kategorien sind: **Hinzugefügt**, **Geändert**, **Behoben**, **Sicherheit*
 
 _Noch nichts._
 
+## [0.9.14] – 2026-11-10
+
+### Behoben
+
+- Free-Modus: Nach einer längeren Wartezeit des Hosters ging es oft nicht
+  weiter. Während der Wartezeit lädt nichts, das Gerät schläft ein, und der
+  Zeitgeber der App zählte im Tiefschlaf nicht weiter. Jetzt weckt ein
+  Systemwecker das Gerät zum Ende der Wartezeit (pünktlich mit dem
+  Sonderzugriff „Wecker & Erinnerungen“, sonst einige Minuten später), und
+  beim Öffnen der App starten fällige Downloads sofort.
+- Der Start/Pause-Knopf am Paket sprang während einer Wartezeit auf „Start“,
+  obwohl das Paket weiterlief; „Start“ bewirkte dann nichts. Er zeigt jetzt
+  „Pause“, solange ein Teil lädt oder wartet.
+- Mit Filter oder Suche las der Paketkopf seinen Zustand nur aus den
+  sichtbaren Zeilen: „Paket löschen“ war dann auch während des Entpackens
+  frei. Kopf, Löschsperre und Zähler gelten jetzt immer für das ganze Paket.
+
 ## [0.9.13] – 2026-11-01
 
 ### Geändert
@@ -1293,6 +1310,7 @@ Commit [`98e7010`](https://github.com/xtrars/Jdandroid/commit/98e7010), versionC
   dynamischen Farben und Hell-/Dunkelmodus (Kotlin, Jetpack Compose, Room).
 
 [Unveröffentlicht]: https://github.com/xtrars/Jdandroid/tree/claude/android-jdownloader-app-1zqi1n
+[0.9.14]: https://github.com/xtrars/Jdandroid/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/xtrars/Jdandroid/compare/v0.9.12...v0.9.13
 [0.9.12]: https://github.com/xtrars/Jdandroid/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/xtrars/Jdandroid/compare/v0.9.10...v0.9.11

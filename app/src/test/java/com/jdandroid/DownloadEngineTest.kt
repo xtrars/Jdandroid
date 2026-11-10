@@ -16,6 +16,7 @@ import com.jdandroid.engine.ExportRetries
 import com.jdandroid.engine.LinkResolver
 import com.jdandroid.engine.NetworkPolicy
 import com.jdandroid.engine.PackageStore
+import com.jdandroid.engine.WakeUpAlarm
 import com.jdandroid.hoster.AccountInfo
 import com.jdandroid.hoster.AccountType
 import com.jdandroid.hoster.CaptchaRequiredException
@@ -178,6 +179,7 @@ class DownloadEngineTest {
     private val completion = FakeCompletion()
     private val resolver = FakeResolver()
     private val clock = TestClock()
+    private val alarms = CopyOnWriteArrayList<Long?>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var maxConcurrent = 2
     private var wifiOnly = false
@@ -211,6 +213,10 @@ class DownloadEngineTest {
         network = NetworkPolicy { wifi -> wifi && metered },
         freeBytes = { Long.MAX_VALUE },
         clock = clock,
+        wakeUp = object : WakeUpAlarm {
+            override fun schedule(wallMillis: Long) { alarms += wallMillis }
+            override fun cancel() { alarms += null }
+        },
         onStateChanged = {}
     ).apply { markReady() }
 
@@ -281,6 +287,22 @@ class DownloadEngineTest {
         until { resolver.waits.isNotEmpty() }
         assertEquals(listOf(1L to 901), resolver.waits.toList())
         assertEquals(0, queue.rows.getValue(1).attempts)
+    }
+
+    @Test
+    fun wartezeitStelltDenSystemweckerAufIhrEnde() = runBlocking {
+        resolver.resolve = { throw WaitException(901, "Sperre") }
+        queue.put(item(1))
+        engine.pump()
+        until { resolver.waits.isNotEmpty() }
+        val retryAt = queue.rows.getValue(1).retryAt
+        // The engine pumps once more after the wait was stored
+        engine.pump()
+        assertEquals(retryAt + DownloadEngine.RETRY_TIMER_SLACK_MS, alarms.lastOrNull())
+
+        // Nothing waits any more: the alarm goes away
+        engine.pause(1)
+        until { alarms.lastOrNull() == null }
     }
 
     @Test

@@ -286,6 +286,8 @@ sich der Dienst `foregroundRefused` und stößt nichts mehr an, sonst blieben
 Einträge als `RUNNING` zurück.
 
 Weitere Bausteine: ein `PARTIAL_WAKE_LOCK` nur, solange wirklich geladen wird;
+ein Systemwecker (`RetryAlarm`, `RetryAlarmReceiver`) zum nächsten `retryAt`,
+weil der Timer der Engine im Tiefschlaf nicht weiterzählt;
 ein `registerDefaultNetworkCallback`, der bei Netzwechsel `onNetworkChanged()`
 auslöst (Nur-WLAN: laufende Downloads zurück in die Warteschlange, sie starten
 bei WLAN automatisch); `BootReceiver` (`BOOT_COMPLETED`,

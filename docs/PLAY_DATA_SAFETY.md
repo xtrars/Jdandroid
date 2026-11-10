@@ -72,6 +72,7 @@ Click'n'Load-Status in den Einstellungen mit „Verbindung testen“
 | `POST_NOTIFICATIONS` | Laufzeit (Android 13+) | Fortschritt, Pause/Fortsetzen, Click'n'Load-Eingang, Erinnerung |
 | `WAKE_LOCK` | nein | Gerät während Downloads wach halten |
 | `RECEIVE_BOOT_COMPLETED` | nein | Warteschlange nach Neustart herstellen und erinnern (kein automatischer Downloadstart) |
+| `SCHEDULE_EXACT_ALARM` | Sonderzugriff „Wecker & Erinnerungen“ (ab Android 14 standardmäßig aus) | Ende einer Free-Wartezeit pünktlich, auch wenn das Gerät schläft; ohne den Zugriff kommt der Wecker einige Minuten später |
 
 Nicht verwendet und daher nicht zu deklarieren: `MANAGE_EXTERNAL_STORAGE`
 (Zielordner über SAF/MediaStore), `QUERY_ALL_PACKAGES`, `REQUEST_INSTALL_PACKAGES`,

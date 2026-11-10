@@ -118,6 +118,21 @@ class DownloadGroupingTest {
     }
 
     @Test
+    fun paketKnopfZeigtPauseSolangeEtwasLaedtOderWartet() {
+        val packages = listOf(DownloadPackage(id = 1, name = "A"))
+        fun group(vararg status: DownloadStatus) =
+            groupDownloads(status.mapIndexed { i, st -> item(i + 1L, 1).copy(status = st) }, packages, LOOSE).single()
+
+        // A hoster wait or captcha hold keeps the entry QUEUED: still pausable, not "stopped"
+        assertTrue(group(DownloadStatus.QUEUED, DownloadStatus.COMPLETED).pausable)
+        assertFalse(group(DownloadStatus.QUEUED).active)
+        assertTrue(group(DownloadStatus.RUNNING).pausable)
+        // Extraction runs to the end regardless; pause would do nothing
+        assertFalse(group(DownloadStatus.EXTRACTING, DownloadStatus.COMPLETED).pausable)
+        assertFalse(group(DownloadStatus.PAUSED, DownloadStatus.FAILED).pausable)
+    }
+
+    @Test
     fun reihenfolgeImPaketFolgtDemHinzufuegezeitpunktNichtDerId() {
         val packages = listOf(DownloadPackage(id = 1, name = "A"))
         val items = listOf(item(10, 1, addedAt = 300), item(11, 1, addedAt = 100), item(12, 1, addedAt = 200))

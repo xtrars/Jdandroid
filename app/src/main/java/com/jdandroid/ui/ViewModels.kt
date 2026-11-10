@@ -59,6 +59,8 @@ data class DownloadGroup(
     val finished: Int
     val failed: Int
     val active: Boolean
+    /** Something loads or waits (hoster wait, captcha, queue): what "pause package" acts on. */
+    val pausable: Boolean
     val extracting: Boolean
     /** Extraction percent of the package, -1 = unknown. */
     val extractPercent: Int
@@ -75,6 +77,7 @@ data class DownloadGroup(
         var finished = 0
         var failed = 0
         var active = false
+        var pausable = false
         var extracting = false
         var percent = -1
         for (item in items) {
@@ -86,7 +89,11 @@ data class DownloadGroup(
             when (item.status) {
                 DownloadStatus.COMPLETED -> finished++
                 DownloadStatus.FAILED -> failed++
-                DownloadStatus.RUNNING -> active = true
+                DownloadStatus.RUNNING -> {
+                    active = true
+                    pausable = true
+                }
+                DownloadStatus.QUEUED -> pausable = true
                 DownloadStatus.EXTRACTING -> {
                     active = true
                     extracting = true
@@ -101,6 +108,7 @@ data class DownloadGroup(
         this.finished = finished
         this.failed = failed
         this.active = active
+        this.pausable = pausable
         this.extracting = extracting
         this.extractPercent = percent
     }

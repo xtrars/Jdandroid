@@ -50,8 +50,10 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jdandroid.CrashReporter
 import com.jdandroid.JdApp
@@ -88,16 +90,21 @@ class MainActivity : ComponentActivity() {
         // After recreation getIntent() still returns the old VIEW/SEND intent.
         if (savedInstanceState == null) handleIntent(intent)
         handleResumeRequest(intent)
-        // Click'n'Load does not survive a process restart; restart the listener
-        // and kick pending downloads (e.g. after a reboot).
+        // Click'n'Load does not survive a process restart; restart the listener.
         lifecycleScope.launch {
-            val app = application as JdApp
-            if (app.settings.currentClickNLoadEnabled()) {
+            if ((application as JdApp).settings.currentClickNLoadEnabled()) {
                 DownloadService.send(this@MainActivity, DownloadService.ACTION_START_CNL)
             }
-            // Stuck RUNNING/EXTRACTING entries count too; the service resets them.
-            if (withContext(Dispatchers.IO) { app.db.downloadDao().openCountDue(FreeMode.heldFrom()) } > 0) {
-                DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
+        }
+        // Kick due downloads whenever the app comes to the front (after a reboot,
+        // or a wait that ended while the service could not be woken).
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val dao = (application as JdApp).db.downloadDao()
+                // Stuck RUNNING/EXTRACTING entries count too; the service resets them.
+                if (withContext(Dispatchers.IO) { dao.openCountDue(FreeMode.heldFrom()) } > 0) {
+                    DownloadService.send(this@MainActivity, DownloadService.ACTION_PUMP)
+                }
             }
         }
         val settings = (application as JdApp).settings

@@ -20,6 +20,16 @@ internal fun interface NetworkPolicy {
     fun blocked(wifiOnly: Boolean): Boolean
 }
 
+/**
+ * System alarm for the next retry. The in-process timer stalls while the CPU
+ * sleeps, and the wake lock is held only while transferring, so a long
+ * free-mode wait would otherwise end only when the device wakes up.
+ */
+internal interface WakeUpAlarm {
+    fun schedule(wallMillis: Long)
+    fun cancel()
+}
+
 /** Where downloads are written and exported copies removed; [StorageTarget] implements it. */
 internal interface DownloadFiles {
     fun downloadDir(): File
